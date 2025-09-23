@@ -1,32 +1,33 @@
-//
-//  PrixioApp.swift
-//  Prixio
-//
-//  Created by Daniel Bell on 9/22/25.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct PrixioApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var appCoordinator = AppCoordinator()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(appCoordinator)
+                .modelContainer(for: [PriceEntry.self, Product.self, Store.self])
+                .task {
+                    appCoordinator.initializeApp()
+                }
+                .onChange(of: scenePhase) { newPhase in
+                    switch newPhase {
+                    case .background:
+                        appCoordinator.appDidEnterBackground()
+                    case .active:
+                        appCoordinator.appWillEnterForeground()
+                    case .inactive:
+                        // You could flush pending saves or prepare for background here if needed
+                        break
+                    @unknown default:
+                        break
+                    }
+                }
         }
-        .modelContainer(sharedModelContainer)
     }
 }
