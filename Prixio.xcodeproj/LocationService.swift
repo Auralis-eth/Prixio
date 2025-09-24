@@ -1,128 +1,182 @@
 import Foundation
 import CoreLocation
 
-@MainActor
-final class LocationService: NSObject, CLLocationManagerDelegate {
-    @Published private(set) var currentLocation: CLLocation?
-    @Published private(set) var locationAccuracy: CLLocationAccuracy = kCLLocationAccuracyReduced
+actor LocationService: AppService {
 
-    // MARK: - Capture Context (for PriceEntry metadata)
-    struct DetectionContext {
-        var source: DetectionSource
-        var confidence: Float
-        var wasAutoSelected: Bool
-        var captureLatitude: Double?
-        var captureLongitude: Double?
-        var captureHorizontalAccuracy: Double?
-        var captureAltitude: Double?
-        var captureFloorLevel: Int?
-        var placeProvider: String?
-        var placeProviderPlaceId: String?
+    // MARK: - AppService
+    let identifier: String = "LocationService"
+    let dependencies: [String] = []
+    private(set) var state: ServiceState = .notInitialized
+
+    static let precisePurposeKey = "PreciseLocationFeature"
+
+    // MARK: - Core Location
+    private let locationManager = CLLocationManager()
+    private let delegateBridge = DelegateBridge()
+
+    // MARK: - Published-like state (actor-isolated)
+    private(set) var currentLocation: CLLocation?
+    private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    private(set) var accuracyAuthorization: CLAccuracyAuthorization = .reducedAccuracy
+
+    // Derived flags
+    private(set) var isAuthorizedForUse: Bool = false
+    private(set) var hasPreciseAccuracy: Bool = false
+
+    struct Snapshot: Sendable {
+        let currentLocation: CLLocation?
+        let authorizationStatus: CLAuthorizationStatus
+        let accuracyAuthorization: CLAccuracyAuthorization
+        let isAuthorizedForUse: Bool
+        let hasPreciseAccuracy: Bool
     }
 
-    private var lastDetectionContext: DetectionContext?
+    // MARK: - Initialization (AppService)
+    func initialize() throws {
+        guard state == .notInitialized || state == .shutdown else { return }
+        state = .initializing
 
-    func detectStores() {
-        // existing code to detect candidate stores
-        let sortedCandidates = /* sorting logic */
-        detectedStores = sortedCandidates
+        // Configure delegate bridge
+        delegateBridge.onAuthorizationChanged = { [weak self] in
+            Task { await self?.refreshAuthorizationStateAndMaybeStart() }
+        }
+        delegateBridge.onLocationsUpdated = { [weak self] locations in
+            Task { await self?.handleLocationUpdate(locations: locations) }
+        }
+        delegateBridge.onError = { [weak self] error in
+            Task { await self?.handleLocationError(error) }
+        }
 
-        if let bestCandidate = sortedCandidates.first, bestCandidate.confidence > 0.9 {
-            currentStore = bestCandidate.store
-            // Record detection context for later PriceEntry metadata
-            lastDetectionContext = DetectionContext(
-                source: bestCandidate.source,
-                confidence: bestCandidate.confidence,
-                wasAutoSelected: true,
-                captureLatitude: self.currentLocation?.coordinate.latitude,
-                captureLongitude: self.currentLocation?.coordinate.longitude,
-                captureHorizontalAccuracy: self.locationAccuracy,
-                captureAltitude: nil,
-                captureFloorLevel: nil,
-                placeProvider: nil,
-                placeProviderPlaceId: nil
-            )
-            logger.info("Auto-selected store: \(bestCandidate.store.name) (confidence: \(bestCandidate.confidence))")
+        locationManager.delegate = delegateBridge
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+
+        // Privacy-first: request When In Use only if needed
+        requestWhenInUseIfNeeded()
+
+        // Seed initial state
+        refreshAuthorizationState()
+
+        // Start updates if authorized
+        if isAuthorizedForUse {
+            locationManager.startUpdatingLocation()
+        }
+
+        state = .ready
+    }
+
+    func shutdown() throws {
+        locationManager.stopUpdatingLocation()
+        state = .shutdown
+    }
+
+    func healthCheck() -> Bool {
+        state.isReady && isAuthorizedForUse
+    }
+
+    // MARK: - Public API
+
+    /// Call this when a feature truly requires precise location.
+    func requestTemporaryFullAccuracyIfNeeded(purposeKey: String) {
+        guard locationManager.accuracyAuthorization == .reducedAccuracy else { return }
+        locationManager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: purposeKey) { [weak delegateBridge] error in
+            // We can't capture self directly from here (escaping on non-actor thread). Use delegateBridge to bounce.
+            delegateBridge?.notifyAuthorizationChanged()
         }
     }
 
-    func selectStore(_ store: Store) async {
-        logger.info("Manually selected store: \(store.name)")
-        currentStore = store
+    func startUpdatingLocationIfAuthorized() {
+        guard isAuthorizedForUse else { return }
+        locationManager.startUpdatingLocation()
+    }
 
-        // Record manual selection context for PriceEntry metadata
-        lastDetectionContext = DetectionContext(
-            source: .manual,
-            confidence: 1.0,
-            wasAutoSelected: false,
-            captureLatitude: currentLocation?.coordinate.latitude,
-            captureLongitude: currentLocation?.coordinate.longitude,
-            captureHorizontalAccuracy: locationAccuracy,
-            captureAltitude: nil,
-            captureFloorLevel: nil,
-            placeProvider: nil,
-            placeProviderPlaceId: nil
+    func stopUpdatingLocation() {
+        locationManager.stopUpdatingLocation()
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(
+            currentLocation: currentLocation,
+            authorizationStatus: authorizationStatus,
+            accuracyAuthorization: accuracyAuthorization,
+            isAuthorizedForUse: isAuthorizedForUse,
+            hasPreciseAccuracy: hasPreciseAccuracy
         )
-
-        // Learn WiFi fingerprint opportunistically (best-effort)
-        Task {
-            let scanner = WiFiScanner()
-            let db = WiFiFingerprintDatabase()
-            do {
-                try await scanner.initialize()
-                try await db.initialize()
-                let signals = try await scanner.scanAvailableNetworks()
-                await db.learnFingerprint(for: store, signals: signals)
-                try? await db.shutdown()
-                try? await scanner.shutdown()
-                logger.info("WiFi fingerprint learned for store: \(store.name)")
-            } catch {
-                logger.debug("WiFi fingerprint learning skipped/failed: \(error.localizedDescription)")
-            }
-        }
-
-        // Record visit for geofencing
-        await geofenceManager?.recordStoreVisit(store)
     }
 
-    /// Build a tuple of metadata values to populate a PriceEntry with detection context
-    func currentPriceEntryMetadata() -> (
-        captureLatitude: Double?,
-        captureLongitude: Double?,
-        captureHorizontalAccuracy: Double?,
-        captureAltitude: Double?,
-        captureFloorLevel: Int?,
-        storeDetectionSource: StoreDetectionSource,
-        storeDetectionConfidence: Float,
-        placeProvider: String?,
-        placeProviderPlaceId: String?,
-        wasAutoSelected: Bool
-    ) {
-        let ctx = lastDetectionContext
-        // Map DetectionSource to PriceEntry.StoreDetectionSource
-        let mappedSource: StoreDetectionSource = {
-            switch ctx?.source {
-            case .gps: return .gps
-            case .wifiFingerprint: return .wifiFingerprint
-            case .placesAPI: return .placesAPI
-            case .userHistory: return .userHistory
-            case .manual: return .manual
-            case .combined(_): return .combined
-            case .none: return .manual
+    // MARK: - Internal state helpers
+
+    private func requestWhenInUseIfNeeded() {
+        switch type(of: locationManager).authorizationStatus() {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        default:
+            break
+        }
+    }
+
+    private func refreshAuthorizationState() {
+        authorizationStatus = type(of: locationManager).authorizationStatus()
+        accuracyAuthorization = locationManager.accuracyAuthorization
+
+        isAuthorizedForUse = {
+            switch authorizationStatus {
+            case .authorizedWhenInUse, .authorizedAlways:
+                return true
+            default:
+                return false
             }
         }()
 
-        return (
-            captureLatitude: ctx?.captureLatitude ?? currentLocation?.coordinate.latitude,
-            captureLongitude: ctx?.captureLongitude ?? currentLocation?.coordinate.longitude,
-            captureHorizontalAccuracy: ctx?.captureHorizontalAccuracy ?? locationAccuracy,
-            captureAltitude: ctx?.captureAltitude,
-            captureFloorLevel: ctx?.captureFloorLevel,
-            storeDetectionSource: mappedSource,
-            storeDetectionConfidence: ctx?.confidence ?? 1.0,
-            placeProvider: ctx?.placeProvider,
-            placeProviderPlaceId: ctx?.placeProviderPlaceId,
-            wasAutoSelected: ctx?.wasAutoSelected ?? false
-        )
+        hasPreciseAccuracy = (accuracyAuthorization == .fullAccuracy)
+    }
+
+    private func refreshAuthorizationStateAndMaybeStart() {
+        refreshAuthorizationState()
+        if isAuthorizedForUse {
+            locationManager.startUpdatingLocation()
+        } else {
+            locationManager.stopUpdatingLocation()
+        }
+    }
+
+    private func handleLocationUpdate(locations: [CLLocation]) {
+        guard let latest = locations.last else { return }
+        currentLocation = latest
+    }
+
+    private func handleLocationError(_ error: Error) {
+        // Keep service in ready state; errors can be transient
+        // Consider logging via your Logging system if available
+    }
+}
+
+// MARK: - Delegate Bridge
+
+private final class DelegateBridge: NSObject, CLLocationManagerDelegate {
+
+    // Callbacks bounce back into the LocationService actor
+    var onAuthorizationChanged: (() -> Void)?
+    var onLocationsUpdated: (([CLLocation]) -> Void)?
+    var onError: ((Error) -> Void)?
+
+    func notifyAuthorizationChanged() {
+        onAuthorizationChanged?()
+    }
+
+    // iOS 14+ unified callback for auth changes
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        onAuthorizationChanged?()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
+        onAuthorizationChanged?()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        onLocationsUpdated?(locations)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        onError?(error)
     }
 }

@@ -18,4 +18,5 @@ extension ServiceKey {
     static var mlModels: ServiceKey { ServiceKey("MLModelManager") }
     static var errorHandling: ServiceKey { ServiceKey("ErrorHandlingService") }
     static var performance: ServiceKey { ServiceKey("PerformanceMonitorService") }
+    static var location: ServiceKey { ServiceKey("LocationService") }
 }

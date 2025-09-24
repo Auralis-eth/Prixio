@@ -109,6 +109,10 @@ final class AppCoordinator: ObservableObject {
         let errorHandler = ErrorHandlingService()
         serviceRegistry.registerService(errorHandler, for: .errorHandling)
 
+        // Location service (actor-based)
+        let locationService = LocationService()
+        serviceRegistry.registerService(locationService, for: .location)
+
         signposter.emitEvent("Services Registered")
         logger.log("Core services registered")
 

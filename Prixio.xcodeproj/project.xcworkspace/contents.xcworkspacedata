@@ -16,4 +16,7 @@
    <FileRef
       location = "group:StoreDetector 2.swift">
    </FileRef>
+   <FileRef
+      location = "group:Info.plist">
+   </FileRef>
 </Workspace>
