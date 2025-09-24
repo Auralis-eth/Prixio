@@ -32,8 +32,7 @@ final class Product: Sendable {
     var unit: String?
 
     // MARK: - Relationships
-
-    @Relationship(deleteRule: .cascade, inverse: \PriceEntry.product)
+    /// Recorded prices for this product
     var priceEntries: [PriceEntry] = []
 
     /// Product images

@@ -27,6 +27,10 @@ final class ProductImage: Sendable {
     // MARK: - Relationships
     var product: Product?
 
+    /// Price entries derived from this image via OCR
+    @Relationship(inverse: \PriceEntry.sourceImage)
+    var priceEntries: [PriceEntry] = []
+
     // MARK: - Metadata
 
     var createdAt: Date
@@ -51,3 +55,4 @@ final class ProductImage: Sendable {
         self.updatedAt = Date()
     }
 }
+

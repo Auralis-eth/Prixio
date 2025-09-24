@@ -48,7 +48,6 @@ final class Store: Sendable {
     var locationAccuracy: Double?
 
     // MARK: - Relationships
-    @Relationship(deleteRule: .cascade, inverse: \PriceEntry.store)
     var priceEntries: [PriceEntry] = []
 
     /// Store images

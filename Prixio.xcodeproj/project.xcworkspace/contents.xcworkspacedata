@@ -4,4 +4,16 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:StoreDetector.swift">
+   </FileRef>
+   <FileRef
+      location = "group:Store+Location.swift">
+   </FileRef>
+   <FileRef
+      location = "group:LocationService.swift">
+   </FileRef>
+   <FileRef
+      location = "group:StoreDetector 2.swift">
+   </FileRef>
 </Workspace>

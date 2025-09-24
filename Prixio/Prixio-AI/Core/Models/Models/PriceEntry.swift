@@ -42,6 +42,8 @@ final class PriceEntry: Sendable {
     /// User who captured this price (if applicable)
     @Relationship(deleteRule: .nullify)
     var capturedBy: User?
+    
+    var sourceImage: ProductImage?
 
     // MARK: - Metadata
 
