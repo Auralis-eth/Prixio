@@ -113,6 +113,9 @@ final class AppCoordinator: ObservableObject {
         let locationService = LocationService()
         serviceRegistry.registerService(locationService, for: .location)
 
+        let placesService = GooglePlacesService()
+        serviceRegistry.registerService(placesService, for: .places)
+
         signposter.emitEvent("Services Registered")
         logger.log("Core services registered")
 

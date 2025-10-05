@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6FE672262E93237900645D24 /* GooglePlacesSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6FE672252E93237900645D24 /* GooglePlacesSwift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		6F3C58C12E81A60300D362D9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6FE672262E93237900645D24 /* GooglePlacesSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +130,7 @@
 			);
 			name = Prixio;
 			packageProductDependencies = (
+				6FE672252E93237900645D24 /* GooglePlacesSwift */,
 			);
 			productName = Prixio;
 			productReference = 6F3C58AF2E81A60100D362D9 /* Prixio.app */;
@@ -208,6 +214,9 @@
 			);
 			mainGroup = 6F3C58A62E81A60100D362D9;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6FE672242E93237900645D24 /* XCRemoteSwiftPackageReference "ios-places-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6F3C58B02E81A60100D362D9 /* Products */;
 			projectDirPath = "";
@@ -294,6 +303,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Prixio/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "To Know where the items are";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "To Know where the items are";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -330,6 +340,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Prixio/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "To Know where the items are";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "To Know where the items are";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -599,6 +610,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6FE672242E93237900645D24 /* XCRemoteSwiftPackageReference "ios-places-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-places-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6FE672252E93237900645D24 /* GooglePlacesSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6FE672242E93237900645D24 /* XCRemoteSwiftPackageReference "ios-places-sdk" */;
+			productName = GooglePlacesSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6F3C58A72E81A60100D362D9 /* Project object */;
 }

@@ -19,4 +19,6 @@ extension ServiceKey {
     static var errorHandling: ServiceKey { ServiceKey("ErrorHandlingService") }
     static var performance: ServiceKey { ServiceKey("PerformanceMonitorService") }
     static var location: ServiceKey { ServiceKey("LocationService") }
+    static var audio: ServiceKey { ServiceKey("AudioEngineService") }
+    static var places: ServiceKey { ServiceKey("GooglePlacesService") }
 }
