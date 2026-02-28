@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Prixio uses the camera to capture price tags for OCR and price logging.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Prixio uses your location to suggest nearby grocery stores while scanning.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Prixio can import a photo if the camera is unavailable or you want to scan an existing image.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
