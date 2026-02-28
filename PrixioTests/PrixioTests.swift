@@ -44,4 +44,16 @@ struct PrixioTests {
         #expect(draft.canSave == true)
     }
 
+    @Test func detectsReceiptLikeText() async throws {
+        let text = """
+        Calgary Co-op
+        Subtotal 12.99
+        GST 0.65
+        Total 13.64
+        Thank you
+        """
+
+        #expect(PriceParsingService.looksLikeReceipt(text: text) == true)
+    }
+
 }

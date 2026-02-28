@@ -38,11 +38,11 @@ final class PriceEntry {
     var capturedAt: Date
     var itemNameRaw: String
     var itemNameNormalized: String
-    var priceValue: Double
+    var priceValue: Decimal
     var currencyCode: String
     var unitType: UnitType
-    var unitQuantityValue: Double?
-    var normalizedUnitPriceValue: Double?
+    var unitQuantityValue: Decimal?
+    var normalizedUnitPriceValue: Decimal?
     var normalizedUnitType: UnitType?
     var storeChainId: UUID?
     var storeLocationId: UUID?
@@ -60,11 +60,11 @@ final class PriceEntry {
         capturedAt: Date,
         itemNameRaw: String,
         itemNameNormalized: String,
-        priceValue: Double,
+        priceValue: Decimal,
         currencyCode: String = "CAD",
         unitType: UnitType,
-        unitQuantityValue: Double? = nil,
-        normalizedUnitPriceValue: Double? = nil,
+        unitQuantityValue: Decimal? = nil,
+        normalizedUnitPriceValue: Decimal? = nil,
         normalizedUnitType: UnitType? = nil,
         storeChainId: UUID? = nil,
         storeLocationId: UUID? = nil,
@@ -181,6 +181,18 @@ enum PriceParsingService {
     private static let currencyPattern = #"\$?\s*(\d+[.,]\d{2})"#
     private static let multiBuyPattern = #"(\d+)\s*(?:/|for)\s*\$?\s*(\d+(?:[.,]\d{2})?)"#
     private static let poundsPerKilogram = Decimal(string: "2.2046226218")!
+    private static let receiptMarkers = [
+        "subtotal",
+        "total",
+        "tax",
+        "hst",
+        "gst",
+        "change",
+        "thank you",
+        "receipt",
+        "visa",
+        "mastercard"
+    ]
 
     static func extract(from text: String) -> OCRResult {
         let normalizedText = text.replacingOccurrences(of: ",", with: ".")
@@ -227,6 +239,16 @@ enum PriceParsingService {
             return price
         }
         return price / quantity
+    }
+
+    static func looksLikeReceipt(text: String) -> Bool {
+        let lowered = text.lowercased()
+        let markerCount = receiptMarkers.reduce(into: 0) { count, marker in
+            if lowered.contains(marker) {
+                count += 1
+            }
+        }
+        return markerCount >= 2
     }
 
     private static func extractPriceCandidates(from text: String) -> [PriceCandidate] {
@@ -393,7 +415,9 @@ final class StoreDetectionService {
         }
 
         var collected: [StoreCandidate] = []
-        for query in ["grocery", "supermarket"] {
+        let queries = ["grocery", "supermarket"] + StoreCatalog.commonChains.map(\.name).filter { $0 != "Unknown" }
+
+        for query in queries {
             var request = MKLocalSearch.Request()
             request.naturalLanguageQuery = query
             request.region = MKCoordinateRegion(
@@ -429,7 +453,14 @@ final class StoreDetectionService {
         )
 
         return Array(deduplicated.values).sorted { lhs, rhs in
-            (lhs.distanceMeters ?? .greatestFiniteMagnitude) < (rhs.distanceMeters ?? .greatestFiniteMagnitude)
+            let lhsRank = lhs.chainName == nil ? 1 : 0
+            let rhsRank = rhs.chainName == nil ? 1 : 0
+
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+
+            return (lhs.distanceMeters ?? .greatestFiniteMagnitude) < (rhs.distanceMeters ?? .greatestFiniteMagnitude)
         }
     }
 
@@ -539,10 +570,10 @@ struct PriceEntryRepository {
             capturedAt: draft.capturedAt,
             itemNameRaw: draft.itemName,
             itemNameNormalized: normalizeItemName(draft.itemName),
-            priceValue: NSDecimalNumber(decimal: parsedPrice).doubleValue,
+            priceValue: parsedPrice,
             unitType: unit,
-            unitQuantityValue: draft.quantity.map { NSDecimalNumber(decimal: $0).doubleValue },
-            normalizedUnitPriceValue: normalized.map { NSDecimalNumber(decimal: $0.0).doubleValue },
+            unitQuantityValue: draft.quantity,
+            normalizedUnitPriceValue: normalized?.0,
             normalizedUnitType: normalized?.1,
             storeChainId: chainRecord?.id,
             storeLocationId: locationRecord?.id,
@@ -557,6 +588,41 @@ struct PriceEntryRepository {
 
         context.insert(entry)
         try context.save()
+    }
+
+    func cheapestEntries(for itemName: String, normalizedUnitType: UnitType) throws -> [PriceEntry] {
+        let normalizedName = normalizeItemName(itemName)
+        let descriptor = FetchDescriptor<PriceEntry>(
+            predicate: #Predicate<PriceEntry> { entry in
+                entry.itemNameNormalized == normalizedName && entry.normalizedUnitType == normalizedUnitType
+            },
+            sortBy: [SortDescriptor(\.normalizedUnitPriceValue, order: .forward)]
+        )
+        return try context.fetch(descriptor)
+    }
+
+    func cheapestEntries(for itemName: String, chainId: UUID, normalizedUnitType: UnitType) throws -> [PriceEntry] {
+        let normalizedName = normalizeItemName(itemName)
+        let descriptor = FetchDescriptor<PriceEntry>(
+            predicate: #Predicate<PriceEntry> { entry in
+                entry.itemNameNormalized == normalizedName &&
+                entry.normalizedUnitType == normalizedUnitType &&
+                entry.storeChainId == chainId
+            },
+            sortBy: [SortDescriptor(\.normalizedUnitPriceValue, order: .forward)]
+        )
+        return try context.fetch(descriptor)
+    }
+
+    func priceHistory(for locationId: UUID, itemName: String) throws -> [PriceEntry] {
+        let normalizedName = normalizeItemName(itemName)
+        let descriptor = FetchDescriptor<PriceEntry>(
+            predicate: #Predicate<PriceEntry> { entry in
+                entry.storeLocationId == locationId && entry.itemNameNormalized == normalizedName
+            },
+            sortBy: [SortDescriptor(\.capturedAt, order: .reverse)]
+        )
+        return try context.fetch(descriptor)
     }
 
     private func chain(named name: String?) throws -> StoreChain? {

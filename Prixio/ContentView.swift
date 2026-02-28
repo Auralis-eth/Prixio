@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import CoreLocation
 import SwiftData
@@ -43,6 +44,7 @@ private struct ScanRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \PriceEntry.createdAt, order: .reverse) private var entries: [PriceEntry]
 
+    @StateObject private var cameraController = CameraController()
     @StateObject private var sessionStore = ScanSessionStore()
     @StateObject private var locationManager = LocationManager()
     @StateObject private var viewModel = ScanViewModel()
@@ -74,6 +76,7 @@ private struct ScanRootView: View {
         .task {
             viewModel.configureRecentItems(with: entries)
             try? PriceEntryRepository(context: modelContext).seedChainsIfNeeded()
+            await cameraController.prepare()
             locationManager.requestWhenInUseAuthorization()
             await viewModel.loadNearbyStoresIfNeeded(
                 sessionStore: sessionStore,
@@ -112,7 +115,6 @@ private struct ScanRootView: View {
                 onOpenStoreSelection: { viewModel.isShowingStoreSheet = true },
                 onRetake: {
                     viewModel.dismissConfirmationForRetake()
-                    viewModel.openCamera()
                 },
                 onDiscard: viewModel.discardCapture,
                 onSave: {
@@ -168,7 +170,22 @@ private struct ScanRootView: View {
                             .ignoresSafeArea()
                     }
             } else {
-                ScannerGuideOverlay()
+                if cameraController.authorizationStatus == .authorized {
+                    CameraPreviewView(session: cameraController.session)
+                        .ignoresSafeArea()
+                        .overlay {
+                            Rectangle()
+                                .fill(.black.opacity(0.18))
+                                .ignoresSafeArea()
+                        }
+                    ScannerGuideOverlay()
+                } else {
+                    CameraUnavailableOverlay(
+                        authorizationStatus: cameraController.authorizationStatus,
+                        onOpenSettings: cameraController.openSettings,
+                        onImportPhoto: viewModel.openPhotoLibraryFallback
+                    )
+                }
             }
         }
     }
@@ -234,7 +251,7 @@ private struct ScanRootView: View {
 
                 Spacer()
 
-                Button(action: viewModel.openCamera) {
+                Button(action: capturePhoto) {
                     ZStack {
                         Circle()
                             .fill(Color.white.opacity(0.22))
@@ -287,6 +304,24 @@ private struct ScanRootView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(.black.opacity(0.28), in: Capsule())
+            }
+        }
+    }
+
+    private func capturePhoto() {
+        guard cameraController.authorizationStatus == .authorized else {
+            cameraController.openSettings()
+            return
+        }
+
+        Haptics.impact()
+        Task {
+            if let image = try? await cameraController.capturePhoto(flashEnabled: viewModel.isFlashEnabled) {
+                await viewModel.handlePickedImage(
+                    image,
+                    sessionStore: sessionStore,
+                    currentLocation: locationManager.currentLocation
+                )
             }
         }
     }
@@ -373,26 +408,18 @@ private final class ScanViewModel: ObservableObject {
     func loadNearbyStoresIfNeeded(sessionStore: ScanSessionStore, location: CLLocation?) async {
         if let cached = sessionStore.cachedCandidatesIfFresh(), !cached.isEmpty {
             inferredStoreCandidate = cached.first
-            applyInferredStore(from: cached.first)
             return
         }
 
         let stores = await storeService.fetchNearbyStores(location: location)
         sessionStore.updateCandidates(stores)
         inferredStoreCandidate = stores.first
-        applyInferredStore(from: stores.first)
     }
 
     func searchStores(query: String, currentLocation: CLLocation?) async -> [StoreCandidate] {
         let results = await storeService.search(query: query, near: currentLocation)
         searchResults = results
         return results
-    }
-
-    func openCamera() {
-        Haptics.impact()
-        imagePickerSource = .camera
-        isShowingImagePicker = true
     }
 
     func openPhotoLibraryFallback() {
@@ -437,9 +464,14 @@ private final class ScanViewModel: ObservableObject {
             sessionStore.updateCandidates(stores)
         }
 
-        let matchedCandidate = matchStoreCandidate(from: sessionStore.nearbyCandidates, ocrText: result.rawText)
-        inferredStoreCandidate = matchedCandidate ?? sessionStore.lastStoreCandidate
-        applyInferredStore(from: inferredStoreCandidate)
+        let isReceiptCapture = PriceParsingService.looksLikeReceipt(text: result.rawText)
+        let matchedCandidate = matchStoreCandidate(
+            from: sessionStore.nearbyCandidates,
+            ocrText: result.rawText,
+            currentLocation: currentLocation
+        )
+        inferredStoreCandidate = isReceiptCapture ? nil : (matchedCandidate ?? sessionStore.lastStoreCandidate)
+        applyInferredStore(from: inferredStoreCandidate, ocrText: result.rawText, nearbyCandidates: sessionStore.nearbyCandidates)
         isProcessingOCR = false
     }
 
@@ -469,7 +501,9 @@ private final class ScanViewModel: ObservableObject {
 
     func dismissConfirmationForRetake() {
         isShowingConfirmationSheet = false
+        capturedImage = nil
         previewImage = nil
+        draft = PriceEntryDraft()
     }
 
     func discardCapture() {
@@ -501,8 +535,12 @@ private final class ScanViewModel: ObservableObject {
         }
     }
 
-    private func applyInferredStore(from candidate: StoreCandidate?) {
+    private func applyInferredStore(from candidate: StoreCandidate?, ocrText: String, nearbyCandidates: [StoreCandidate]) {
         guard let candidate else {
+            return
+        }
+
+        guard shouldAutoApplyStore(candidate: candidate, ocrText: ocrText, nearbyCandidates: nearbyCandidates) else {
             return
         }
 
@@ -524,11 +562,53 @@ private final class ScanViewModel: ObservableObject {
         draft.storeChainExplicitlySelected = false
     }
 
-    private func matchStoreCandidate(from candidates: [StoreCandidate], ocrText: String) -> StoreCandidate? {
+    private func matchStoreCandidate(
+        from candidates: [StoreCandidate],
+        ocrText: String,
+        currentLocation: CLLocation?
+    ) -> StoreCandidate? {
+        if PriceParsingService.looksLikeReceipt(text: ocrText) {
+            return nil
+        }
+
         let inferredChain = StoreCatalog.inferredChain(from: ocrText)
-        return candidates.first { candidate in
+        let matched = candidates.first { candidate in
             candidate.chainName == inferredChain
         } ?? candidates.first
+        guard let matched else {
+            return nil
+        }
+
+        if let currentLocation,
+           let coordinate = matched.coordinate,
+           CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            .distance(from: currentLocation) > 1_500 {
+            return nil
+        }
+
+        return matched
+    }
+
+    private func shouldAutoApplyStore(
+        candidate: StoreCandidate,
+        ocrText: String,
+        nearbyCandidates: [StoreCandidate]
+    ) -> Bool {
+        if PriceParsingService.looksLikeReceipt(text: ocrText) {
+            return false
+        }
+
+        let closeMatches = nearbyCandidates.filter { nearbyCandidate in
+            guard let distance = nearbyCandidate.distanceMeters else {
+                return false
+            }
+            guard let topDistance = candidate.distanceMeters else {
+                return false
+            }
+            return abs(distance - topDistance) <= 50
+        }
+
+        return closeMatches.count < 2
     }
 }
 
@@ -565,6 +645,120 @@ private final class LocationManager: NSObject, ObservableObject, CLLocationManag
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    }
+}
+
+private final class CameraController: NSObject, ObservableObject {
+    @Published private(set) var authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
+
+    let session = AVCaptureSession()
+
+    private let sessionQueue = DispatchQueue(label: "Prixio.CameraSession")
+    private let photoOutput = AVCapturePhotoOutput()
+    private var isConfigured = false
+    private var captureContinuation: CheckedContinuation<UIImage?, Error>?
+
+    func prepare() async {
+        if authorizationStatus == .notDetermined {
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            await MainActor.run {
+                authorizationStatus = granted ? .authorized : .denied
+            }
+        }
+
+        guard authorizationStatus == .authorized else {
+            return
+        }
+
+        if !isConfigured {
+            await configureSession()
+        }
+        await startSession()
+    }
+
+    func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            return
+        }
+        UIApplication.shared.open(url)
+    }
+
+    func capturePhoto(flashEnabled: Bool) async throws -> UIImage? {
+        try await withCheckedThrowingContinuation { continuation in
+            sessionQueue.async {
+                let settings = AVCapturePhotoSettings()
+                if self.photoOutput.supportedFlashModes.contains(flashEnabled ? .on : .off) {
+                    settings.flashMode = flashEnabled ? .on : .off
+                }
+                self.captureContinuation = continuation
+                self.photoOutput.capturePhoto(with: settings, delegate: self)
+            }
+        }
+    }
+
+    private func configureSession() async {
+        await withCheckedContinuation { continuation in
+            sessionQueue.async {
+                guard !self.isConfigured else {
+                    continuation.resume()
+                    return
+                }
+
+                self.session.beginConfiguration()
+                self.session.sessionPreset = .photo
+
+                defer {
+                    self.session.commitConfiguration()
+                    continuation.resume()
+                }
+
+                guard
+                    let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+                    let input = try? AVCaptureDeviceInput(device: device),
+                    self.session.canAddInput(input),
+                    self.session.canAddOutput(self.photoOutput)
+                else {
+                    return
+                }
+
+                self.session.addInput(input)
+                self.session.addOutput(self.photoOutput)
+                self.isConfigured = true
+            }
+        }
+    }
+
+    private func startSession() async {
+        await withCheckedContinuation { continuation in
+            sessionQueue.async {
+                if !self.session.isRunning {
+                    self.session.startRunning()
+                }
+                continuation.resume()
+            }
+        }
+    }
+}
+
+extension CameraController: AVCapturePhotoCaptureDelegate {
+    nonisolated func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingPhoto photo: AVCapturePhoto,
+        error: Error?
+    ) {
+        if let error {
+            Task { @MainActor in
+                captureContinuation?.resume(throwing: error)
+                captureContinuation = nil
+            }
+            return
+        }
+
+        let image = photo.fileDataRepresentation().flatMap(UIImage.init(data:))
+        Task { @MainActor in
+            captureContinuation?.resume(returning: image)
+            captureContinuation = nil
+        }
     }
 }
 
@@ -637,22 +831,30 @@ private struct ConfirmationSheet: View {
     let onDiscard: () -> Void
     let onSave: () -> Void
 
+    @State private var isShowingImageViewer = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 14) {
-                    Group {
-                        if let capturedImage {
-                            Image(uiImage: capturedImage)
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(.gray.opacity(0.12))
+                    Button {
+                        isShowingImageViewer = true
+                    } label: {
+                        Group {
+                            if let capturedImage {
+                                Image(uiImage: capturedImage)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(.gray.opacity(0.12))
+                            }
                         }
+                        .frame(width: 68, height: 68)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                    .frame(width: 68, height: 68)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Captured image, tap to view full size")
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Confirm details")
@@ -790,12 +992,94 @@ private struct ConfirmationSheet: View {
             }
             .padding(20)
         }
+        .fullScreenCover(isPresented: $isShowingImageViewer) {
+            ImageViewer(image: capturedImage)
+        }
     }
 
     private func fieldTitle(_ text: String) -> some View {
         Text(text)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.secondary)
+    }
+}
+
+private struct CameraPreviewView: UIViewRepresentable {
+    let session: AVCaptureSession
+
+    func makeUIView(context: Context) -> PreviewView {
+        let view = PreviewView()
+        view.previewLayer.session = session
+        view.previewLayer.videoGravity = .resizeAspectFill
+        return view
+    }
+
+    func updateUIView(_ uiView: PreviewView, context: Context) {
+        uiView.previewLayer.session = session
+    }
+}
+
+private final class PreviewView: UIView {
+    override class var layerClass: AnyClass {
+        AVCaptureVideoPreviewLayer.self
+    }
+
+    var previewLayer: AVCaptureVideoPreviewLayer {
+        layer as! AVCaptureVideoPreviewLayer
+    }
+}
+
+private struct CameraUnavailableOverlay: View {
+    let authorizationStatus: AVAuthorizationStatus
+    let onOpenSettings: () -> Void
+    let onImportPhoto: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(.white)
+
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text(subtitle)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.78))
+                .frame(maxWidth: 280)
+
+            HStack(spacing: 12) {
+                Button("Settings", action: onOpenSettings)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.white)
+                    .foregroundStyle(.black)
+
+                Button("Import Photo", action: onImportPhoto)
+                    .buttonStyle(.bordered)
+                    .tint(.white)
+            }
+        }
+        .padding(24)
+    }
+
+    private var title: String {
+        switch authorizationStatus {
+        case .denied, .restricted:
+            return "Camera access is required"
+        default:
+            return "Preparing camera"
+        }
+    }
+
+    private var subtitle: String {
+        switch authorizationStatus {
+        case .denied, .restricted:
+            return "Enable camera access in Settings to use the live scanner. You can still import an existing photo."
+        default:
+            return "Prixio uses the camera to capture price tags and freeze the frame for confirmation."
+        }
     }
 }
 
@@ -925,6 +1209,36 @@ private struct ToastView: View {
     }
 }
 
+private struct ImageViewer: View {
+    let image: UIImage?
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .padding()
+                } else {
+                    ContentUnavailableView("No Image", systemImage: "photo")
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct PlaceholderTabView: View {
     let title: String
     let subtitle: String
@@ -964,11 +1278,11 @@ private enum CurrencyFormatter {
         return formatter.string(from: value as NSDecimalNumber) ?? ""
     }
 
-    static func display(_ value: Double) -> String {
+    static func display(_ value: Decimal) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = "CAD"
-        return formatter.string(from: NSNumber(value: value)) ?? "$0.00"
+        return formatter.string(from: value as NSDecimalNumber) ?? "$0.00"
     }
 }
 
