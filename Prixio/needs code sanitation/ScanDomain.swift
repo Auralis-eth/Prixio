@@ -177,6 +177,9 @@ struct StoreCandidate: Identifiable {
     let mapKitPlaceId: String?
 }
 
+import FoundationModels
+import Playgrounds
+
 enum PriceParsingService {
     private static let currencyPattern = #"\$?\s*(\d+[.,]\d{2})"#
     private static let multiBuyPattern = #"(\d+)\s*(?:/|for)\s*\$?\s*(\d+(?:[.,]\d{2})?)"#
@@ -195,6 +198,56 @@ enum PriceParsingService {
     ]
 
     static func extract(from text: String) -> OCRResult {
+        
+        // TODO: Foundation Model the text
+        // https://developer.apple.com/documentation/FoundationModels
+        let session = LanguageModelSession()
+        let prompt = "this was extracted using OCR from what I bought, can you summarize the data: " + text
+        Task {
+            do {
+                let summary = try await session.respond(to: prompt).content
+                print(summary)
+            } catch let error as LanguageModelSession.GenerationError {
+                switch error {
+                case .historyTokenExpired:
+                    print("History Token expired.")
+                case .exceededContextWindowSize(let string):
+                    print("Exceeded context window size. Generated: \(string)")
+//                case .assetsUnavailable(_):
+//                    <#code#>
+//                case .guardrailViolation(_):
+//                    <#code#>
+//                case .unsupportedGuide(_):
+//                    <#code#>
+//                case .unsupportedLanguageOrLocale(_):
+//                    <#code#>
+//                case .decodingFailure(_):
+//                    <#code#>
+//                case .rateLimited(_):
+//                    <#code#>
+//                case .concurrentRequests(_):
+//                    <#code#>
+//                case .refusal(_, _):
+//                    <#code#>
+                default:
+                    print(error)
+                }
+                
+                if let failureReason = error.failureReason {
+                    print(failureReason)
+                }
+                if let recoverySuggestion = error.recoverySuggestion {
+                    print(recoverySuggestion)
+                }
+                if let helpAnchor = error.helpAnchor {
+                    print(helpAnchor)
+                }
+            } catch {
+                print(error.localizedDescription)
+            }
+        }
+        
+        
         let normalizedText = text.replacingOccurrences(of: ",", with: ".")
         let priceCandidates = extractPriceCandidates(from: normalizedText)
         let unit = detectUnit(in: normalizedText)
