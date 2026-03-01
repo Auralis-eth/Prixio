@@ -13,11 +13,38 @@ import Testing
 struct PrixioTests {
 
     @Test func parsesMultiBuyOffer() async throws {
-        let result = PriceParsingService.extract(from: "Yellow Onions\n2/$5\nProduct of Canada")
+        let result = PriceParsingService.extract(from: ["Yellow Onions", "2/$5", "Product of Canada"])
 
         #expect(result.itemNameHint == "Yellow Onions")
         #expect(result.price == Decimal(string: "5"))
         #expect(result.quantity == Decimal(string: "2"))
+    }
+
+    @Test func reconstructsSplitDollarAndCents() async throws {
+        let result = PriceParsingService.extract(from: ["Bananas", "17", "99"])
+
+        #expect(result.price == Decimal(string: "17.99"))
+        #expect(result.priceCandidates.first?.value == Decimal(string: "17.99"))
+    }
+
+    @Test func infersDecimalFromFourDigitOCRToken() async throws {
+        let result = PriceParsingService.extract(from: ["Bananas", "1799", "99"])
+
+        #expect(result.price == Decimal(string: "17.99"))
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "17.99") })
+    }
+
+    @Test func prefersHigherConfidencePriceCandidateWithinSamePriority() async throws {
+        let result = PriceParsingService.extract(
+            from: [
+                OCRTextObservation(string: "Low confidence 2.99", confidence: 0.12),
+                OCRTextObservation(string: "High confidence 4.99", confidence: 0.94)
+            ]
+        )
+
+        #expect(result.price == Decimal(string: "4.99"))
+        #expect(result.confidence == 0.94)
+        #expect(result.priceCandidates.first?.sourceText == "High confidence 4.99")
     }
 
     @Test func normalizesPoundsToKilograms() async throws {
