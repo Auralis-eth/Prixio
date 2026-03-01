@@ -26,8 +26,6 @@ final class ScanViewModel: ObservableObject {
     @Published var recentItems: [String] = []
     @Published var searchResults: [StoreCandidate] = []
 
-    @Published var imagePickerSource: UIImagePickerController.SourceType = .camera
-
     private let ocrService = OCRService()
     private let storeService = StoreDetectionService()
 
@@ -109,7 +107,6 @@ final class ScanViewModel: ObservableObject {
 
     func openPhotoLibraryFallback() {
         Haptics.impact()
-        imagePickerSource = .photoLibrary
         isShowingImagePicker = true
     }
 

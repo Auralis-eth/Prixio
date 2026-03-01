@@ -30,6 +30,7 @@ SwiftData is the pantry. Once a price is trustworthy enough, it gets shelved the
 - The parser now carries both the OCR `string` and its `confidence` together, and every extracted `PriceCandidate` keeps that provenance. Translation: we stopped treating all OCR lines like equally trustworthy eyewitnesses.
 - Split prices are still a little dramatic. Shelf tags love to put dollars on one line and cents on another, so the parser explicitly checks adjacent OCR lines as a pair. That bug class is the software equivalent of someone saying “seventeen” in one room and “ninety-nine” from the hallway.
 - We also started evicting persistent models from `ScanDomain.swift`. Moving `PriceEntry` into `Core/Models` is the codebase equivalent of finally taking the plates out of the toolbox: the parser still uses them, but it should not have to store them in the same drawer.
+- The photo import flow graduated from a UIKit chaperone to SwiftUI’s native `PhotosPicker`. That let us delete the `UIImagePickerController` wrapper entirely while keeping the live camera path on `AVCaptureSession`, which is the right split: use the built-in front desk for library browsing, keep the custom machinery for actual capture.
 
 ## Engineer's Wisdom
 - Preserve signal as long as possible. Throwing away confidence early is like deleting the “how sure are we?” column before making a decision.

@@ -5,9 +5,10 @@
 //  Created by Daniel Bell on 3/1/26.
 //
 
+import AVFoundation
+import PhotosUI
 import SwiftData
 import SwiftUI
-import AVFoundation
 
 struct ScanRootView: View {
     @Environment(\.modelContext) private var modelContext
@@ -17,6 +18,7 @@ struct ScanRootView: View {
     @StateObject private var sessionStore = ScanSessionStore()
     @StateObject private var locationManager = LocationManager()
     @StateObject private var viewModel = ScanViewModel()
+    @State private var selectedPhotoItem: PhotosPickerItem?
 
     var body: some View {
         NavigationStack {
@@ -63,15 +65,14 @@ struct ScanRootView: View {
                 )
             }
         }
-        .sheet(isPresented: $viewModel.isShowingImagePicker) {
-            CameraPicker(sourceType: viewModel.imagePickerSource) { image in
-                Task {
-                    await viewModel.handlePickedImage(
-                        image,
-                        sessionStore: sessionStore,
-                        currentLocation: locationManager.currentLocation
-                    )
-                }
+        .photosPicker(
+            isPresented: $viewModel.isShowingImagePicker,
+            selection: $selectedPhotoItem,
+            matching: .images
+        )
+        .onChange(of: selectedPhotoItem) { _, item in
+            Task {
+                await handleSelectedPhotoItem(item)
             }
         }
         .sheet(isPresented: $viewModel.isShowingConfirmationSheet) {
@@ -294,5 +295,25 @@ struct ScanRootView: View {
                 )
             }
         }
+    }
+
+    private func handleSelectedPhotoItem(_ item: PhotosPickerItem?) async {
+        defer {
+            selectedPhotoItem = nil
+        }
+
+        guard
+            let item,
+            let data = try? await item.loadTransferable(type: Data.self),
+            let image = UIImage(data: data)
+        else {
+            return
+        }
+
+        await viewModel.handlePickedImage(
+            image,
+            sessionStore: sessionStore,
+            currentLocation: locationManager.currentLocation
+        )
     }
 }
