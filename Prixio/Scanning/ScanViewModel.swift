@@ -26,7 +26,6 @@ final class ScanViewModel: ObservableObject {
     @Published var recentItems: [String] = []
     @Published var searchResults: [StoreCandidate] = []
 
-    private let ocrService = OCRService()
     private let storeService = StoreDetectionService()
 
     var displayImage: UIImage? {
@@ -51,7 +50,7 @@ final class ScanViewModel: ObservableObject {
         }
 
         if let distanceMeters = candidate.distanceMeters {
-            return "\(candidate.locationName) · \(DistanceFormatter.text(for: distanceMeters))"
+            return "\(candidate.locationName) · \(distanceMeters.formatted)"
         }
 
         return candidate.locationName
@@ -132,10 +131,10 @@ final class ScanViewModel: ObservableObject {
         isProcessingOCR = true
         isShowingConfirmationSheet = true
 
-        let result = await ocrService.analyze(image: image)
+        let result = await image.extractOCR()
         draft.ocrText = result.rawText
         draft.confidence = result.confidence
-        draft.priceText = result.price.map(CurrencyFormatter.string) ?? ""
+        draft.priceText = result.price.map(CurrencyFormatter.shared.string) ?? ""
         draft.selectedUnit = result.unit
         draft.quantity = result.quantity
         draft.priceCandidates = Array(result.priceCandidates.prefix(2))
@@ -158,7 +157,7 @@ final class ScanViewModel: ObservableObject {
     }
 
     func applyPriceCandidate(_ candidate: PriceCandidate) {
-        draft.priceText = CurrencyFormatter.string(candidate.value)
+        draft.priceText = CurrencyFormatter.shared.string(candidate.value)
         draft.quantity = candidate.quantity
     }
 

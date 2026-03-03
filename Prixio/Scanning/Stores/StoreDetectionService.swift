@@ -38,10 +38,7 @@ final class StoreDetectionService {
                     address: item.placemark.title,
                     coordinate: placemarkLocation?.coordinate,
                     distanceMeters: placemarkLocation?.distance(from: location),
-                    mapKitPlaceId: StoreCatalog.mapItemIdentifier(
-                        name: item.name ?? "Unknown Store",
-                        coordinate: placemarkLocation?.coordinate
-                    )
+                    mapKitPlaceId: (item.name ?? "Unknown Store").mapItemIdentifier(coordinate:placemarkLocation?.coordinate)
                 )
             })
         }
@@ -92,10 +89,7 @@ final class StoreDetectionService {
                 distanceMeters: location.flatMap { origin in
                     placemarkLocation?.distance(from: origin)
                 },
-                mapKitPlaceId: StoreCatalog.mapItemIdentifier(
-                    name: item.name ?? "Unknown Store",
-                    coordinate: placemarkLocation?.coordinate
-                )
+                mapKitPlaceId: (item.name ?? "Unknown Store").mapItemIdentifier(coordinate: placemarkLocation?.coordinate )
             )
         }
     }

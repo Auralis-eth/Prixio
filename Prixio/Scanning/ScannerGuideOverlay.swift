@@ -11,12 +11,11 @@ struct ScannerGuideOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             let frameWidth = min(geometry.size.width - 48, 320)
-            let frameHeight = frameWidth * 1.1
 
             ZStack {
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
                     .strokeBorder(.white.opacity(0.34), lineWidth: 2)
-                    .frame(width: frameWidth, height: frameHeight)
+                    .frame(width: frameWidth, height: frameWidth * 1.1)
                     .overlay(alignment: .topLeading) {
                         CornerBracket()
                             .stroke(.white, lineWidth: 4)
@@ -34,17 +33,10 @@ struct ScannerGuideOverlay: View {
                     .fill(.white.opacity(0.08))
                     .frame(width: frameWidth - 32, height: 120)
                     .overlay {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Yellow Onions")
-                                .font(.title3.weight(.semibold))
-                            Text("$3.99 / lb")
-                                .font(.largeTitle.weight(.black))
-                            Text("Aim the tag inside the frame, then tap the shutter.")
-                                .font(.footnote)
-                                .foregroundStyle(.white.opacity(0.75))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(18)
+                        Text("Aim the tag inside the frame, then tap the shutter.")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.75))
+                            .padding(18)
                     }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

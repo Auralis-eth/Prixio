@@ -23,10 +23,12 @@ enum StoreCatalog {
             chain.name != "Unknown" && chain.aliases.contains { lowered.contains($0.lowercased()) }
         }?.name
     }
+}
 
-    static func mapItemIdentifier(name: String, coordinate: CLLocationCoordinate2D?) -> String {
+extension String {
+    func mapItemIdentifier(coordinate: CLLocationCoordinate2D?) -> String {
         let lat = coordinate?.latitude ?? 0
         let lon = coordinate?.longitude ?? 0
-        return "\(name)-\(lat)-\(lon)"
+        return "\(self)-\(lat)-\(lon)"
     }
 }

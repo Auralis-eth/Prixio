@@ -1,9 +1,6 @@
-//import AVFoundation
-//import Combine
+
 import CoreLocation
-//import SwiftData
 import SwiftUI
-//import UIKit
 
 struct StoreSelectionSheet: View {
     let nearbyCandidates: [StoreCandidate]
@@ -103,7 +100,7 @@ private struct StoreCandidateRow: View {
 
             VStack(alignment: .trailing, spacing: 6) {
                 if let distanceMeters = candidate.distanceMeters {
-                    Text(DistanceFormatter.text(for: distanceMeters))
+                    Text(distanceMeters.formatted)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

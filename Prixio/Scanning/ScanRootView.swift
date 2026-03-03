@@ -266,9 +266,9 @@ struct ScanRootView: View {
 
                     Spacer()
 
-                    // Text("\(lastEntry.itemNameRaw) • \(CurrencyFormatter.display(lastEntry.priceValue)) / \(lastEntry.unitType.displayName)")
-                       //  .font(.caption)
-                       //  .foregroundStyle(.white.opacity(0.84))
+                    Text("\(lastEntry.itemNameRaw) • \(CurrencyFormatter.shared.display(lastEntry.priceValue)) / \(lastEntry.unitType.displayName)")
+                        .font(.caption)
+                       .foregroundStyle(.white.opacity(0.84))
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)

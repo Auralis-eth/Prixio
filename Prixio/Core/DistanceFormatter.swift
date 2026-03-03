@@ -7,15 +7,11 @@
 
 import CoreLocation
 
-enum DistanceFormatter {
-    static func text(for meters: CLLocationDistance) -> String {
-        if meters < 1000 {
-            return "\(Int(meters)) m"
+extension CLLocationDistance {
+    var formatted: String {
+        if self < 1000 {
+            return "\(Int(self)) m"
         }
-
-        return String(format: "%.1f km", meters / 1000)
+        return String(format: "%.1f km", self / 1000)
     }
 }
-
-
-

@@ -6,11 +6,11 @@
 //
 
 import UIKit
-@preconcurrency import Vision
+import Vision
 
-final class OCRService {
-    func analyze(image: UIImage) async -> OCRResult {
-        guard let cgImage = image.cgImage else {
+extension UIImage {
+    func extractOCR() async -> OCRResult {
+        guard let cgImage = cgImage else {
             return PriceParsingService.extract(from: [""])
         }
 
@@ -27,11 +27,10 @@ final class OCRService {
 
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
+            request.recognitionLanguages = ["en-US", "en-CA", "fr-CA"]
 
-            DispatchQueue.global(qos: .userInitiated).async {
-                let handler = VNImageRequestHandler(cgImage: cgImage)
-                try? handler.perform([request])
-            }
+            let handler = VNImageRequestHandler(cgImage: cgImage)
+            try? handler.perform([request])
         }
     }
 }

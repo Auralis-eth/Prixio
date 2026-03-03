@@ -7,20 +7,29 @@
 
 import Foundation
 
-enum CurrencyFormatter {
-    static func string(_ value: Decimal) -> String {
+struct CurrencyFormatter {
+    static let shared = CurrencyFormatter()
+    
+    private let decimalFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
-        return formatter.string(from: value as NSDecimalNumber) ?? ""
-    }
-
-    static func display(_ value: Decimal) -> String {
+        return formatter
+    }()
+    
+    private let currencyFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = "CAD"
-        return formatter.string(from: value as NSDecimalNumber) ?? "$0.00"
+        return formatter
+    }()
+    
+    func string(_ value: Decimal) -> String {
+        decimalFormatter.string(from: value as NSDecimalNumber) ?? ""
+    }
+    
+    func display(_ value: Decimal) -> String {
+        currencyFormatter.string(from: value as NSDecimalNumber) ?? "$0.00"
     }
 }
-
