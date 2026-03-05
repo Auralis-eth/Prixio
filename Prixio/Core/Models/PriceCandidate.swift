@@ -8,7 +8,10 @@
 import Foundation
 
 struct PriceCandidate: Identifiable, Equatable {
-    let id = UUID()
+    var id: String {
+        "\(value)" + "\(confidence)" + ( quantity.map{ "\($0)" } ?? "")
+    }
+
     let label: String
     let value: Decimal
     let quantity: Decimal?

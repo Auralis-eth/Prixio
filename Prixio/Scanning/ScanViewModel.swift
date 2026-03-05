@@ -11,6 +11,7 @@ import SwiftUI
 import UIKit
 
 import Combine
+import MapKit
 
 @MainActor
 final class ScanViewModel: ObservableObject {
@@ -59,7 +60,7 @@ final class ScanViewModel: ObservableObject {
     private var candidatePreview: StoreCandidate? {
         if !draft.storeLocationName.isEmpty || draft.storeChainName != nil {
             return StoreCandidate(
-                id: UUID(),
+                id: UUID().uuidString,
                 chainName: draft.storeChainName,
                 locationName: draft.storeLocationName.isEmpty ? "Detected store" : draft.storeLocationName,
                 address: draft.storeAddress,
@@ -72,6 +73,7 @@ final class ScanViewModel: ObservableObject {
     }
 
     private var inferredStoreCandidate: StoreCandidate?
+    private var activeScanID: UUID?
 
     func configureRecentItems(with entries: [PriceEntry]) {
         recentItems = Array(
@@ -122,6 +124,8 @@ final class ScanViewModel: ObservableObject {
             return
         }
 
+        let scanID = UUID()
+        activeScanID = scanID
         previewImage = image
         capturedImage = image
         draft = PriceEntryDraft(
@@ -132,6 +136,9 @@ final class ScanViewModel: ObservableObject {
         isShowingConfirmationSheet = true
 
         let result = await image.extractOCR()
+        guard activeScanID == scanID else {
+            return
+        }
         draft.ocrText = result.rawText
         draft.confidence = result.confidence
         draft.priceText = result.price.map(CurrencyFormatter.shared.string) ?? ""
@@ -142,6 +149,9 @@ final class ScanViewModel: ObservableObject {
 
         if sessionStore.nearbyCandidates.isEmpty {
             let stores = await storeService.fetchNearbyStores(location: currentLocation)
+            guard activeScanID == scanID else {
+                return
+            }
             sessionStore.updateCandidates(stores)
         }
 
@@ -181,6 +191,7 @@ final class ScanViewModel: ObservableObject {
     }
 
     func dismissConfirmationForRetake() {
+        invalidateActiveScan()
         isShowingConfirmationSheet = false
         capturedImage = nil
         previewImage = nil
@@ -188,6 +199,7 @@ final class ScanViewModel: ObservableObject {
     }
 
     func discardCapture() {
+        invalidateActiveScan()
         isShowingConfirmationSheet = false
         capturedImage = nil
         previewImage = nil
@@ -290,5 +302,10 @@ final class ScanViewModel: ObservableObject {
         }
 
         return closeMatches.count < 2
+    }
+
+    private func invalidateActiveScan() {
+        activeScanID = nil
+        isProcessingOCR = false
     }
 }

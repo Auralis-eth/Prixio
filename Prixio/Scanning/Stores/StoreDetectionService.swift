@@ -10,37 +10,27 @@ import MapKit
 
 @MainActor
 final class StoreDetectionService {
+    private let maxNearbyQueryCount = 8
+    private let interRequestDelayNanoseconds: UInt64 = 250_000_000
+    private let throttleRetryNanoseconds: UInt64 = 600_000_000
+    private let maxThrottleRetryCount = 1
+
     func fetchNearbyStores(location: CLLocation?) async -> [StoreCandidate] {
         guard let location else {
             return []
         }
 
+        let baseQueries = ["grocery", "supermarket", "farmers market", "bakery"]
+        let chainQueries = StoreCatalog.commonChains.map(\.name).filter { $0 != "Unknown" }
+        let queries = deduplicatedQueries(from: baseQueries + chainQueries)
+            .prefix(maxNearbyQueryCount)
+
         var collected: [StoreCandidate] = []
-        let queries = ["grocery", "supermarket"] + StoreCatalog.commonChains.map(\.name).filter { $0 != "Unknown" }
-
-        for query in queries {
-            var request = MKLocalSearch.Request()
-            request.naturalLanguageQuery = query
-            request.region = MKCoordinateRegion(
-                center: location.coordinate,
-                latitudinalMeters: 1_000,
-                longitudinalMeters: 1_000
-            )
-
-            let response = try? await MKLocalSearch(request: request).start()
-            let items = response?.mapItems ?? []
-            collected.append(contentsOf: items.map { item in
-                let placemarkLocation = item.placemark.location
-                return StoreCandidate(
-                    id: UUID(),
-                    chainName: StoreCatalog.inferredChain(from: item.name ?? ""),
-                    locationName: item.name ?? "Unknown Store",
-                    address: item.placemark.title,
-                    coordinate: placemarkLocation?.coordinate,
-                    distanceMeters: placemarkLocation?.distance(from: location),
-                    mapKitPlaceId: (item.name ?? "Unknown Store").mapItemIdentifier(coordinate:placemarkLocation?.coordinate)
-                )
-            })
+        for (index, query) in queries.enumerated() {
+            if index > 0 {
+                try? await Task.sleep(nanoseconds: interRequestDelayNanoseconds)
+            }
+            collected.append(contentsOf: await search(query: query, near: location))
         }
 
         let deduplicated = Dictionary(
@@ -67,7 +57,7 @@ final class StoreDetectionService {
             return []
         }
 
-        var request = MKLocalSearch.Request()
+        let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = query
         if let location {
             request.region = MKCoordinateRegion(
@@ -77,20 +67,76 @@ final class StoreDetectionService {
             )
         }
 
-        let response = try? await MKLocalSearch(request: request).start()
-        return (response?.mapItems ?? []).map { item in
-            let placemarkLocation = item.placemark.location
-            return StoreCandidate(
-                id: UUID(),
-                chainName: StoreCatalog.inferredChain(from: item.name ?? ""),
-                locationName: item.name ?? "Unknown Store",
-                address: item.placemark.title,
-                coordinate: placemarkLocation?.coordinate,
-                distanceMeters: location.flatMap { origin in
-                    placemarkLocation?.distance(from: origin)
-                },
-                mapKitPlaceId: (item.name ?? "Unknown Store").mapItemIdentifier(coordinate: placemarkLocation?.coordinate )
-            )
+        return await search(request: request, near: location)
+    }
+    
+    private func search(request: MKLocalSearch.Request, near location: CLLocation?) async -> [StoreCandidate] {
+        await search(request: request, near: location, retryCount: 0)
+    }
+
+    private func search(
+        request: MKLocalSearch.Request,
+        near location: CLLocation?,
+        retryCount: Int
+    ) async -> [StoreCandidate] {
+        do {
+            let response = try await MKLocalSearch(request: request).start()
+            return response.mapItems.compactMap { item in
+                guard let identifier = item.identifier else {
+                    return nil
+                }
+                let placemarkLocation = item.placemark.location
+                return StoreCandidate(
+                    id: identifier.rawValue,
+                    chainName: StoreCatalog.inferredChain(from: item.name ?? ""),
+                    locationName: item.name ?? "Unknown Store",
+                    address: item.address?.shortAddress,
+                    coordinate: placemarkLocation?.coordinate,
+                    distanceMeters: location.flatMap { origin in
+                        placemarkLocation?.distance(from: origin)
+                    },
+                    mapKitPlaceId: (item.name ?? "Unknown Store").mapItemIdentifier(coordinate: placemarkLocation?.coordinate )
+                )
+            }
+        } catch let error as MKError {
+            switch error.code {
+            case .unknown:
+                return []
+            case .serverFailure:
+                return []
+            case .loadingThrottled:
+                guard retryCount < maxThrottleRetryCount else {
+                    return []
+                }
+                try? await Task.sleep(nanoseconds: throttleRetryNanoseconds)
+                return await search(request: request, near: location, retryCount: retryCount + 1)
+            case .placemarkNotFound:
+                return []
+            case .directionsNotFound:
+                return []
+            case .decodingFailed:
+                return []
+            @unknown default:
+                return []
+            }
+        } catch {
+            return []
+        }
+    }
+
+    private func deduplicatedQueries(from queries: [String]) -> [String] {
+        var seen = Set<String>()
+        return queries.compactMap { query in
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return nil
+            }
+
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else {
+                return nil
+            }
+            return trimmed
         }
     }
 }

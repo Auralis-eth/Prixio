@@ -14,6 +14,7 @@ enum PriceParsingService {
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
     private static let impliedCurrencyPattern = #"(^|[^\d])(\d{3,4})(?=$|[^\d])"#
     private static let poundsPerKilogram = Decimal(string: "2.2046226218")!
+    private static let supportedOCRLinePattern = #"^[\p{Latin}\p{N}\p{P}\p{Zs}]+$"#
     private static let receiptMarkers = [
         "subtotal",
         "total",
@@ -34,13 +35,44 @@ enum PriceParsingService {
     }
 
     static func extract(from observations: [OCRTextObservation]) -> OCRResult {
+        let cleanedObservations = observations.filter {
+            isSupportedOCRLine($0.string)
+        }
+        let text = cleanedObservations.map(\.string)
+
         
         // TODO: Foundation Model the text
         // https://developer.apple.com/documentation/FoundationModels
-        let session = LanguageModelSession()
+        let session = LanguageModelSession(instructions: Instructions {
+            """
+            You are a Retail Shelf Assistant. Translate raw OCR text from store shelf images into clean, structured product entries.
+
+            PERSONA: High-precision retail data extractor. Convert OCR noise into a single, accurate shopping list entry.
+
+            EXTRACTION RULES
+
+            Product Identification:
+            - Combine brand + variety/flavor + size into one descriptor (e.g., "Oreo Double Stuf 15.35oz")
+            - If a brand name appears multiple times, treat it as the target product
+            - Ignore category signage, neighboring items, shelf location codes, and stock numbers
+
+            Price Identification (priority order):
+            1. Promotional price — "Buy X for $Y" or "2 for $X" always takes precedence
+            2. Standard format — $X.XX or X.XX near keywords: "Sale", "Each", "lb", "Price"
+            3. Raw digit clusters — interpret 3–4 digit strings near the product as currency (e.g., "499" → "$4.99")
+
+            De-Noising:
+            - Remove duplicates, OCR artifacts (e.g., "|||", "___", "---"), barcodes, and unrelated metadata
+            - Discard partial text from neighboring products
+
+            ERROR HANDLING
+            - No price found → Price: Price not detected
+            - Text too garbled to identify product → Unable to identify item from OCR data
+            """
+        })
         let prompt = Prompt {
             "Summarize this OCR text from my purchase for my record keeping:"
-            observations.map { Prompt($0.string) }
+            text.map { Prompt($0) }
         }
         Task {
             do {
@@ -87,9 +119,9 @@ enum PriceParsingService {
         }
         
         
-        let text = observations.map(\.string)
+        
         let normalizedText = text.joined(separator: "\n").replacingOccurrences(of: ",", with: ".")
-        let priceCandidates = extractPriceCandidates(from: observations)
+        let priceCandidates = extractPriceCandidates(from: cleanedObservations)
         let unit = detectUnit(in: normalizedText)
         let lines = normalizedText
             .components(separatedBy: .newlines)
@@ -105,9 +137,22 @@ enum PriceParsingService {
             price: priceCandidates.first?.value,
             unit: unit,
             quantity: priceCandidates.first?.quantity,
-            confidence: priceCandidates.first?.confidence ?? averageConfidence(in: observations) ?? 0.1,
+            confidence: priceCandidates.first?.confidence ?? averageConfidence(in: cleanedObservations) ?? 0.1,
             priceCandidates: priceCandidates
         )
+    }
+
+    private static func isSupportedOCRLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+
+        guard let regex = try? NSRegularExpression(pattern: supportedOCRLinePattern) else {
+            return true
+        }
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        return regex.firstMatch(in: trimmed, range: range) != nil
     }
 
     static func normalize(price: Decimal, unit: UnitType, quantity: Decimal?) -> (Decimal, UnitType)? {

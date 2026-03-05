@@ -254,6 +254,7 @@ struct ScanRootView: View {
                     }
                     .frame(width: 56, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    
                 }
                 .accessibilityLabel("Gallery or last photo")
             }

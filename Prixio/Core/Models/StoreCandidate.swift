@@ -8,7 +8,7 @@
 import CoreLocation
 
 struct StoreCandidate: Identifiable {
-    let id: UUID
+    let id: String
     let chainName: String?
     let locationName: String
     let address: String?
