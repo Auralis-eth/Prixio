@@ -47,6 +47,29 @@ struct PrixioTests {
         #expect(result.priceCandidates.first?.sourceText == "High confidence 4.99")
     }
 
+    @Test func consolidatesNoisyDuplicateOCRTokens() async throws {
+        let result = PriceParsingService.extract(
+            from: [
+                "MinI",
+                "EggS",
+                "Min",
+                "Cadbury",
+                "Eg95",
+                "* MIni",
+                "Eggs",
+                "Mini",
+                "EggS",
+                "Min!",
+                "Eggs",
+                "Cadbury Chocolate Mini"
+            ]
+        )
+
+        #expect(result.rawText.contains("Cadbury Chocolate Mini"))
+        #expect(result.rawText.contains("* MIni") == false)
+        #expect(result.rawText.contains("Min!") == false)
+    }
+
     @Test func normalizesPoundsToKilograms() async throws {
         let normalized = PriceParsingService.normalize(
             price: Decimal(string: "3.99")!,

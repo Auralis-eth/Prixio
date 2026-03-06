@@ -9,10 +9,19 @@ import Foundation
 import FoundationModels
 
 enum PriceParsingService {
+    private struct ConsolidatedObservation {
+        let observation: OCRTextObservation
+        let words: [String]
+        let hasDigits: Bool
+    }
+
     private static let currencyPattern = #"\$?\s*(\d+[.,]\d{2})"#
     private static let multiBuyPattern = #"(\d+)\s*(?:/|for)\s*\$?\s*(\d+(?:[.,]\d{2})?)"#
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
     private static let impliedCurrencyPattern = #"(^|[^\d])(\d{3,4})(?=$|[^\d])"#
+    private static let simplePricePattern = #"\$?\s*\d+[.,]\d{2}"#
+    private static let shelfCodePattern = #"^[A-Z0-9]{2,}(?:[/\-][A-Z0-9]{2,})+$"#
+    private static let skuLikeTokenPattern = #"^[A-Z]*\d+[A-Z\d\-\/]*$"#
     private static let poundsPerKilogram = Decimal(string: "2.2046226218")!
     private static let supportedOCRLinePattern = #"^[\p{Latin}\p{N}\p{P}\p{Zs}]+$"#
     private static let receiptMarkers = [
@@ -35,10 +44,12 @@ enum PriceParsingService {
     }
 
     static func extract(from observations: [OCRTextObservation]) -> OCRResult {
-        let cleanedObservations = observations.filter {
+        let supportedObservations = observations.filter {
             isSupportedOCRLine($0.string)
         }
-        let text = cleanedObservations.map(\.string)
+        let cleanedObservations = removeObviousNoise(from: supportedObservations)
+        let consolidatedObservations = consolidateObservations(cleanedObservations)
+        let text = consolidatedObservations.map(\.string)
 
         
         // TODO: Foundation Model the text
@@ -121,7 +132,7 @@ enum PriceParsingService {
         
         
         let normalizedText = text.joined(separator: "\n").replacingOccurrences(of: ",", with: ".")
-        let priceCandidates = extractPriceCandidates(from: cleanedObservations)
+        let priceCandidates = extractPriceCandidates(from: consolidatedObservations)
         let unit = detectUnit(in: normalizedText)
         let lines = normalizedText
             .components(separatedBy: .newlines)
@@ -137,7 +148,7 @@ enum PriceParsingService {
             price: priceCandidates.first?.value,
             unit: unit,
             quantity: priceCandidates.first?.quantity,
-            confidence: priceCandidates.first?.confidence ?? averageConfidence(in: cleanedObservations) ?? 0.1,
+            confidence: priceCandidates.first?.confidence ?? averageConfidence(in: consolidatedObservations) ?? 0.1,
             priceCandidates: priceCandidates
         )
     }
@@ -153,6 +164,278 @@ enum PriceParsingService {
         }
         let range = NSRange(trimmed.startIndex..., in: trimmed)
         return regex.firstMatch(in: trimmed, range: range) != nil
+    }
+
+    private static func removeObviousNoise(from observations: [OCRTextObservation]) -> [OCRTextObservation] {
+        var seenKeys = Set<String>()
+
+        return observations.compactMap { observation in
+            let sanitized = sanitizeOCRLine(observation.string)
+            guard !sanitized.isEmpty else {
+                return nil
+            }
+
+            guard !isObviousNoiseLine(sanitized) else {
+                return nil
+            }
+
+            let key = normalizedWords(in: sanitized).joined(separator: " ")
+            guard !key.isEmpty else {
+                return nil
+            }
+
+            guard seenKeys.insert(key).inserted else {
+                return nil
+            }
+
+            return OCRTextObservation(string: sanitized, confidence: observation.confidence)
+        }
+    }
+
+    private static func isObviousNoiseLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return true
+        }
+
+        let words = normalizedWords(in: trimmed)
+        guard !words.isEmpty else {
+            return true
+        }
+
+        let hasDigits = trimmed.contains(where: \.isNumber)
+        let hasLetters = trimmed.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+        let hasPriceSignal = containsPriceSignal(in: trimmed)
+        let hasUnitSignal = detectUnit(in: trimmed) != nil
+
+        if isLikelyShelfCode(trimmed) || isLikelySKU(trimmed) {
+            return true
+        }
+
+        if !hasLetters && hasDigits && !hasPriceSignal {
+            return true
+        }
+
+        if words.count == 1 && !hasPriceSignal && !hasUnitSignal {
+            let token = words[0]
+            if hasDigits {
+                return true
+            }
+            if token.count <= 3 {
+                return true
+            }
+            if token.count >= 7 && !containsVowel(token) {
+                return true
+            }
+        }
+
+        if words.count == 2 && !hasPriceSignal && !hasUnitSignal && words.allSatisfy({ $0.count <= 3 }) {
+            return true
+        }
+
+        return false
+    }
+
+    private static func containsPriceSignal(in text: String) -> Bool {
+        if text.contains("$") {
+            return true
+        }
+
+        guard let regex = try? NSRegularExpression(pattern: simplePricePattern) else {
+            return false
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.firstMatch(in: text, range: range) != nil
+    }
+
+    private static func isLikelyShelfCode(_ text: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: shelfCodePattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.firstMatch(in: text, range: range) != nil
+    }
+
+    private static func isLikelySKU(_ text: String) -> Bool {
+        let compact = text.replacingOccurrences(of: " ", with: "")
+        guard compact.count >= 4 else {
+            return false
+        }
+        guard compact.contains(where: \.isNumber) else {
+            return false
+        }
+        guard compact.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else {
+            return false
+        }
+        guard let regex = try? NSRegularExpression(pattern: skuLikeTokenPattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        let range = NSRange(compact.startIndex..., in: compact)
+        return regex.firstMatch(in: compact, range: range) != nil
+    }
+
+    private static func containsVowel(_ token: String) -> Bool {
+        token.range(of: "[aeiou]", options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static func consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
+        var clusterOrder: [String] = []
+        var clusterBest: [String: ConsolidatedObservation] = [:]
+        var singleWordFrequency: [String: Int] = [:]
+
+        for observation in observations {
+            let sanitized = sanitizeOCRLine(observation.string)
+            guard !sanitized.isEmpty else {
+                continue
+            }
+
+            let words = normalizedWords(in: sanitized)
+            guard !words.isEmpty else {
+                continue
+            }
+
+            let hasDigits = words.contains { word in
+                word.contains(where: \.isNumber)
+            }
+
+            if !hasDigits && words.count == 1 {
+                singleWordFrequency[words[0], default: 0] += 1
+            }
+
+            let key = words.joined(separator: " ")
+            guard !key.isEmpty else {
+                continue
+            }
+
+            var clusterKey = key
+            if !hasDigits && words.count == 1 {
+                let word = words[0]
+                if let nearMatch = clusterBest.keys.first(where: { existingKey in
+                    isSingleWordNearMatch(word, existingKey)
+                }) {
+                    clusterKey = nearMatch
+                }
+            }
+
+            let candidate = ConsolidatedObservation(
+                observation: OCRTextObservation(string: sanitized, confidence: observation.confidence),
+                words: words,
+                hasDigits: hasDigits
+            )
+
+            if let current = clusterBest[clusterKey] {
+                if shouldReplaceClusterRepresentative(current: current, candidate: candidate) {
+                    clusterBest[clusterKey] = candidate
+                }
+            } else {
+                clusterOrder.append(clusterKey)
+                clusterBest[clusterKey] = candidate
+            }
+        }
+
+        let kept = clusterOrder.compactMap { clusterBest[$0] }
+        let multiWordVocabulary = Set(
+            kept
+                .filter { !$0.hasDigits && $0.words.count >= 2 }
+                .flatMap(\.words)
+        )
+
+        return kept.compactMap { entry in
+            if !entry.hasDigits,
+               entry.words.count == 1,
+               let word = entry.words.first,
+               singleWordFrequency[word, default: 0] > 1,
+               multiWordVocabulary.contains(word) {
+                return nil
+            }
+            return entry.observation
+        }
+    }
+
+    private static func shouldReplaceClusterRepresentative(
+        current: ConsolidatedObservation,
+        candidate: ConsolidatedObservation
+    ) -> Bool {
+        if candidate.observation.confidence != current.observation.confidence {
+            return candidate.observation.confidence > current.observation.confidence
+        }
+        return candidate.observation.string.count > current.observation.string.count
+    }
+
+    private static func sanitizeOCRLine(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ""
+        }
+        return trimmed.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+    }
+
+    private static func normalizedWords(in line: String) -> [String] {
+        let lowered = line.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalized = lowered.replacingOccurrences(
+            of: #"[^\p{L}\p{N}]+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        return normalized
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .filter { !$0.isEmpty }
+    }
+
+    private static func isSingleWordNearMatch(_ lhs: String, _ rhsKey: String) -> Bool {
+        guard !lhs.isEmpty else {
+            return false
+        }
+        guard !rhsKey.contains(" ") else {
+            return false
+        }
+        return editDistanceAtMostOne(lhs, rhsKey)
+    }
+
+    private static func editDistanceAtMostOne(_ lhs: String, _ rhs: String) -> Bool {
+        let lhsChars = Array(lhs)
+        let rhsChars = Array(rhs)
+        let lengthDelta = abs(lhsChars.count - rhsChars.count)
+        if lengthDelta > 1 {
+            return false
+        }
+
+        var i = 0
+        var j = 0
+        var mismatches = 0
+
+        while i < lhsChars.count && j < rhsChars.count {
+            if lhsChars[i] == rhsChars[j] {
+                i += 1
+                j += 1
+                continue
+            }
+
+            mismatches += 1
+            if mismatches > 1 {
+                return false
+            }
+
+            if lhsChars.count > rhsChars.count {
+                i += 1
+            } else if lhsChars.count < rhsChars.count {
+                j += 1
+            } else {
+                i += 1
+                j += 1
+            }
+        }
+
+        if i < lhsChars.count || j < rhsChars.count {
+            mismatches += 1
+        }
+
+        return mismatches <= 1
     }
 
     static func normalize(price: Decimal, unit: UnitType, quantity: Decimal?) -> (Decimal, UnitType)? {
