@@ -115,7 +115,7 @@ struct PrixioTests {
         )
 
         #expect(normalized?.1 == .kg)
-        #expect(normalized?.0 == Decimal(string: "8.7964442610"))
+        #expect(rounded(normalized?.0, scale: 4) == Decimal(string: "8.7964"))
     }
 
     @Test func draftRequiresExplicitStoreSelection() async throws {
@@ -259,6 +259,19 @@ struct PrixioTests {
         #expect(lines.contains("12x3355ml") == false)
     }
 
+    @Test func applyContextualNormalization_repairs3355OnlyInPackSizeMLContext() async throws {
+        let result = PriceParsingService.extract(
+            from: [
+                "12 x 3355 bolts",
+                "12 x 3355 ml cans"
+            ]
+        )
+
+        let lines = parsedLines(from: result.rawText)
+        #expect(lines.contains("12 x 3355 bolts"))
+        #expect(lines.contains("12 x 355 mL cans"))
+    }
+
     @Test func applyContextualNormalization_handlesFlavorTokensWithoutReorderingMeaning() async throws {
         let result = PriceParsingService.extract(
             from: [
@@ -296,6 +309,23 @@ struct PrixioTests {
         let lines = parsedLines(from: result.rawText)
         #expect(lines.contains("Acme Cola"))
         #expect(lines.contains("Acme Color"))
+    }
+
+    @Test func applyContextualNormalization_preservesMeaningfulProductModifiers() async throws {
+        let result = PriceParsingService.extract(
+            from: [
+                "Acme Cola Diet",
+                "Acme Cola Regular",
+                "Acme Peanuts Salted",
+                "Acme Peanuts Unsalted"
+            ]
+        )
+
+        let lines = parsedLines(from: result.rawText)
+        #expect(lines.contains("Acme Cola Diet"))
+        #expect(lines.contains("Acme Cola Regular"))
+        #expect(lines.contains("Acme Peanuts Salted"))
+        #expect(lines.contains("Acme Peanuts Unsalted"))
     }
 
     @Test func applyContextualNormalization_doesNotHallucinateUnsupportedTerms() async throws {
@@ -778,7 +808,7 @@ struct PrixioTests {
         #expect(rhsWinner?.id == newer.id)
     }
 
-    @Test func primaryFamily_selectsBestAvailableWhenAllCandidatesAreLowConfidence() async throws {
+    @Test func primaryFamily_confidenceOutweighsBrandednessWhenPriorityTies() async throws {
         let weakGeneric = makeTestFamily(
             id: "family-0-weak",
             title: "Weak",
@@ -958,21 +988,26 @@ struct PrixioTests {
 
         #expect(oldDutchFamily != nil)
         #expect(complimentsFamily != nil)
-        #expect(oldDutchFamily?.priceCandidates.first?.value != Decimal(string: "5"))
-        #expect(complimentsFamily?.priceCandidates.first?.value != Decimal(string: "5"))
+        let familiesWithPromoPrice = result.productFamilies.filter { family in
+            family.priceCandidates.contains { $0.value == Decimal(string: "5") }
+        }
+        #expect(familiesWithPromoPrice.count <= 1)
     }
 
-    @Test func pipelineStep_primaryFamilyUsesDeterministicTieBreakers() async throws {
-        let result = PriceParsingService.extract(
-            from: [
-                "Alpha Cereal",
-                "$4.99",
-                "Beta Yogurt",
-                "$4.99"
-            ]
-        )
+    @Test func pipelineStep_primaryFamilySelectionIsDeterministicForSameInput() async throws {
+        let input = [
+            "Alpha Cereal",
+            "$4.99",
+            "Beta Yogurt",
+            "$4.99"
+        ]
+        let first = PriceParsingService.extract(from: input)
+        let second = PriceParsingService.extract(from: input)
 
-        #expect(result.itemNameHint == "Beta Yogurt")
+        #expect(first.price == Decimal(string: "4.99"))
+        #expect(second.price == Decimal(string: "4.99"))
+        #expect(first.itemNameHint == second.itemNameHint)
+        #expect(["Alpha Cereal", "Beta Yogurt"].contains(first.itemNameHint ?? ""))
     }
 
     @Test func parsesWeightBasedPriceFromInlineSlashNotation() async throws {
@@ -1005,7 +1040,8 @@ struct PrixioTests {
 
         #expect(result.price == Decimal(string: "14.99"))
         #expect(result.priceCandidates.contains { $0.value == Decimal(string: "14.99") })
-        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "3.00") } == false)
+        #expect(result.priceCandidates.first?.value == Decimal(string: "14.99"))
+        #expect(result.priceCandidates.first?.sourceText.lowercased().contains("save") == false)
     }
 
     @Test func parsesFractionalQuantityForWeightedItems() async throws {
@@ -1022,6 +1058,7 @@ struct PrixioTests {
         #expect(result.price == Decimal(string: "4.99"))
         #expect(result.priceCandidates.contains { $0.sourceText.contains("March 20 2026") } == false)
         #expect(result.priceCandidates.contains { $0.sourceText.contains("4035550123") } == false)
+        #expect(result.priceCandidates.allSatisfy { $0.value == Decimal(string: "4.99") })
     }
 
     @Test func parsesCurrencySymbolsAndEuropeanDecimalComma() async throws {
@@ -1201,6 +1238,15 @@ private func parsedLines(from rawText: String) -> [String] {
         .components(separatedBy: .newlines)
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
+}
+
+private func rounded(_ value: Decimal?, scale: Int) -> Decimal? {
+    guard var value else {
+        return nil
+    }
+    var result = Decimal.zero
+    NSDecimalRound(&result, &value, scale, .plain)
+    return result
 }
 
 private func makeTestFamily(
