@@ -15,6 +15,25 @@ enum PriceParsingService {
         let hasDigits: Bool
     }
 
+    private struct ProductFamilyCluster {
+        var observations: [OCRTextObservation]
+        var keywordFrequency: [String: Int]
+        var firstIndex: Int
+        var lastIndex: Int
+    }
+
+    private struct ObservationSignals {
+        let keywords: Set<String>
+        let hasPriceSignal: Bool
+        let hasSizeSignal: Bool
+        let hasPromotionSignal: Bool
+    }
+
+    private struct VocabularySignal {
+        var frequency: Int
+        var lineIndexes: [Int]
+    }
+
     private static let currencyPattern = #"\$?\s*(\d+[.,]\d{2})"#
     private static let multiBuyPattern = #"(\d+)\s*(?:/|for)\s*\$?\s*(\d+(?:[.,]\d{2})?)"#
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
@@ -24,6 +43,17 @@ enum PriceParsingService {
     private static let skuLikeTokenPattern = #"^[A-Z]*\d+[A-Z\d\-\/]*$"#
     private static let poundsPerKilogram = Decimal(string: "2.2046226218")!
     private static let supportedOCRLinePattern = #"^[\p{Latin}\p{N}\p{P}\p{Zs}]+$"#
+    private static let familyStopWords: Set<String> = [
+        "a", "an", "and", "at", "buy", "each", "for", "from", "in", "is", "of", "on", "or", "price",
+        "sale", "save", "selected", "the", "to", "varieties", "with"
+    ]
+    private static let explicitTokenCorrections: [String: String] = [
+        "tutch": "dutch",
+        "sparkli": "sparkling",
+        "chese": "cheese",
+        "chees": "cheese",
+        "bbqma": "bbq"
+    ]
     private static let receiptMarkers = [
         "subtotal",
         "total",
@@ -48,7 +78,10 @@ enum PriceParsingService {
             isSupportedOCRLine($0.string)
         }
         let cleanedObservations = removeObviousNoise(from: supportedObservations)
-        let consolidatedObservations = consolidateObservations(cleanedObservations)
+        let normalizedObservations = applyContextualNormalization(to: cleanedObservations)
+        let consolidatedObservations = consolidateObservations(normalizedObservations)
+        let productFamilies = buildProductFamilies(from: consolidatedObservations)
+        let primaryFamily = primaryFamily(from: productFamilies)
         let text = consolidatedObservations.map(\.string)
 
         
@@ -132,9 +165,10 @@ enum PriceParsingService {
         
         
         let normalizedText = text.joined(separator: "\n").replacingOccurrences(of: ",", with: ".")
-        let priceCandidates = extractPriceCandidates(from: consolidatedObservations)
-        let unit = detectUnit(in: normalizedText)
-        let lines = normalizedText
+        let priceCandidates = primaryFamily?.priceCandidates ?? extractPriceCandidates(from: consolidatedObservations)
+        let unitScopeText = primaryFamily?.supportingLines.joined(separator: "\n") ?? ""
+        let unit = detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
+        let lines = (unitScopeText.isEmpty ? normalizedText : unitScopeText)
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -149,7 +183,8 @@ enum PriceParsingService {
             unit: unit,
             quantity: priceCandidates.first?.quantity,
             confidence: priceCandidates.first?.confidence ?? averageConfidence(in: consolidatedObservations) ?? 0.1,
-            priceCandidates: priceCandidates
+            priceCandidates: priceCandidates,
+            productFamilies: productFamilies
         )
     }
 
@@ -206,7 +241,7 @@ enum PriceParsingService {
         let hasDigits = trimmed.contains(where: \.isNumber)
         let hasLetters = trimmed.unicodeScalars.contains { CharacterSet.letters.contains($0) }
         let hasPriceSignal = containsPriceSignal(in: trimmed)
-        let hasUnitSignal = detectUnit(in: trimmed) != nil
+        let hasUnitSignal = detectUnit(in: trimmed) != nil || containsExplicitSizeToken(in: trimmed)
 
         if isLikelyShelfCode(trimmed) || isLikelySKU(trimmed) {
             return true
@@ -278,12 +313,430 @@ enum PriceParsingService {
         token.range(of: "[aeiou]", options: [.regularExpression, .caseInsensitive]) != nil
     }
 
+    private static func applyContextualNormalization(to observations: [OCRTextObservation]) -> [OCRTextObservation] {
+        let vocabularyFrequency = contextualVocabulary(from: observations)
+
+        return observations.enumerated().map { index, observation in
+            let repairedPackText = repairPackSizeNoise(in: observation.string)
+            let correctedTokens = repairedPackText
+                .split(whereSeparator: \.isWhitespace)
+                .map { token in
+                    correctedToken(
+                        String(token),
+                        vocabularyFrequency: vocabularyFrequency,
+                        observationConfidence: observation.confidence,
+                        lineIndex: index
+                    )
+                }
+                .joined(separator: " ")
+
+            return OCRTextObservation(
+                string: sanitizeOCRLine(correctedTokens),
+                confidence: observation.confidence
+            )
+        }
+    }
+
+    private static func contextualVocabulary(from observations: [OCRTextObservation]) -> [String: VocabularySignal] {
+        observations.enumerated().reduce(into: [:]) { frequency, entry in
+            let index = entry.offset
+            let observation = entry.element
+            let words = normalizedWords(in: observation.string)
+            for word in words where word.count >= 4 {
+                if var signal = frequency[word] {
+                    signal.frequency += 1
+                    signal.lineIndexes.append(index)
+                    frequency[word] = signal
+                } else {
+                    frequency[word] = VocabularySignal(frequency: 1, lineIndexes: [index])
+                }
+            }
+        }
+    }
+
+    private static func correctedToken(
+        _ token: String,
+        vocabularyFrequency: [String: VocabularySignal],
+        observationConfidence: Float,
+        lineIndex: Int
+    ) -> String {
+        let characterSet = CharacterSet.alphanumerics
+        let prefix = String(token.prefix { scalar in
+            guard let value = scalar.unicodeScalars.first else {
+                return false
+            }
+            return !characterSet.contains(value)
+        })
+        let suffix = String(token.reversed().prefix { scalar in
+            guard let value = scalar.unicodeScalars.first else {
+                return false
+            }
+            return !characterSet.contains(value)
+        }.reversed())
+        let coreStartIndex = token.index(token.startIndex, offsetBy: prefix.count)
+        let coreEndIndex = token.index(token.endIndex, offsetBy: -suffix.count)
+        guard coreStartIndex <= coreEndIndex else {
+            return token
+        }
+        let core = String(token[coreStartIndex..<coreEndIndex])
+        guard !core.isEmpty else {
+            return token
+        }
+
+        let normalizedCore = core.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        if let explicit = explicitTokenCorrections[normalizedCore.lowercased()] {
+            return prefix + applyCasePattern(from: core, to: explicit) + suffix
+        }
+
+        let lowerCore = normalizedCore.lowercased()
+        guard lowerCore.count >= 4 else {
+            return token
+        }
+        guard vocabularyFrequency[lowerCore] == nil else {
+            return token
+        }
+
+        let nearMatches = vocabularyFrequency.filter { candidate, signal in
+            signal.frequency >= 2
+                && candidate.first == lowerCore.first
+                && editDistanceAtMostOne(lowerCore, candidate)
+                && supportsContextualCorrection(
+                    signal: signal,
+                    observationConfidence: observationConfidence,
+                    lineIndex: lineIndex
+                )
+        }
+        guard let best = nearMatches.max(by: { lhs, rhs in lhs.value.frequency < rhs.value.frequency })?.key else {
+            return token
+        }
+
+        return prefix + applyCasePattern(from: core, to: best) + suffix
+    }
+
+    private static func supportsContextualCorrection(
+        signal: VocabularySignal,
+        observationConfidence: Float,
+        lineIndex: Int
+    ) -> Bool {
+        let hasNearbySupport = signal.lineIndexes.contains { abs($0 - lineIndex) <= 2 }
+
+        if observationConfidence >= 0.5 {
+            return hasNearbySupport || signal.frequency >= 3
+        }
+
+        return hasNearbySupport && signal.frequency >= 3
+    }
+
+    private static func applyCasePattern(from source: String, to replacement: String) -> String {
+        if source == source.uppercased() {
+            return replacement.uppercased()
+        }
+        if source == source.lowercased() {
+            return replacement.lowercased()
+        }
+        if source.prefix(1) == source.prefix(1).uppercased() {
+            return replacement.prefix(1).uppercased() + replacement.dropFirst().lowercased()
+        }
+        return replacement
+    }
+
+    private static func repairPackSizeNoise(in text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,2})\s*[xX]\s*(\d{3,4})\s*m[lL]"#) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        var result = text
+        let matches = regex.matches(in: text, range: range).reversed()
+
+        for match in matches {
+            guard
+                let packRange = Range(match.range(at: 1), in: result),
+                let volumeRange = Range(match.range(at: 2), in: result)
+            else {
+                continue
+            }
+
+            let packCount = String(result[packRange])
+            let rawVolume = String(result[volumeRange])
+            let correctedVolume = correctedVolumeToken(rawVolume)
+            let replacement = "\(packCount) x \(correctedVolume) mL"
+
+            let fullRange = match.range(at: 0)
+            let location = fullRange.location
+            let length = fullRange.length
+            let current = result as NSString
+            result = current.replacingCharacters(in: NSRange(location: location, length: length), with: replacement)
+        }
+
+        return result
+    }
+
+    private static func correctedVolumeToken(_ token: String) -> String {
+        guard token.count == 4 else {
+            return token
+        }
+        let chars = Array(token)
+        if chars[1] == chars[2] {
+            return "\(chars[0])\(chars[2])\(chars[3])"
+        }
+        if chars[2] == chars[3] {
+            return "\(chars[0])\(chars[1])\(chars[3])"
+        }
+        return token
+    }
+
+    private static func buildProductFamilies(from observations: [OCRTextObservation]) -> [ProductFamily] {
+        var clusters: [ProductFamilyCluster] = []
+
+        for (index, observation) in observations.enumerated() {
+            let lineSignals = signals(for: observation.string)
+            guard !lineSignals.keywords.isEmpty || lineSignals.hasPriceSignal else {
+                continue
+            }
+
+            if let bestIndex = bestClusterIndex(
+                for: lineSignals,
+                at: index,
+                in: clusters
+            ) {
+                clusters[bestIndex].observations.append(observation)
+                clusters[bestIndex].lastIndex = index
+                for keyword in lineSignals.keywords {
+                    clusters[bestIndex].keywordFrequency[keyword, default: 0] += 1
+                }
+            } else {
+                let keywordFrequency = lineSignals.keywords.reduce(into: [:]) { result, keyword in
+                    result[keyword, default: 0] += 1
+                }
+                clusters.append(
+                    ProductFamilyCluster(
+                        observations: [observation],
+                        keywordFrequency: keywordFrequency,
+                        firstIndex: index,
+                        lastIndex: index
+                    )
+                )
+            }
+        }
+
+        return clusters
+            .sorted { $0.firstIndex < $1.firstIndex }
+            .enumerated()
+            .map { offset, cluster in
+                let prices = extractPriceCandidates(from: cluster.observations)
+                let supportingLines = cluster.observations.map(\.string)
+                let title = familyTitle(from: cluster.observations)
+                let keywords = sortedKeywords(from: cluster.keywordFrequency)
+                return ProductFamily(
+                    id: "family-\(offset)-\(title.lowercased())",
+                    title: title,
+                    supportingLines: supportingLines,
+                    keywords: keywords,
+                    itemNameHint: supportingLines.first(where: { line in
+                        !line.contains("$") && detectUnit(in: line) == nil && !line.contains(where: \.isNumber)
+                    }),
+                    priceCandidates: prices
+                )
+            }
+    }
+
+    private static func primaryFamily(from families: [ProductFamily]) -> ProductFamily? {
+        families.max { lhs, rhs in
+            let lhsPrice = lhs.priceCandidates.first
+            let rhsPrice = rhs.priceCandidates.first
+
+            if (lhsPrice?.priority ?? 0) != (rhsPrice?.priority ?? 0) {
+                return (lhsPrice?.priority ?? 0) < (rhsPrice?.priority ?? 0)
+            }
+            if (lhsPrice?.confidence ?? 0) != (rhsPrice?.confidence ?? 0) {
+                return (lhsPrice?.confidence ?? 0) < (rhsPrice?.confidence ?? 0)
+            }
+            let lhsProductSignal = productLineSignalScore(for: lhs)
+            let rhsProductSignal = productLineSignalScore(for: rhs)
+            if lhsProductSignal != rhsProductSignal {
+                return lhsProductSignal < rhsProductSignal
+            }
+            let lhsPriceProximity = familyPriceProximityScore(for: lhs)
+            let rhsPriceProximity = familyPriceProximityScore(for: rhs)
+            if lhsPriceProximity != rhsPriceProximity {
+                return lhsPriceProximity < rhsPriceProximity
+            }
+            let lhsRecency = familyRecencyScore(for: lhs)
+            let rhsRecency = familyRecencyScore(for: rhs)
+            if lhsRecency != rhsRecency {
+                return lhsRecency < rhsRecency
+            }
+            return lhs.keywords.count < rhs.keywords.count
+        }
+    }
+
+    private static func productLineSignalScore(for family: ProductFamily) -> Int {
+        let descriptiveLines = family.supportingLines.filter { line in
+            !containsPriceSignal(in: line) && line.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+        }
+        let strongKeywords = family.keywords.filter { $0.count >= 4 }.count
+        return (descriptiveLines.count * 2) + strongKeywords
+    }
+
+    private static func familyPriceProximityScore(for family: ProductFamily) -> Int {
+        let lines = family.supportingLines
+        let priceIndices = lines.enumerated().compactMap { entry in
+            containsPriceSignal(in: entry.element) ? entry.offset : nil
+        }
+        let descriptorIndices = lines.enumerated().compactMap { entry in
+            let line = entry.element
+            let hasLetters = line.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+            return (!containsPriceSignal(in: line) && hasLetters) ? entry.offset : nil
+        }
+        guard !priceIndices.isEmpty, !descriptorIndices.isEmpty else {
+            return 0
+        }
+
+        let bestDistance = priceIndices.flatMap { priceIndex in
+            descriptorIndices.map { abs($0 - priceIndex) }
+        }.min() ?? Int.max
+        return max(0, 4 - bestDistance)
+    }
+
+    private static func familyRecencyScore(for family: ProductFamily) -> Int {
+        let components = family.id.components(separatedBy: "-")
+        guard components.count >= 2, let offset = Int(components[1]) else {
+            return 0
+        }
+        return offset
+    }
+
+    private static func signals(for line: String) -> ObservationSignals {
+        let words = normalizedWords(in: line)
+        let hasExplicitSizePattern = containsExplicitSizeToken(in: line)
+        let keywordSet = Set(words.filter { word in
+            if familyStopWords.contains(word) {
+                return false
+            }
+            if word.count >= 3 {
+                return true
+            }
+            return isSizeToken(word)
+        })
+        let lowered = line.lowercased()
+        return ObservationSignals(
+            keywords: keywordSet,
+            hasPriceSignal: containsPriceSignal(in: line),
+            hasSizeSignal: hasExplicitSizePattern || words.contains { token in
+                isSizeToken(token)
+            },
+            hasPromotionSignal: lowered.contains("buy ") || lowered.contains(" for ") || lowered.contains("/")
+        )
+    }
+
+    private static func isSizeToken(_ word: String) -> Bool {
+        word.range(of: #"^\d{1,4}(g|kg|ml|l|oz|lb|pk|ct)$"#, options: .regularExpression) != nil
+    }
+
+    private static func containsExplicitSizeToken(in line: String) -> Bool {
+        let words = normalizedWords(in: line)
+        if words.contains(where: { isSizeToken($0) }) {
+            return true
+        }
+        return line.range(
+            of: #"\d{1,4}\s*(ml|g|kg|l|oz|lb|pk|ct)"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func bestClusterIndex(
+        for signals: ObservationSignals,
+        at lineIndex: Int,
+        in clusters: [ProductFamilyCluster]
+    ) -> Int? {
+        struct ClusterScore {
+            let index: Int
+            let score: Int
+            let distance: Int
+            let anchorCount: Int
+        }
+
+        var scores: [ClusterScore] = []
+
+        for (index, cluster) in clusters.enumerated() {
+            let clusterKeywords = Set(cluster.keywordFrequency.keys)
+            let sharedKeywordCount = signals.keywords.intersection(clusterKeywords).count
+            let distance = abs(lineIndex - cluster.lastIndex)
+            let proximityScore = max(0, 2 - distance)
+            let anchorCount = cluster.keywordFrequency.keys.filter { $0.count >= 4 }.count
+            let score =
+                (sharedKeywordCount * 3)
+                + proximityScore
+                + (signals.hasPriceSignal ? 1 : 0)
+                + (signals.hasSizeSignal ? 1 : 0)
+                + (signals.hasPromotionSignal ? 1 : 0)
+            scores.append(ClusterScore(index: index, score: score, distance: distance, anchorCount: anchorCount))
+        }
+
+        guard let best = scores.max(by: { lhs, rhs in lhs.score < rhs.score }) else {
+            return nil
+        }
+
+        let sortedScores = scores.sorted { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
+            }
+            return lhs.distance < rhs.distance
+        }
+        let secondBest = sortedScores.dropFirst().first
+
+        let hasGenericSignals = signals.keywords.isEmpty
+            && (signals.hasPriceSignal || signals.hasSizeSignal || signals.hasPromotionSignal)
+        if hasGenericSignals {
+            if clusters.count > 1 {
+                let scoreGap = best.score - (secondBest?.score ?? 0)
+                let strongerThanNext = scoreGap >= 2
+                let hasStrongAnchor = best.anchorCount >= 2
+                let isNear = best.distance <= 1
+                guard best.score >= 4, hasStrongAnchor, isNear, strongerThanNext else {
+                    return nil
+                }
+                return best.index
+            }
+
+            let relaxedThreshold = best.score >= 2
+            return relaxedThreshold ? best.index : nil
+        }
+
+        guard best.score >= 3 else {
+            return nil
+        }
+        return best.index
+    }
+
+    private static func familyTitle(from observations: [OCRTextObservation]) -> String {
+        let descriptiveLine = observations
+            .map(\.string)
+            .first(where: { line in
+                !containsPriceSignal(in: line) && line.contains(where: { !$0.isNumber })
+            })
+
+        return descriptiveLine ?? observations.first?.string ?? "Uncategorized Item"
+    }
+
+    private static func sortedKeywords(from frequency: [String: Int]) -> [String] {
+        frequency
+            .sorted { lhs, rhs in
+                if lhs.value != rhs.value {
+                    return lhs.value > rhs.value
+                }
+                return lhs.key < rhs.key
+            }
+            .map(\.key)
+    }
+
     private static func consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
         var clusterOrder: [String] = []
         var clusterBest: [String: ConsolidatedObservation] = [:]
         var singleWordFrequency: [String: Int] = [:]
+        let nearbyVocabulary = nearbyMultiWordVocabulary(from: observations)
 
-        for observation in observations {
+        for (index, observation) in observations.enumerated() {
             let sanitized = sanitizeOCRLine(observation.string)
             guard !sanitized.isEmpty else {
                 continue
@@ -310,8 +763,11 @@ enum PriceParsingService {
             var clusterKey = key
             if !hasDigits && words.count == 1 {
                 let word = words[0]
+                let neighborhood = nearbyVocabulary[index]
                 if let nearMatch = clusterBest.keys.first(where: { existingKey in
-                    isSingleWordNearMatch(word, existingKey)
+                    let hasConsensus = singleWordFrequency[existingKey, default: 0] >= 2
+                    let hasContextualAnchor = neighborhood.contains(word) || neighborhood.contains(existingKey)
+                    return isSingleWordNearMatch(word, existingKey) && (hasConsensus || hasContextualAnchor)
                 }) {
                     clusterKey = nearMatch
                 }
@@ -349,6 +805,28 @@ enum PriceParsingService {
                 return nil
             }
             return entry.observation
+        }
+    }
+
+    private static func nearbyMultiWordVocabulary(from observations: [OCRTextObservation], radius: Int = 1) -> [Set<String>] {
+        let tokenized = observations.map { observation in
+            normalizedWords(in: sanitizeOCRLine(observation.string))
+        }
+
+        return tokenized.enumerated().map { index, _ in
+            let lowerBound = max(0, index - radius)
+            let upperBound = min(tokenized.count - 1, index + radius)
+            var vocabulary = Set<String>()
+
+            for neighbor in lowerBound...upperBound where neighbor != index {
+                let words = tokenized[neighbor]
+                guard words.count >= 2 else {
+                    continue
+                }
+                words.forEach { vocabulary.insert($0) }
+            }
+
+            return vocabulary
         }
     }
 
@@ -703,4 +1181,18 @@ enum PriceParsingService {
 
         return nil
     }
+
+#if DEBUG
+    static func _test_consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
+        consolidateObservations(observations)
+    }
+
+    static func _test_buildProductFamilies(from observations: [OCRTextObservation]) -> [ProductFamily] {
+        buildProductFamilies(from: observations)
+    }
+
+    static func _test_primaryFamily(from families: [ProductFamily]) -> ProductFamily? {
+        primaryFamily(from: families)
+    }
+#endif
 }
