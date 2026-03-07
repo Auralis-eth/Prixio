@@ -975,6 +975,225 @@ struct PrixioTests {
         #expect(result.itemNameHint == "Beta Yogurt")
     }
 
+    @Test func parsesWeightBasedPriceFromInlineSlashNotation() async throws {
+        let result = PriceParsingService.extract(from: ["Apples", "$1.99/lb"])
+
+        #expect(result.price == Decimal(string: "1.99"))
+        #expect(result.unit == .lb)
+        #expect(result.quantity == Decimal(1))
+    }
+
+    @Test func parsesWeightBasedPriceFromPerLineNotation() async throws {
+        let result = PriceParsingService.extract(from: ["Bananas", "0.69", "per lb"])
+
+        #expect(result.price == Decimal(string: "0.69"))
+        #expect(result.unit == .lb)
+        #expect(result.quantity == Decimal(1))
+    }
+
+    @Test func prioritizesMemberPriceOverRegularPriceWhenBothPresent() async throws {
+        let result = PriceParsingService.extract(from: ["Member Price $4.99", "Regular Price $5.99"])
+
+        #expect(result.price == Decimal(string: "4.99"))
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "4.99") })
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "5.99") })
+        #expect(result.priceCandidates.first?.sourceText == "Member Price $4.99")
+    }
+
+    @Test func ignoresSaveLinePriceWhenSelectingProductPrice() async throws {
+        let result = PriceParsingService.extract(from: ["Steak", "$14.99", "Save $3.00"])
+
+        #expect(result.price == Decimal(string: "14.99"))
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "14.99") })
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "3.00") } == false)
+    }
+
+    @Test func parsesFractionalQuantityForWeightedItems() async throws {
+        let result = PriceParsingService.extract(from: ["Ham", "1/2 lb", "$5.00"])
+
+        #expect(result.price == Decimal(string: "5.00"))
+        #expect(result.unit == .lb)
+        #expect(result.quantity == Decimal(string: "0.5"))
+    }
+
+    @Test func ignoresDateAndPhoneNumbersAsPriceCandidates() async throws {
+        let result = PriceParsingService.extract(from: ["Milk", "$4.99", "March 20 2026", "4035550123"])
+
+        #expect(result.price == Decimal(string: "4.99"))
+        #expect(result.priceCandidates.contains { $0.sourceText.contains("March 20 2026") } == false)
+        #expect(result.priceCandidates.contains { $0.sourceText.contains("4035550123") } == false)
+    }
+
+    @Test func parsesCurrencySymbolsAndEuropeanDecimalComma() async throws {
+        let result = PriceParsingService.extract(from: ["Greek Yogurt", "$4.99", "4,99", "4.99$"])
+
+        #expect(result.price == Decimal(string: "4.99"))
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "4.99") })
+    }
+
+    @Test func parsesZeroPriceSignalsForFreeItems() async throws {
+        let result = PriceParsingService.extract(from: ["Promo Item", "FREE", "$0.00", "0/$0"])
+
+        #expect(result.price == Decimal.zero)
+        #expect(result.priceCandidates.contains { $0.value == Decimal.zero })
+    }
+
+    @Test func salePriceWinsOverWasPrice() async throws {
+        let result = PriceParsingService.extract(from: ["WAS $6.99", "NOW $4.99"])
+
+        #expect(result.price == Decimal(string: "4.99"))
+        #expect(result.priceCandidates.first?.sourceText == "NOW $4.99")
+    }
+
+    @Test func parsesThreeForTenMultiBuyOffer() async throws {
+        let result = PriceParsingService.extract(from: ["Oranges", "3 for $10"])
+
+        #expect(result.price == Decimal(string: "10"))
+        #expect(result.quantity == Decimal(string: "3"))
+    }
+
+    @Test func capturesPriceRangeCandidates() async throws {
+        let result = PriceParsingService.extract(from: ["Steak", "$3.99-$5.99"])
+
+        #expect(result.price == Decimal(string: "5.99"))
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "3.99") })
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "5.99") })
+    }
+
+    @Test func parsesVeryLargeAndVerySmallPrices() async throws {
+        let result = PriceParsingService.extract(from: ["Gift Basket $149.99", "Candy $0.09"])
+
+        #expect(result.price == Decimal(string: "149.99"))
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "149.99") })
+        #expect(result.priceCandidates.contains { $0.value == Decimal(string: "0.09") })
+    }
+
+    @Test func parsesUnitPricePerHundredGrams() async throws {
+        let result = PriceParsingService.extract(from: ["Cheddar", "$1.29/100g"])
+
+        #expect(result.price == Decimal(string: "1.29"))
+        #expect(result.unit == .hundredGrams)
+    }
+
+    @Test func preservesMixedLanguageAndHyphenatedTokens() async throws {
+        let result = PriceParsingService.extract(from: ["Crème fraîche", "Grüner Tee", "Häagen-Dazs", "Coca-Cola", "DIET COKE"])
+
+        #expect(result.rawText.contains("Crème fraîche"))
+        #expect(result.rawText.contains("Grüner Tee"))
+        #expect(result.rawText.contains("Häagen-Dazs"))
+        #expect(result.rawText.contains("Coca-Cola"))
+        #expect(result.rawText.contains("DIET COKE"))
+    }
+
+    @Test func buildsThreeDistinctFamiliesInOneScan() async throws {
+        let result = PriceParsingService.extract(
+            from: [
+                "Old Dutch Chips",
+                "$4.99",
+                "Lays Classic",
+                "$3.99",
+                "Coke Zero",
+                "$2.49"
+            ]
+        )
+
+        #expect(result.productFamilies.count >= 3)
+    }
+
+    @Test func keepsLongSingleProductDescriptionInOneFamily() async throws {
+        let families = PriceParsingService._test_buildProductFamilies(
+            from: [
+                OCRTextObservation(string: "Acme Organic Tomato Soup", confidence: 0.8),
+                OCRTextObservation(string: "No artificial flavors", confidence: 0.8),
+                OCRTextObservation(string: "Low sodium", confidence: 0.8),
+                OCRTextObservation(string: "$3.49", confidence: 0.9)
+            ]
+        )
+
+        #expect(families.count == 1)
+        #expect(families[0].supportingLines.contains("Acme Organic Tomato Soup"))
+        #expect(families[0].priceCandidates.first?.value == Decimal(string: "3.49"))
+    }
+
+    @Test func handlesPriceOrphanWithoutItemNameHint() async throws {
+        let result = PriceParsingService.extract(from: ["$3.99"])
+
+        #expect(result.price == Decimal(string: "3.99"))
+        #expect(result.itemNameHint == nil)
+        #expect(result.productFamilies.isEmpty == false)
+    }
+
+    @Test func receiptDetectionAvoidsSavingsFlyerFalsePositive() async throws {
+        let text = """
+        Weekend Flyer
+        Total Savings: $3
+        Buy 2 for $5
+        """
+
+        #expect(PriceParsingService.looksLikeReceipt(text: text) == false)
+    }
+
+    @Test func receiptDetectionRequiresMoreThanSingleSubtotalMarker() async throws {
+        #expect(PriceParsingService.looksLikeReceipt(text: "Subtotal 12.99") == false)
+    }
+
+    @Test func draftCannotSaveWhenAllRequiredFieldsAreMissing() async throws {
+        let draft = PriceEntryDraft()
+
+        #expect(draft.canSave == false)
+    }
+
+    @Test func draftRejectsInvalidPriceTextValues() async throws {
+        var draft = PriceEntryDraft()
+        draft.itemName = "Milk"
+        draft.selectedUnit = .each
+        draft.storeChainName = "Walmart"
+        draft.storeChainExplicitlySelected = true
+
+        draft.priceText = "abc"
+        #expect(draft.canSave == false)
+
+        draft.priceText = ""
+        #expect(draft.canSave == false)
+
+        draft.priceText = "-1"
+        #expect(draft.canSave == false)
+    }
+
+    @Test func draftRoundTripStillRequiresExplicitStoreSelection() async throws {
+        var draft = PriceEntryDraft()
+        draft.itemName = "Milk"
+        draft.priceText = "4.99"
+        draft.selectedUnit = .each
+        draft.storeChainName = "Walmart"
+        draft.storeChainExplicitlySelected = true
+
+        #expect(draft.canSave == true)
+
+        draft.storeChainName = nil
+        draft.storeChainExplicitlySelected = false
+        #expect(draft.canSave == false)
+    }
+
+    @Test func stressDeduplicatesManyIdenticalTokens() async throws {
+        let repeatedCadbury = Array(repeating: "Cadbury", count: 50)
+        let result = PriceParsingService.extract(from: repeatedCadbury + ["$4.99"])
+        let lines = parsedLines(from: result.rawText)
+
+        #expect(lines.filter { $0 == "Cadbury" }.count <= 1)
+        #expect(result.price == Decimal(string: "4.99"))
+    }
+
+    @Test func stressHandlesDeepLowConfidenceNoiseGracefully() async throws {
+        let observations = (0..<30).map { index in
+            OCRTextObservation(string: "noise \(index)", confidence: 0.1)
+        }
+        let result = PriceParsingService.extract(from: observations)
+
+        #expect(result.confidence != nil)
+        #expect(result.priceCandidates.isEmpty)
+    }
+
 }
 
 private func parsedLines(from rawText: String) -> [String] {

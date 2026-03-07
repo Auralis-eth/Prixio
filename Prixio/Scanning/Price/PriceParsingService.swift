@@ -39,6 +39,9 @@ enum PriceParsingService {
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
     private static let impliedCurrencyPattern = #"(^|[^\d])(\d{3,4})(?=$|[^\d])"#
     private static let simplePricePattern = #"\$?\s*\d+[.,]\d{2}"#
+    private static let quantityFractionPattern = #"\b(\d+)\s*/\s*(\d+)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
+    private static let quantityDecimalPattern = #"\b(\d+(?:[.,]\d+)?)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
+    private static let monthNamePattern = #"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b"#
     private static let shelfCodePattern = #"^[A-Z0-9]{2,}(?:[/\-][A-Z0-9]{2,})+$"#
     private static let skuLikeTokenPattern = #"^[A-Z]*\d+[A-Z\d\-\/]*$"#
     private static let poundsPerKilogram = Decimal(string: "2.2046226218")!
@@ -176,12 +179,17 @@ enum PriceParsingService {
             !line.contains("$") && detectUnit(in: line) == nil && !line.contains(where: { $0.isNumber })
         }
 
+        let resolvedQuantity = priceCandidates.first?.quantity ?? detectQuantity(
+            in: unitScopeText.isEmpty ? normalizedText : unitScopeText,
+            unit: unit
+        )
+
         return OCRResult(
             rawText: text.joined(separator: "\n"),
             itemNameHint: itemNameHint,
             price: priceCandidates.first?.value,
             unit: unit,
-            quantity: priceCandidates.first?.quantity,
+            quantity: resolvedQuantity,
             confidence: priceCandidates.first?.confidence ?? averageConfidence(in: consolidatedObservations) ?? 0.1,
             priceCandidates: priceCandidates,
             productFamilies: productFamilies
@@ -1042,6 +1050,10 @@ enum PriceParsingService {
         if let regex = try? NSRegularExpression(pattern: currencyPattern) {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             for match in matches {
+                if shouldIgnoreDirectPriceLine(text) {
+                    continue
+                }
+
                 guard
                     let range = Range(match.range(at: 1), in: text),
                     let price = Decimal(string: String(text[range]))
@@ -1058,7 +1070,7 @@ enum PriceParsingService {
                         label: "$\(price)",
                         value: price,
                         quantity: nil,
-                        priority: 3,
+                        priority: contextualPricePriority(in: observation.string, basePriority: 3),
                         sourceText: observation.string,
                         confidence: observation.confidence
                     )
@@ -1069,6 +1081,10 @@ enum PriceParsingService {
         if let regex = try? NSRegularExpression(pattern: impliedCurrencyPattern) {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             for match in matches {
+                if shouldIgnoreImpliedCurrencyLine(text) {
+                    continue
+                }
+
                 guard
                     let range = Range(match.range(at: 2), in: text),
                     let candidate = impliedCurrencyCandidate(
@@ -1180,6 +1196,104 @@ enum PriceParsingService {
         }
 
         return nil
+    }
+
+    private static func detectQuantity(in text: String, unit: UnitType?) -> Decimal? {
+        guard let unit else {
+            return nil
+        }
+
+        let lowered = text.lowercased().replacingOccurrences(of: ",", with: ".")
+
+        if unit == .lb {
+            if lowered.contains("/lb") || lowered.contains(" per lb") || lowered.contains(" lbs") {
+                return Decimal(1)
+            }
+        } else if unit == .kg, lowered.contains("/kg") || lowered.contains(" per kg") {
+            return Decimal(1)
+        } else if unit == .liter, lowered.contains("/l") || lowered.contains(" per l") {
+            return Decimal(1)
+        }
+
+        if let regex = try? NSRegularExpression(pattern: quantityFractionPattern, options: [.caseInsensitive]) {
+            let matches = regex.matches(in: lowered, range: NSRange(lowered.startIndex..., in: lowered))
+            for match in matches {
+                guard
+                    let numeratorRange = Range(match.range(at: 1), in: lowered),
+                    let denominatorRange = Range(match.range(at: 2), in: lowered),
+                    let numerator = Decimal(string: String(lowered[numeratorRange])),
+                    let denominator = Decimal(string: String(lowered[denominatorRange])),
+                    denominator > 0
+                else {
+                    continue
+                }
+                return numerator / denominator
+            }
+        }
+
+        if let regex = try? NSRegularExpression(pattern: quantityDecimalPattern, options: [.caseInsensitive]) {
+            let matches = regex.matches(in: lowered, range: NSRange(lowered.startIndex..., in: lowered))
+            for match in matches {
+                guard
+                    let quantityRange = Range(match.range(at: 1), in: lowered),
+                    let quantity = Decimal(string: String(lowered[quantityRange])),
+                    quantity > 0
+                else {
+                    continue
+                }
+                return quantity
+            }
+        }
+
+        return nil
+    }
+
+    private static func contextualPricePriority(in text: String, basePriority: Int) -> Int {
+        let lowered = text.lowercased()
+
+        if lowered.contains("member") || lowered.contains("club") || lowered.contains("loyalty") {
+            return min(4, basePriority + 1)
+        }
+        if lowered.contains("regular") || lowered.contains(" was ") || lowered.hasPrefix("was ") {
+            return max(1, basePriority - 1)
+        }
+
+        return basePriority
+    }
+
+    private static func shouldIgnoreDirectPriceLine(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+
+        if lowered.contains("save") {
+            return true
+        }
+        if containsPhoneNumber(in: lowered) {
+            return true
+        }
+        if looksLikeDateLine(lowered) {
+            return true
+        }
+
+        return false
+    }
+
+    private static func shouldIgnoreImpliedCurrencyLine(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        return containsPhoneNumber(in: lowered) || looksLikeDateLine(lowered)
+    }
+
+    private static func containsPhoneNumber(in text: String) -> Bool {
+        text.range(of: #"\d{10,}"#, options: .regularExpression) != nil
+    }
+
+    private static func looksLikeDateLine(_ text: String) -> Bool {
+        guard text.range(of: monthNamePattern, options: [.regularExpression, .caseInsensitive]) != nil else {
+            return false
+        }
+
+        let hasDay = text.range(of: #"\b([12]?\d|3[01])\b"#, options: .regularExpression) != nil
+        let hasYear = text.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression) != nil
+        return hasDay || hasYear
     }
 
 #if DEBUG
