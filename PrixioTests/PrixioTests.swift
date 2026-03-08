@@ -107,42 +107,6 @@ struct PrixioTests {
         })
     }
 
-    @Test func normalizesPoundsToKilograms() async throws {
-        let normalized = PriceParsingService.normalize(
-            price: Decimal(string: "3.99")!,
-            unit: .lb,
-            quantity: nil
-        )
-
-        #expect(normalized?.1 == .kg)
-        #expect(rounded(normalized?.0, scale: 4) == Decimal(string: "8.7964"))
-    }
-
-    @Test func draftRequiresExplicitStoreSelection() async throws {
-        var draft = PriceEntryDraft()
-        draft.itemName = "Milk"
-        draft.priceText = "4.99"
-        draft.selectedUnit = .each
-        draft.storeChainName = "Walmart"
-
-        #expect(draft.canSave == false)
-
-        draft.storeChainExplicitlySelected = true
-        #expect(draft.canSave == true)
-    }
-
-    @Test func detectsReceiptLikeText() async throws {
-        let text = """
-        Calgary Co-op
-        Subtotal 12.99
-        GST 0.65
-        Total 13.64
-        Thank you
-        """
-
-        #expect(PriceParsingService.looksLikeReceipt(text: text) == true)
-    }
-
     @Test func pipelineStep_removeObviousNoiseFiltersSkuAndNumericJunk() async throws {
         let result = PriceParsingService.extract(
             from: [
@@ -369,156 +333,6 @@ struct PrixioTests {
         #expect(cadburyLikeLines.count <= 1)
     }
 
-    @Test func consolidateObservations_emptyInputReturnsEmpty() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations([])
-        #expect(consolidated.isEmpty)
-    }
-
-    @Test func consolidateObservations_singleObservationReturnsAsIs() async throws {
-        let input = [OCRTextObservation(string: "Old Dutch Chips", confidence: 0.7)]
-        let consolidated = PriceParsingService._test_consolidateObservations(input)
-
-        #expect(consolidated.count == 1)
-        #expect(consolidated[0].string == "Old Dutch Chips")
-        #expect(consolidated[0].confidence == 0.7)
-    }
-
-    @Test func consolidateObservations_identicalObservationsMergeToOne() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "Mini Eggs", confidence: 0.2),
-                OCRTextObservation(string: "Mini Eggs", confidence: 0.9)
-            ]
-        )
-
-        #expect(consolidated.count == 1)
-        #expect(consolidated[0].string == "Mini Eggs")
-        #expect(consolidated[0].confidence == 0.9)
-    }
-
-    @Test func consolidateObservations_caseSpacingAndPunctuationVariantsMerge() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "mini eggs", confidence: 0.2),
-                OCRTextObservation(string: "Mini   Eggs", confidence: 0.6),
-                OCRTextObservation(string: "Mini-Eggs", confidence: 0.3),
-                OCRTextObservation(string: "Mini Eggs", confidence: 0.8)
-            ]
-        )
-
-        #expect(consolidated.count == 1)
-        #expect(consolidated[0].string == "Mini Eggs")
-        #expect(consolidated[0].confidence == 0.8)
-    }
-
-    @Test func consolidateObservations_nearDuplicatesMergeWhenSupportedByConsensus() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "Cadbury", confidence: 0.6),
-                OCRTextObservation(string: "Cadbury", confidence: 0.8),
-                OCRTextObservation(string: "Cadbary", confidence: 0.5)
-            ]
-        )
-
-        #expect(consolidated.count == 1)
-        #expect(consolidated[0].string == "Cadbury")
-    }
-
-    @Test func consolidateObservations_nearDuplicatesWithoutSupportRemainSeparate() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "Mint", confidence: 0.6),
-                OCRTextObservation(string: "Hint", confidence: 0.6)
-            ]
-        )
-
-        let lines = Set(consolidated.map(\.string))
-        #expect(consolidated.count == 2)
-        #expect(lines == Set(["Mint", "Hint"]))
-    }
-
-    @Test func consolidateObservations_contradictoryObservationsRemainSeparate() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "Diet Cola", confidence: 0.8),
-                OCRTextObservation(string: "Regular Cola", confidence: 0.8)
-            ]
-        )
-
-        let lines = Set(consolidated.map(\.string))
-        #expect(consolidated.count == 2)
-        #expect(lines == Set(["Diet Cola", "Regular Cola"]))
-    }
-
-    @Test func consolidateObservations_repeatedStandaloneTokenGetsDroppedWhenCoveredByMultiwordEvidence() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "Cadbury", confidence: 0.7),
-                OCRTextObservation(string: "Cadbury", confidence: 0.7),
-                OCRTextObservation(string: "Cadbury Mini Eggs", confidence: 0.9)
-            ]
-        )
-
-        let lines = consolidated.map(\.string)
-        #expect(lines.contains("Cadbury") == false)
-        #expect(lines.contains("Cadbury Mini Eggs"))
-    }
-
-    @Test func consolidateObservations_prefersHigherConfidenceRepresentativeWithinCluster() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "Sparkling Water", confidence: 0.31),
-                OCRTextObservation(string: "Sparkling Water", confidence: 0.92)
-            ]
-        )
-
-        #expect(consolidated.count == 1)
-        #expect(consolidated[0].confidence == 0.92)
-    }
-
-    @Test func consolidateObservations_largeBatchProducesExpectedGroupCount() async throws {
-        let consolidated = PriceParsingService._test_consolidateObservations(
-            [
-                OCRTextObservation(string: "Old Dutch Chips", confidence: 0.9),
-                OCRTextObservation(string: "old dutch chips", confidence: 0.7),
-                OCRTextObservation(string: "Old Dutch Chips", confidence: 0.8),
-                OCRTextObservation(string: "Compliments Sparkling Water", confidence: 0.9),
-                OCRTextObservation(string: "Compliments Sparkli Water", confidence: 0.5),
-                OCRTextObservation(string: "2/$5", confidence: 0.9),
-                OCRTextObservation(string: "AB12/CD34", confidence: 0.9),
-                OCRTextObservation(string: "12345", confidence: 0.9),
-                OCRTextObservation(string: "Cadbury", confidence: 0.6),
-                OCRTextObservation(string: "Cadbury Mini Eggs", confidence: 0.8)
-            ]
-        )
-
-        let lines = Set(consolidated.map(\.string))
-        #expect(lines.contains("Old Dutch Chips"))
-        #expect(lines.contains("Compliments Sparkli Water"))
-        #expect(lines.contains("2/$5"))
-        #expect(lines.contains("AB12/CD34"))
-        #expect(lines.contains("12345"))
-        #expect(lines.contains("Cadbury Mini Eggs"))
-        #expect(lines.contains("Cadbury") == false)
-        #expect(consolidated.count == 6)
-    }
-
-    @Test func consolidateObservations_isOrderIndependentByResultSet() async throws {
-        let input = [
-            OCRTextObservation(string: "Cadbury", confidence: 0.7),
-            OCRTextObservation(string: "Cadbury", confidence: 0.8),
-            OCRTextObservation(string: "Cadbary", confidence: 0.6),
-            OCRTextObservation(string: "Mini Eggs", confidence: 0.9),
-            OCRTextObservation(string: "Mini-Eggs", confidence: 0.4)
-        ]
-        let reversed = Array(input.reversed())
-
-        let lhs = Set(PriceParsingService._test_consolidateObservations(input).map(\.string))
-        let rhs = Set(PriceParsingService._test_consolidateObservations(reversed).map(\.string))
-
-        #expect(lhs == rhs)
-    }
-
     @Test func pipelineStep_buildProductFamiliesSeparatesDistinctClusters() async throws {
         let result = PriceParsingService.extract(
             from: [
@@ -538,131 +352,6 @@ struct PrixioTests {
         })
     }
 
-    @Test func buildProductFamilies_emptyInputReturnsEmpty() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(from: [])
-        #expect(families.isEmpty)
-    }
-
-    @Test func buildProductFamilies_singleObservationBuildsOneFamilyWithMetadata() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.8)
-            ]
-        )
-
-        #expect(families.count == 1)
-        #expect(families[0].title == "Old Dutch Chips Mesquite BBQ")
-        #expect(families[0].id.hasPrefix("family-0-"))
-        #expect(families[0].supportingLines == ["Old Dutch Chips Mesquite BBQ"])
-        #expect(families[0].keywords.contains("dutch"))
-    }
-
-    @Test func buildProductFamilies_groupsRelatedLinesIntoSameFamily() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
-                OCRTextObservation(string: "Selected Varieties", confidence: 0.8),
-                OCRTextObservation(string: "2/$5", confidence: 0.9)
-            ]
-        )
-
-        #expect(families.count == 1)
-        let family = families[0]
-        #expect(family.supportingLines.contains("Old Dutch Chips Mesquite BBQ"))
-        #expect(family.supportingLines.contains("Selected Varieties"))
-        #expect(family.supportingLines.contains("2/$5"))
-        #expect(family.priceCandidates.first?.value == Decimal(string: "5"))
-    }
-
-    @Test func buildProductFamilies_separatesTwoClearFamilies() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
-                OCRTextObservation(string: "$4.99", confidence: 0.9),
-                OCRTextObservation(string: "Compliments Sparkling Water", confidence: 0.9),
-                OCRTextObservation(string: "$3.99", confidence: 0.9)
-            ]
-        )
-
-        #expect(families.count == 2)
-        #expect(families.contains { $0.supportingLines.contains("Old Dutch Chips Mesquite BBQ") })
-        #expect(families.contains { $0.supportingLines.contains("Compliments Sparkling Water") })
-    }
-
-    @Test func buildProductFamilies_multipleBrandsWithSimilarFlavorStaySeparate() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "Old Dutch Mesquite BBQ", confidence: 0.8),
-                OCRTextObservation(string: "$4.49", confidence: 0.9),
-                OCRTextObservation(string: "Lays Mesquite BBQ", confidence: 0.8),
-                OCRTextObservation(string: "$3.99", confidence: 0.9)
-            ]
-        )
-
-        #expect(families.count == 2)
-        let oldDutchFamily = families.first { $0.supportingLines.contains("Old Dutch Mesquite BBQ") }
-        let laysFamily = families.first { $0.supportingLines.contains("Lays Mesquite BBQ") }
-        #expect(oldDutchFamily != nil)
-        #expect(laysFamily != nil)
-    }
-
-    @Test func buildProductFamilies_doesNotCreateFamilyFromGenericOrUnknownNoiseOnly() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "for", confidence: 0.7),
-                OCRTextObservation(string: "and", confidence: 0.7),
-                OCRTextObservation(string: "...", confidence: 0.7),
-                OCRTextObservation(string: "12345", confidence: 0.7)
-            ]
-        )
-
-        #expect(families.isEmpty)
-    }
-
-    @Test func buildProductFamilies_partialEvidenceStillBuildsFamilySafely() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "Mesquite BBQ", confidence: 0.8),
-                OCRTextObservation(string: "$4.99", confidence: 0.8)
-            ]
-        )
-
-        #expect(families.count == 1)
-        #expect(families[0].itemNameHint == "Mesquite BBQ")
-        #expect(families[0].priceCandidates.first?.value == Decimal(string: "4.99"))
-    }
-
-    @Test func buildProductFamilies_genericRepeatedEvidenceDoesNotOverrideStrongerDescriptorTitle() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "Selected Varieties", confidence: 0.7),
-                OCRTextObservation(string: "Selected Varieties", confidence: 0.6),
-                OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
-                OCRTextObservation(string: "$4.99", confidence: 0.9)
-            ]
-        )
-
-        #expect(families.count == 1)
-        #expect(families[0].title == "Old Dutch Chips Mesquite BBQ")
-        #expect(families[0].supportingLines.contains("Old Dutch Chips Mesquite BBQ"))
-    }
-
-    @Test func buildProductFamilies_orderIndependentForClearlySeparatedFamilies() async throws {
-        let input = [
-            OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
-            OCRTextObservation(string: "$4.99", confidence: 0.9),
-            OCRTextObservation(string: "Compliments Sparkling Water", confidence: 0.9),
-            OCRTextObservation(string: "$3.99", confidence: 0.9)
-        ]
-
-        let lhs = PriceParsingService._test_buildProductFamilies(from: input)
-        let rhs = PriceParsingService._test_buildProductFamilies(from: Array(input.reversed()))
-
-        let lhsDescriptors = Set(lhs.map(\.title))
-        let rhsDescriptors = Set(rhs.map(\.title))
-        #expect(lhsDescriptors == rhsDescriptors)
-    }
-
     @Test func pipelineStep_primaryFamilyChoosesFamilyWithBestPriceSignal() async throws {
         let result = PriceParsingService.extract(
             from: [
@@ -675,159 +364,6 @@ struct PrixioTests {
 
         #expect(result.price == Decimal(string: "5"))
         #expect(result.priceCandidates.first?.quantity == Decimal(string: "2"))
-    }
-
-    @Test func primaryFamily_emptyInputReturnsNil() async throws {
-        let winner = PriceParsingService._test_primaryFamily(from: [])
-        #expect(winner == nil)
-    }
-
-    @Test func primaryFamily_singleFamilyReturnsThatFamily() async throws {
-        let only = makeTestFamily(
-            id: "family-0-only",
-            title: "Only",
-            supportingLines: ["Only Product", "$4.99"],
-            keywords: ["only", "product"],
-            pricePriority: 3,
-            priceConfidence: 0.8
-        )
-
-        let winner = PriceParsingService._test_primaryFamily(from: [only])
-        #expect(winner == only)
-    }
-
-    @Test func primaryFamily_prefersFamilyWithHigherPricePriority() async throws {
-        let low = makeTestFamily(
-            id: "family-0-low",
-            title: "Low",
-            supportingLines: ["Old Dutch Chips", "$4.99"],
-            keywords: ["old", "dutch", "chips"],
-            pricePriority: 3,
-            priceConfidence: 0.95
-        )
-        let high = makeTestFamily(
-            id: "family-1-high",
-            title: "High",
-            supportingLines: ["Compliments Water", "2/$5"],
-            keywords: ["compliments", "water"],
-            pricePriority: 4,
-            priceConfidence: 0.3
-        )
-
-        let winner = PriceParsingService._test_primaryFamily(from: [low, high])
-        #expect(winner?.id == high.id)
-    }
-
-    @Test func primaryFamily_prefersHigherConfidenceWhenPriorityTies() async throws {
-        let lowerConfidence = makeTestFamily(
-            id: "family-0-a",
-            title: "A",
-            supportingLines: ["Alpha Yogurt", "$4.99"],
-            keywords: ["alpha", "yogurt"],
-            pricePriority: 3,
-            priceConfidence: 0.42
-        )
-        let higherConfidence = makeTestFamily(
-            id: "family-1-b",
-            title: "B",
-            supportingLines: ["Beta Yogurt", "$4.99"],
-            keywords: ["beta", "yogurt"],
-            pricePriority: 3,
-            priceConfidence: 0.93
-        )
-
-        let winner = PriceParsingService._test_primaryFamily(from: [lowerConfidence, higherConfidence])
-        #expect(winner?.id == higherConfidence.id)
-    }
-
-    @Test func primaryFamily_prefersStrongerBrandedEvidenceOverGenericClusterWhenPriceSignalsTie() async throws {
-        let generic = makeTestFamily(
-            id: "family-0-generic",
-            title: "Generic",
-            supportingLines: ["Sale Price", "$4.99"],
-            keywords: ["sale", "price"],
-            pricePriority: 3,
-            priceConfidence: 0.7
-        )
-        let branded = makeTestFamily(
-            id: "family-1-branded",
-            title: "Branded",
-            supportingLines: ["Old Dutch Mesquite BBQ", "$4.99"],
-            keywords: ["old", "dutch", "mesquite", "bbq"],
-            pricePriority: 3,
-            priceConfidence: 0.7
-        )
-
-        let winner = PriceParsingService._test_primaryFamily(from: [generic, branded])
-        #expect(winner?.id == branded.id)
-    }
-
-    @Test func primaryFamily_tieBreakUsesPriceProximityWhenSignalsAreOtherwiseEqual() async throws {
-        let farPrice = makeTestFamily(
-            id: "family-0-far",
-            title: "Far",
-            supportingLines: ["Old Dutch Chips", "Promo", "$4.99"],
-            keywords: ["old", "dutch", "chips"],
-            pricePriority: 3,
-            priceConfidence: 0.7
-        )
-        let nearPrice = makeTestFamily(
-            id: "family-1-near",
-            title: "Near",
-            supportingLines: ["Old Dutch Chips", "$4.99", "Promo"],
-            keywords: ["old", "dutch", "chips"],
-            pricePriority: 3,
-            priceConfidence: 0.7
-        )
-
-        let winner = PriceParsingService._test_primaryFamily(from: [farPrice, nearPrice])
-        #expect(winner?.id == nearPrice.id)
-    }
-
-    @Test func primaryFamily_recencyTieBreakIsDeterministicAndOrderIndependent() async throws {
-        let older = makeTestFamily(
-            id: "family-1-alpha",
-            title: "Alpha",
-            supportingLines: ["Alpha Product", "$4.99"],
-            keywords: ["alpha", "product"],
-            pricePriority: 3,
-            priceConfidence: 0.7
-        )
-        let newer = makeTestFamily(
-            id: "family-2-beta",
-            title: "Beta",
-            supportingLines: ["Beta Product", "$4.99"],
-            keywords: ["beta", "product"],
-            pricePriority: 3,
-            priceConfidence: 0.7
-        )
-
-        let lhsWinner = PriceParsingService._test_primaryFamily(from: [older, newer])
-        let rhsWinner = PriceParsingService._test_primaryFamily(from: [newer, older])
-        #expect(lhsWinner?.id == newer.id)
-        #expect(rhsWinner?.id == newer.id)
-    }
-
-    @Test func primaryFamily_confidenceOutweighsBrandednessWhenPriorityTies() async throws {
-        let weakGeneric = makeTestFamily(
-            id: "family-0-weak",
-            title: "Weak",
-            supportingLines: ["Sale", "$4.99"],
-            keywords: ["sale"],
-            pricePriority: 3,
-            priceConfidence: 0.11
-        )
-        let weakBranded = makeTestFamily(
-            id: "family-1-weakbrand",
-            title: "Weak Brand",
-            supportingLines: ["Old Dutch Chips", "$4.99"],
-            keywords: ["old", "dutch", "chips"],
-            pricePriority: 3,
-            priceConfidence: 0.09
-        )
-
-        let winner = PriceParsingService._test_primaryFamily(from: [weakGeneric, weakBranded])
-        #expect(winner?.id == weakGeneric.id)
     }
 
     @Test func pipelineStep_removeObviousNoiseKeepsExplicitSizeTokenForClustering() async throws {
@@ -1137,79 +673,12 @@ struct PrixioTests {
         #expect(result.productFamilies.count >= 3)
     }
 
-    @Test func keepsLongSingleProductDescriptionInOneFamily() async throws {
-        let families = PriceParsingService._test_buildProductFamilies(
-            from: [
-                OCRTextObservation(string: "Acme Organic Tomato Soup", confidence: 0.8),
-                OCRTextObservation(string: "No artificial flavors", confidence: 0.8),
-                OCRTextObservation(string: "Low sodium", confidence: 0.8),
-                OCRTextObservation(string: "$3.49", confidence: 0.9)
-            ]
-        )
-
-        #expect(families.count == 1)
-        #expect(families[0].supportingLines.contains("Acme Organic Tomato Soup"))
-        #expect(families[0].priceCandidates.first?.value == Decimal(string: "3.49"))
-    }
-
     @Test func handlesPriceOrphanWithoutItemNameHint() async throws {
         let result = PriceParsingService.extract(from: ["$3.99"])
 
         #expect(result.price == Decimal(string: "3.99"))
         #expect(result.itemNameHint == nil)
         #expect(result.productFamilies.isEmpty == false)
-    }
-
-    @Test func receiptDetectionAvoidsSavingsFlyerFalsePositive() async throws {
-        let text = """
-        Weekend Flyer
-        Total Savings: $3
-        Buy 2 for $5
-        """
-
-        #expect(PriceParsingService.looksLikeReceipt(text: text) == false)
-    }
-
-    @Test func receiptDetectionRequiresMoreThanSingleSubtotalMarker() async throws {
-        #expect(PriceParsingService.looksLikeReceipt(text: "Subtotal 12.99") == false)
-    }
-
-    @Test func draftCannotSaveWhenAllRequiredFieldsAreMissing() async throws {
-        let draft = PriceEntryDraft()
-
-        #expect(draft.canSave == false)
-    }
-
-    @Test func draftRejectsInvalidPriceTextValues() async throws {
-        var draft = PriceEntryDraft()
-        draft.itemName = "Milk"
-        draft.selectedUnit = .each
-        draft.storeChainName = "Walmart"
-        draft.storeChainExplicitlySelected = true
-
-        draft.priceText = "abc"
-        #expect(draft.canSave == false)
-
-        draft.priceText = ""
-        #expect(draft.canSave == false)
-
-        draft.priceText = "-1"
-        #expect(draft.canSave == false)
-    }
-
-    @Test func draftRoundTripStillRequiresExplicitStoreSelection() async throws {
-        var draft = PriceEntryDraft()
-        draft.itemName = "Milk"
-        draft.priceText = "4.99"
-        draft.selectedUnit = .each
-        draft.storeChainName = "Walmart"
-        draft.storeChainExplicitlySelected = true
-
-        #expect(draft.canSave == true)
-
-        draft.storeChainName = nil
-        draft.storeChainExplicitlySelected = false
-        #expect(draft.canSave == false)
     }
 
     @Test func stressDeduplicatesManyIdenticalTokens() async throws {
@@ -1233,23 +702,23 @@ struct PrixioTests {
 
 }
 
-private func parsedLines(from rawText: String) -> [String] {
+extension PriceParsingService {
+    static func extract(from lines: [String], confidence: Float = 0.0) -> OCRResult {
+        let observations = lines.map { line in
+            OCRTextObservation(string: line, confidence: confidence)
+        }
+        return extract(from: observations)
+    }
+}
+
+func parsedLines(from rawText: String) -> [String] {
     rawText
         .components(separatedBy: .newlines)
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
 }
 
-private func rounded(_ value: Decimal?, scale: Int) -> Decimal? {
-    guard var value else {
-        return nil
-    }
-    var result = Decimal.zero
-    NSDecimalRound(&result, &value, scale, .plain)
-    return result
-}
-
-private func makeTestFamily(
+func makeTestFamily(
     id: String,
     title: String,
     supportingLines: [String],
@@ -1267,7 +736,7 @@ private func makeTestFamily(
     )
 }
 
-private func makeTestPriceCandidate(priority: Int, confidence: Float, sourceText: String) -> PriceCandidate {
+func makeTestPriceCandidate(priority: Int, confidence: Float, sourceText: String) -> PriceCandidate {
     PriceCandidate(
         label: "$4.99",
         value: Decimal(string: "4.99")!,

@@ -70,12 +70,6 @@ enum PriceParsingService {
         "mastercard"
     ]
 
-    static func extract(from text: [String]) -> OCRResult {
-        extract(
-            from: text.map { OCRTextObservation(string: $0, confidence: 0) }
-        )
-    }
-
     static func extract(from observations: [OCRTextObservation]) -> OCRResult {
         let supportedObservations = observations.filter {
             isSupportedOCRLine($0.string)
@@ -769,15 +763,20 @@ enum PriceParsingService {
             }
 
             var clusterKey = key
-            if !hasDigits && words.count == 1 {
-                let word = words[0]
-                let neighborhood = nearbyVocabulary[index]
-                if let nearMatch = clusterBest.keys.first(where: { existingKey in
-                    let hasConsensus = singleWordFrequency[existingKey, default: 0] >= 2
-                    let hasContextualAnchor = neighborhood.contains(word) || neighborhood.contains(existingKey)
-                    return isSingleWordNearMatch(word, existingKey) && (hasConsensus || hasContextualAnchor)
-                }) {
-                    clusterKey = nearMatch
+            if !hasDigits && !words.isEmpty {
+                for word in words {
+                    let neighborhood = nearbyVocabulary[index]
+                    if let nearMatch = clusterBest.keys.first(where: { existingKey in
+                        let hasConsensus = singleWordFrequency[existingKey, default: 0] >= 2
+                        let hasContextualAnchor = neighborhood.contains(word) || neighborhood.contains(existingKey)
+                        return isSingleWordNearMatch(word, existingKey) && (hasConsensus || hasContextualAnchor)
+                    }) {
+                        if clusterKey == key {
+                            clusterKey = nearMatch
+                        } else {
+                            clusterKey += nearMatch
+                        }
+                    }
                 }
             }
 
@@ -877,7 +876,7 @@ enum PriceParsingService {
         guard !lhs.isEmpty else {
             return false
         }
-        guard !rhsKey.contains(" ") else {
+        guard !rhsKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
         return editDistanceAtMostOne(lhs, rhsKey)
