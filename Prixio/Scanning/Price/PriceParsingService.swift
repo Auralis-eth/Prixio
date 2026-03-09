@@ -764,6 +764,16 @@ enum PriceParsingService {
 
             var clusterKey = key
             if !hasDigits && !words.isEmpty {
+                if words.count >= 2,
+                   let nearMultiWordKey = clusterBest.keys.first(where: { existingKey in
+                       let existingWords = existingKey
+                           .split(separator: " ")
+                           .map(String.init)
+                       return isNearMultiWordMatch(words, existingWords)
+                   }) {
+                    clusterKey = nearMultiWordKey
+                }
+
                 for word in words {
                     let neighborhood = nearbyVocabulary[index]
                     if let nearMatch = clusterBest.keys.first(where: { existingKey in
@@ -807,7 +817,6 @@ enum PriceParsingService {
             if !entry.hasDigits,
                entry.words.count == 1,
                let word = entry.words.first,
-               singleWordFrequency[word, default: 0] > 1,
                multiWordVocabulary.contains(word) {
                 return nil
             }
@@ -880,6 +889,42 @@ enum PriceParsingService {
             return false
         }
         return editDistanceAtMostOne(lhs, rhsKey)
+    }
+
+    private static func isNearMultiWordMatch(_ lhsWords: [String], _ rhsWords: [String]) -> Bool {
+        guard lhsWords.count >= 2, lhsWords.count == rhsWords.count else {
+            return false
+        }
+
+        var nonExactCount = 0
+        for (lhs, rhs) in zip(lhsWords, rhsWords) {
+            if lhs == rhs {
+                continue
+            }
+
+            guard isLikelyOCRTokenVariant(lhs, rhs) else {
+                return false
+            }
+
+            nonExactCount += 1
+            if nonExactCount > 1 {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private static func isLikelyOCRTokenVariant(_ lhs: String, _ rhs: String) -> Bool {
+        if editDistanceAtMostOne(lhs, rhs) {
+            return true
+        }
+
+        if abs(lhs.count - rhs.count) <= 2, min(lhs.count, rhs.count) >= 5 {
+            return lhs.hasPrefix(rhs) || rhs.hasPrefix(lhs)
+        }
+
+        return false
     }
 
     private static func editDistanceAtMostOne(_ lhs: String, _ rhs: String) -> Bool {

@@ -21,66 +21,66 @@ struct PriceParsingServiceDataSanitation {
         @Test(
             .tags(.ocr, .product),
             arguments: [
-//                ConsolidationTestCase(
-//                    input: [OCRTextObservation(string: "Old Dutch Chips", confidence: 0.7)],
-//                    expectedConsolidationSize: 1,
-//                    expectedConsolidationString: ["Old Dutch Chips"],
-//                    unexpectedConsolidationString: nil
-//                ),
-//                ConsolidationTestCase(
-//                    input: [],
-//                    expectedConsolidationSize: 0,
-//                    expectedConsolidationString: nil,
-//                    unexpectedConsolidationString: nil
-//                ),
-//                ConsolidationTestCase(
-//                    input: [
-//                        OCRTextObservation(string: "Mini Eggs", confidence: 0.2),
-//                        OCRTextObservation(string: "Mini Eggs", confidence: 0.9)
-//                    ],
-//                    expectedConsolidationSize: 1,
-//                    expectedConsolidationString: ["Mini Eggs"],
-//                    unexpectedConsolidationString: nil
-//                ),
-//                ConsolidationTestCase(
-//                    input: [
-//                        OCRTextObservation(string: "mini eggs", confidence: 0.2),
-//                        OCRTextObservation(string: "Mini   Eggs", confidence: 0.6),
-//                        OCRTextObservation(string: "Mini-Eggs", confidence: 0.3),
-//                        OCRTextObservation(string: "Mini Eggs", confidence: 0.8)
-//                    ],
-//                    expectedConsolidationSize: 1,
-//                    expectedConsolidationString: ["Mini Eggs"],
-//                    unexpectedConsolidationString: nil
-//                ),
-//                ConsolidationTestCase(
-//                    input: [
-//                        OCRTextObservation(string: "Cadbury", confidence: 0.6),
-//                        OCRTextObservation(string: "Cadbury", confidence: 0.8),
-//                        OCRTextObservation(string: "Cadbary", confidence: 0.5)
-//                    ],
-//                    expectedConsolidationSize: 1,
-//                    expectedConsolidationString: ["Cadbury"],
-//                    unexpectedConsolidationString: nil
-//                ),
-//                ConsolidationTestCase(
-//                    input: [
-//                        OCRTextObservation(string: "Mint", confidence: 0.6),
-//                        OCRTextObservation(string: "Hint", confidence: 0.6)
-//                    ],
-//                    expectedConsolidationSize: 2,
-//                    expectedConsolidationString: ["Mint", "Hint"],
-//                    unexpectedConsolidationString: nil
-//                ),
-//                ConsolidationTestCase(
-//                    input: [
-//                        OCRTextObservation(string: "Diet Cola", confidence: 0.8),
-//                        OCRTextObservation(string: "Regular Cola", confidence: 0.8)
-//                    ],
-//                    expectedConsolidationSize: 2,
-//                    expectedConsolidationString: ["Diet Cola", "Regular Cola"],
-//                    unexpectedConsolidationString: nil
-//                ),
+                ConsolidationTestCase(
+                    input: [OCRTextObservation(string: "Old Dutch Chips", confidence: 0.7)],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Old Dutch Chips"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [],
+                    expectedConsolidationSize: 0,
+                    expectedConsolidationString: nil,
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Mini Eggs", confidence: 0.2),
+                        OCRTextObservation(string: "Mini Eggs", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Mini Eggs"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "mini eggs", confidence: 0.2),
+                        OCRTextObservation(string: "Mini   Eggs", confidence: 0.6),
+                        OCRTextObservation(string: "Mini-Eggs", confidence: 0.3),
+                        OCRTextObservation(string: "Mini Eggs", confidence: 0.8)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Mini Eggs"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Cadbury", confidence: 0.6),
+                        OCRTextObservation(string: "Cadbury", confidence: 0.8),
+                        OCRTextObservation(string: "Cadbary", confidence: 0.5)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Cadbury"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Mint", confidence: 0.6),
+                        OCRTextObservation(string: "Hint", confidence: 0.6)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["Mint", "Hint"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Diet Cola", confidence: 0.8),
+                        OCRTextObservation(string: "Regular Cola", confidence: 0.8)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["Diet Cola", "Regular Cola"],
+                    unexpectedConsolidationString: nil
+                ),
                 ConsolidationTestCase(
                     input: [
                         OCRTextObservation(string: "Old Dutch Chips", confidence: 0.9),
@@ -96,29 +96,67 @@ struct PriceParsingServiceDataSanitation {
                     ],
                     expectedConsolidationSize: 6,
                     expectedConsolidationString: [
-                        "Compliments Sparkli Water",
+                        "Compliments Sparkling Water",
                         "2/$5",
                         "AB12/CD34",
                         "12345",
                         "Cadbury Mini Eggs",
-                        "Cadbury",
+                        "Old Dutch Chips",
                     ],
                     unexpectedConsolidationString: nil
                 ),
-//                ConsolidationTestCase(
-//                    input: [
-//                        OCRTextObservation(string: "Cadbury", confidence: 0.7),
-//                        OCRTextObservation(string: "Cadbury", confidence: 0.7),
-//                        OCRTextObservation(string: "Cadbury Mini Eggs", confidence: 0.9)
-//                    ],
-//                    expectedConsolidationSize: 1,
-//                    expectedConsolidationString: ["Cadbury Mini Eggs"],
-//                    unexpectedConsolidationString: "Cadbury"
-//                )
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Cadbury", confidence: 0.7),
+                        OCRTextObservation(string: "Cadbury", confidence: 0.7),
+                        OCRTextObservation(string: "Cadbury Mini Eggs", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Cadbury Mini Eggs"],
+                    unexpectedConsolidationString: "Cadbury"
+                )
             ]
         )
         func consolidateObservations(
             consolidationTestCase: ConsolidationTestCase
+        ) async throws {
+            
+            let input = consolidationTestCase.input
+            let expectedConsolidationSize = consolidationTestCase.expectedConsolidationSize
+            let expectedConsolidationString = consolidationTestCase.expectedConsolidationString
+            let unexpectedConsolidationString = consolidationTestCase.unexpectedConsolidationString
+            
+            let consolidated = PriceParsingService._test_consolidateObservations(input)
+            
+            #expect(consolidated.count == expectedConsolidationSize)
+            
+            let lines = Set(consolidated.map(\.string))
+            
+            if let expectedConsolidationString {
+                for observation in expectedConsolidationString {
+                    #expect(lines.contains(observation))
+                }
+            } else if let unexpectedConsolidationString {
+                #expect(lines.contains(unexpectedConsolidationString) == false)
+            } else {
+                #expect(consolidated.isEmpty)
+            }
+        }
+        
+        @Test(
+            .tags(.ocr, .product),
+            arguments: [
+                ConsolidationTestCase(
+                    input: [OCRTextObservation(string: "Old Dutch Chips", confidence: 0.7)],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Old Dutch Chips"],
+                    unexpectedConsolidationString: nil
+                ),
+                
+            ]
+        )
+        func consolidateObservations(
+            edgeCases consolidationTestCase: ConsolidationTestCase
         ) async throws {
             
             let input = consolidationTestCase.input
