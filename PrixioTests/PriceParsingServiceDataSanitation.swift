@@ -147,12 +147,216 @@ struct PriceParsingServiceDataSanitation {
             .tags(.ocr, .product),
             arguments: [
                 ConsolidationTestCase(
-                    input: [OCRTextObservation(string: "Old Dutch Chips", confidence: 0.7)],
+                    input: [
+                        OCRTextObservation(string: "C0ca-C0la", confidence: 0.6),
+                        OCRTextObservation(string: "Coca-Cola", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Coca-Cola"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "1ite Beer", confidence: 0.6),
+                        OCRTextObservation(string: "Lite Beer", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Lite Beer"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "chips", confidence: 0.8),
+                        OCRTextObservation(string: "OLD DUTCH CHIPS", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["OLD DUTCH CHIPS"],
+                    unexpectedConsolidationString: "chips"
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Coke", confidence: 0.9),
+                        OCRTextObservation(string: "Cake", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["Coke", "Cake"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: ".", confidence: 0.9),
+                        OCRTextObservation(string: "|", confidence: 0.9),
+                        OCRTextObservation(string: "i", confidence: 0.9),
+                        OCRTextObservation(string: "Old Dutch Chips", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Old Dutch Chips"],
+                    unexpectedConsolidationString: "."
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "   ", confidence: 0.9),
+                        OCRTextObservation(string: "", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 0,
+                    expectedConsolidationString: nil,
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Salt & Vinegar", confidence: 0.9),
+                        OCRTextObservation(string: "Vinegar Chips", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["Salt & Vinegar", "Vinegar Chips"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "$10.99", confidence: 0.9),
+                        OCRTextObservation(string: "s10.99", confidence: 0.5),
+                        OCRTextObservation(string: "10.99", confidence: 0.7)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["$10.99"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "$5.99", confidence: 0.9),
+                        OCRTextObservation(string: "$5.99", confidence: 0.8),
+                        OCRTextObservation(string: "$5.98", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["$5.99", "$5.98"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "...Product Name...", confidence: 0.6),
+                        OCRTextObservation(string: "Product Name", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Product Name"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Mini Eggs", confidence: 0.7),
+                        OCRTextObservation(string: "Cadbury", confidence: 0.7),
+                        OCRTextObservation(string: "Cadbury Mini Eggs", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Cadbury Mini Eggs"],
+                    unexpectedConsolidationString: "Cadbury"
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Cadbury Mini Eggs", confidence: 0.9),
+                        OCRTextObservation(string: "Cadbury", confidence: 0.7)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Cadbury Mini Eggs"],
+                    unexpectedConsolidationString: "Cadbury"
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Dutch Chips", confidence: 0.7),
+                        OCRTextObservation(string: "Old Dutch Chips", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["Dutch Chips", "Old Dutch Chips"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Pepsi Cola", confidence: 0.9),
+                        OCRTextObservation(string: "Pepsi Max", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["Pepsi Cola", "Pepsi Max"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Oreo Cookies", confidence: 0.9),
+                        OCRTextObservation(string: "Oreos Cookies", confidence: 0.7)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Oreo Cookies"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Mini Eggs", confidence: 0.8),
+                        OCRTextObservation(string: "Mini Egg", confidence: 0.8)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Mini Eggs"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Cadbury", confidence: 0.0),
+                        OCRTextObservation(string: "Cadbury", confidence: 0.0)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Cadbury"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Oreo", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Oreo"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Cola", confidence: 0.9),
+                        OCRTextObservation(string: "Cola", confidence: 0.8)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Cola"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "Old\tDutch\tChips", confidence: 0.9),
+                        OCRTextObservation(string: "Old Dutch Chips", confidence: 0.8)
+                    ],
                     expectedConsolidationSize: 1,
                     expectedConsolidationString: ["Old Dutch Chips"],
                     unexpectedConsolidationString: nil
                 ),
-                
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "$2.99", confidence: 0.9),
+                        OCRTextObservation(string: "2.99", confidence: 0.8)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["$2.99"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "A", confidence: 0.9),
+                        OCRTextObservation(string: "5", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 2,
+                    expectedConsolidationString: ["A", "5"],
+                    unexpectedConsolidationString: nil
+                ),
+                ConsolidationTestCase(
+                    input: [
+                        OCRTextObservation(string: "cadbury", confidence: 0.7),
+                        OCRTextObservation(string: "Cadbury Mini Eggs", confidence: 0.9)
+                    ],
+                    expectedConsolidationSize: 1,
+                    expectedConsolidationString: ["Cadbury Mini Eggs"],
+                    unexpectedConsolidationString: "cadbury"
+                )
             ]
         )
         func consolidateObservations(

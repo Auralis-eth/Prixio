@@ -39,6 +39,7 @@ enum PriceParsingService {
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
     private static let impliedCurrencyPattern = #"(^|[^\d])(\d{3,4})(?=$|[^\d])"#
     private static let simplePricePattern = #"\$?\s*\d+[.,]\d{2}"#
+    private static let canonicalPricePattern = #"^[sS\$]*\s*(\d+[.,]\d{2})"#
     private static let quantityFractionPattern = #"\b(\d+)\s*/\s*(\d+)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
     private static let quantityDecimalPattern = #"\b(\d+(?:[.,]\d+)?)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
     private static let monthNamePattern = #"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b"#
@@ -71,6 +72,7 @@ enum PriceParsingService {
     ]
 
     static func extract(from observations: [OCRTextObservation]) -> OCRResult {
+        // TODO: move each to a new struct, call as function
         let supportedObservations = observations.filter {
             isSupportedOCRLine($0.string)
         }
@@ -744,7 +746,7 @@ enum PriceParsingService {
                 continue
             }
 
-            let words = normalizedWords(in: sanitized)
+            let words = comparisonNormalizedWords(in: sanitized)
             guard !words.isEmpty else {
                 continue
             }
@@ -826,7 +828,7 @@ enum PriceParsingService {
 
     private static func nearbyMultiWordVocabulary(from observations: [OCRTextObservation], radius: Int = 1) -> [Set<String>] {
         let tokenized = observations.map { observation in
-            normalizedWords(in: sanitizeOCRLine(observation.string))
+            comparisonNormalizedWords(in: sanitizeOCRLine(observation.string))
         }
 
         return tokenized.enumerated().map { index, _ in
@@ -850,6 +852,11 @@ enum PriceParsingService {
         current: ConsolidatedObservation,
         candidate: ConsolidatedObservation
     ) -> Bool {
+        let candidateScore = cleanlinessScore(for: candidate.observation)
+        let currentScore = cleanlinessScore(for: current.observation)
+        if candidateScore != currentScore {
+            return candidateScore > currentScore
+        }
         if candidate.observation.confidence != current.observation.confidence {
             return candidate.observation.confidence > current.observation.confidence
         }
@@ -879,6 +886,83 @@ enum PriceParsingService {
             .split(whereSeparator: \.isWhitespace)
             .map(String.init)
             .filter { !$0.isEmpty }
+    }
+
+    private static func comparisonNormalizedWords(in line: String) -> [String] {
+        let lowered = line.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalized = lowered.replacingOccurrences(
+            of: #"[^\p{L}\p{N}\.,\$]+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        return normalized
+            .split(whereSeparator: \.isWhitespace)
+            .map { comparisonToken(from: String($0)) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func comparisonToken(from token: String) -> String {
+        if let canonicalPrice = canonicalPriceToken(token) {
+            return canonicalPrice
+        }
+        return unifiedOCRToken(token)
+    }
+
+    private static func canonicalPriceToken(_ token: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: canonicalPricePattern) else {
+            return nil
+        }
+        let range = NSRange(token.startIndex..., in: token)
+        guard let match = regex.firstMatch(in: token, range: range),
+              let coreRange = Range(match.range(at: 1), in: token)
+        else {
+            return nil
+        }
+        return token[coreRange].replacingOccurrences(of: ",", with: ".")
+    }
+
+    private static func unifiedOCRToken(_ token: String) -> String {
+        let mapped = token.map { character in
+            switch character {
+            case "0", "o":
+                return "o"
+            case "1", "l", "i":
+                return "l"
+            case "5", "s":
+                return "s"
+            case "8", "b":
+                return "b"
+            default:
+                return "\(character)"
+            }
+        }
+        return mapped.filter { character in
+            character.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
+        }
+        .joined(separator: "")
+    }
+
+    private static func cleanlinessScore(for observation: OCRTextObservation) -> Double {
+        let confidenceScore = Double(observation.confidence)
+        let currencyBonus = observation.string.contains("$") ? 0.2 : 0
+        let digitPenalty = Double(digitsAsLettersCount(in: observation.string)) * 0.05
+        return confidenceScore + currencyBonus - digitPenalty
+    }
+
+    private static func digitsAsLettersCount(in line: String) -> Int {
+        let tokens = line
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        var count = 0
+        for token in tokens {
+            let hasLetters = token.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+            let hasDigits = token.contains(where: \.isNumber)
+            guard hasLetters && hasDigits else {
+                continue
+            }
+            count += token.filter { ["0", "1", "5", "8"].contains($0) }.count
+        }
+        return count
     }
 
     private static func isSingleWordNearMatch(_ lhs: String, _ rhsKey: String) -> Bool {
