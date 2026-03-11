@@ -25,6 +25,9 @@ struct ConsolidateObservations {
             guard !sanitized.isEmpty else {
                 continue
             }
+            guard isMeaningfulObservationLine(sanitized) else {
+                continue
+            }
 
             let words = comparisonNormalizedWords(in: sanitized)
             guard !words.isEmpty else {
@@ -89,17 +92,9 @@ struct ConsolidateObservations {
         }
 
         let kept = clusterOrder.compactMap { clusterBest[$0] }
-        let multiWordVocabulary = Set(
-            kept
-                .filter { !$0.hasDigits && $0.words.count >= 2 }
-                .flatMap(\.words)
-        )
 
         return kept.compactMap { entry in
-            if !entry.hasDigits,
-               entry.words.count == 1,
-               let word = entry.words.first,
-               multiWordVocabulary.contains(word) {
+            if shouldAbsorbDescription(entry, within: kept) {
                 return nil
             }
             return entry.observation
@@ -183,6 +178,43 @@ struct ConsolidateObservations {
         let digitPenalty = Double(observation.string.digitsAsLettersCount()) * 0.05
         return confidenceScore + currencyBonus - digitPenalty
     }
+
+    private static func shouldAbsorbDescription(
+        _ candidate: ConsolidatedObservation,
+        within observations: [ConsolidatedObservation]
+    ) -> Bool {
+        guard !candidate.hasDigits else {
+            return false
+        }
+
+        for observation in observations {
+            guard observation.observation.string != candidate.observation.string ||
+                    observation.words != candidate.words else {
+                continue
+            }
+            guard !observation.hasDigits else {
+                continue
+            }
+            guard observation.words.count > candidate.words.count else {
+                continue
+            }
+            if observation.words.containsSubphrase(candidate.words) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func isMeaningfulObservationLine(_ line: String) -> Bool {
+        guard line.count > 1 else {
+            return false
+        }
+
+        return line.unicodeScalars.contains { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+        }
+    }
     
     private static func comparisonNormalizedWords(in line: String) -> [String] {
         let lowered = line.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -227,5 +259,25 @@ struct ConsolidateObservations {
             return nil
         }
         return token[coreRange].replacingOccurrences(of: ",", with: ".")
+    }
+}
+
+private extension Array where Element == String {
+    func containsSubphrase(_ candidate: [String]) -> Bool {
+        guard !candidate.isEmpty, count >= candidate.count else {
+            return false
+        }
+        guard count > candidate.count else {
+            return false
+        }
+
+        for startIndex in 0...(count - candidate.count) {
+            let slice = Array(self[startIndex..<(startIndex + candidate.count)])
+            if slice == candidate {
+                return true
+            }
+        }
+
+        return false
     }
 }
