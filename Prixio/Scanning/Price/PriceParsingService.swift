@@ -9,11 +9,6 @@ import Foundation
 import FoundationModels
 
 enum PriceParsingService {
-    private struct ConsolidatedObservation {
-        let observation: OCRTextObservation
-        let words: [String]
-        let hasDigits: Bool
-    }
 
     private struct ProductFamilyCluster {
         var observations: [OCRTextObservation]
@@ -39,7 +34,6 @@ enum PriceParsingService {
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
     private static let impliedCurrencyPattern = #"(^|[^\d])(\d{3,4})(?=$|[^\d])"#
     private static let simplePricePattern = #"\$?\s*\d+[.,]\d{2}"#
-    private static let canonicalPricePattern = #"^[sS\$]*\s*(\d+[.,]\d{2})"#
     private static let quantityFractionPattern = #"\b(\d+)\s*/\s*(\d+)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
     private static let quantityDecimalPattern = #"\b(\d+(?:[.,]\d+)?)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
     private static let monthNamePattern = #"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b"#
@@ -78,7 +72,7 @@ enum PriceParsingService {
         }
         let cleanedObservations = removeObviousNoise(from: supportedObservations)
         let normalizedObservations = applyContextualNormalization(to: cleanedObservations)
-        let consolidatedObservations = consolidateObservations(normalizedObservations)
+        let consolidatedObservations = ConsolidateObservations.consolidateObservations(normalizedObservations)
         let productFamilies = buildProductFamilies(from: consolidatedObservations)
         let primaryFamily = primaryFamily(from: productFamilies)
         let text = consolidatedObservations.map(\.string)
@@ -209,7 +203,7 @@ enum PriceParsingService {
         var seenKeys = Set<String>()
 
         return observations.compactMap { observation in
-            let sanitized = sanitizeOCRLine(observation.string)
+            let sanitized = observation.string.sanitizeOCRLine()
             guard !sanitized.isEmpty else {
                 return nil
             }
@@ -218,7 +212,7 @@ enum PriceParsingService {
                 return nil
             }
 
-            let key = normalizedWords(in: sanitized).joined(separator: " ")
+            let key = sanitized.normalizedWords().joined(separator: " ")
             guard !key.isEmpty else {
                 return nil
             }
@@ -237,7 +231,7 @@ enum PriceParsingService {
             return true
         }
 
-        let words = normalizedWords(in: trimmed)
+        let words = trimmed.normalizedWords()
         guard !words.isEmpty else {
             return true
         }
@@ -335,7 +329,7 @@ enum PriceParsingService {
                 .joined(separator: " ")
 
             return OCRTextObservation(
-                string: sanitizeOCRLine(correctedTokens),
+                string: correctedTokens.sanitizeOCRLine(),
                 confidence: observation.confidence
             )
         }
@@ -345,7 +339,7 @@ enum PriceParsingService {
         observations.enumerated().reduce(into: [:]) { frequency, entry in
             let index = entry.offset
             let observation = entry.element
-            let words = normalizedWords(in: observation.string)
+            let words = observation.string.normalizedWords()
             for word in words where word.count >= 4 {
                 if var signal = frequency[word] {
                     signal.frequency += 1
@@ -403,7 +397,7 @@ enum PriceParsingService {
         let nearMatches = vocabularyFrequency.filter { candidate, signal in
             signal.frequency >= 2
                 && candidate.first == lowerCore.first
-                && editDistanceAtMostOne(lowerCore, candidate)
+                && lowerCore.editDistanceAtMostOne(candidate)
                 && supportsContextualCorrection(
                     signal: signal,
                     observationConfidence: observationConfidence,
@@ -611,7 +605,7 @@ enum PriceParsingService {
     }
 
     private static func signals(for line: String) -> ObservationSignals {
-        let words = normalizedWords(in: line)
+        let words = line.normalizedWords()
         let hasExplicitSizePattern = containsExplicitSizeToken(in: line)
         let keywordSet = Set(words.filter { word in
             if familyStopWords.contains(word) {
@@ -638,7 +632,7 @@ enum PriceParsingService {
     }
 
     private static func containsExplicitSizeToken(in line: String) -> Bool {
-        let words = normalizedWords(in: line)
+        let words = line.normalizedWords()
         if words.contains(where: { isSizeToken($0) }) {
             return true
         }
@@ -732,324 +726,6 @@ enum PriceParsingService {
                 return lhs.key < rhs.key
             }
             .map(\.key)
-    }
-
-    private static func consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
-        var clusterOrder: [String] = []
-        var clusterBest: [String: ConsolidatedObservation] = [:]
-        var singleWordFrequency: [String: Int] = [:]
-        let nearbyVocabulary = nearbyMultiWordVocabulary(from: observations)
-
-        for (index, observation) in observations.enumerated() {
-            let sanitized = sanitizeOCRLine(observation.string)
-            guard !sanitized.isEmpty else {
-                continue
-            }
-
-            let words = comparisonNormalizedWords(in: sanitized)
-            guard !words.isEmpty else {
-                continue
-            }
-
-            let hasDigits = words.contains { word in
-                word.contains(where: \.isNumber)
-            }
-
-            if !hasDigits && words.count == 1 {
-                singleWordFrequency[words[0], default: 0] += 1
-            }
-
-            let key = words.joined(separator: " ")
-            guard !key.isEmpty else {
-                continue
-            }
-
-            var clusterKey = key
-            if !hasDigits && !words.isEmpty {
-                if words.count >= 2,
-                   let nearMultiWordKey = clusterBest.keys.first(where: { existingKey in
-                       let existingWords = existingKey
-                           .split(separator: " ")
-                           .map(String.init)
-                       return isNearMultiWordMatch(words, existingWords)
-                   }) {
-                    clusterKey = nearMultiWordKey
-                }
-
-                for word in words {
-                    let neighborhood = nearbyVocabulary[index]
-                    if let nearMatch = clusterBest.keys.first(where: { existingKey in
-                        let hasConsensus = singleWordFrequency[existingKey, default: 0] >= 2
-                        let hasContextualAnchor = neighborhood.contains(word) || neighborhood.contains(existingKey)
-                        return isSingleWordNearMatch(word, existingKey) && (hasConsensus || hasContextualAnchor)
-                    }) {
-                        if clusterKey == key {
-                            clusterKey = nearMatch
-                        } else {
-                            clusterKey += nearMatch
-                        }
-                    }
-                }
-            }
-
-            let candidate = ConsolidatedObservation(
-                observation: OCRTextObservation(string: sanitized, confidence: observation.confidence),
-                words: words,
-                hasDigits: hasDigits
-            )
-
-            if let current = clusterBest[clusterKey] {
-                if shouldReplaceClusterRepresentative(current: current, candidate: candidate) {
-                    clusterBest[clusterKey] = candidate
-                }
-            } else {
-                clusterOrder.append(clusterKey)
-                clusterBest[clusterKey] = candidate
-            }
-        }
-
-        let kept = clusterOrder.compactMap { clusterBest[$0] }
-        let multiWordVocabulary = Set(
-            kept
-                .filter { !$0.hasDigits && $0.words.count >= 2 }
-                .flatMap(\.words)
-        )
-
-        return kept.compactMap { entry in
-            if !entry.hasDigits,
-               entry.words.count == 1,
-               let word = entry.words.first,
-               multiWordVocabulary.contains(word) {
-                return nil
-            }
-            return entry.observation
-        }
-    }
-
-    private static func nearbyMultiWordVocabulary(from observations: [OCRTextObservation], radius: Int = 1) -> [Set<String>] {
-        let tokenized = observations.map { observation in
-            comparisonNormalizedWords(in: sanitizeOCRLine(observation.string))
-        }
-
-        return tokenized.enumerated().map { index, _ in
-            let lowerBound = max(0, index - radius)
-            let upperBound = min(tokenized.count - 1, index + radius)
-            var vocabulary = Set<String>()
-
-            for neighbor in lowerBound...upperBound where neighbor != index {
-                let words = tokenized[neighbor]
-                guard words.count >= 2 else {
-                    continue
-                }
-                words.forEach { vocabulary.insert($0) }
-            }
-
-            return vocabulary
-        }
-    }
-
-    private static func shouldReplaceClusterRepresentative(
-        current: ConsolidatedObservation,
-        candidate: ConsolidatedObservation
-    ) -> Bool {
-        let candidateScore = cleanlinessScore(for: candidate.observation)
-        let currentScore = cleanlinessScore(for: current.observation)
-        if candidateScore != currentScore {
-            return candidateScore > currentScore
-        }
-        if candidate.observation.confidence != current.observation.confidence {
-            return candidate.observation.confidence > current.observation.confidence
-        }
-        return candidate.observation.string.count > current.observation.string.count
-    }
-
-    private static func sanitizeOCRLine(_ line: String) -> String {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return ""
-        }
-        return trimmed.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
-        )
-    }
-
-    private static func normalizedWords(in line: String) -> [String] {
-        let lowered = line.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        let normalized = lowered.replacingOccurrences(
-            of: #"[^\p{L}\p{N}]+"#,
-            with: " ",
-            options: .regularExpression
-        )
-        return normalized
-            .split(whereSeparator: \.isWhitespace)
-            .map(String.init)
-            .filter { !$0.isEmpty }
-    }
-
-    private static func comparisonNormalizedWords(in line: String) -> [String] {
-        let lowered = line.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        let normalized = lowered.replacingOccurrences(
-            of: #"[^\p{L}\p{N}\.,\$]+"#,
-            with: " ",
-            options: .regularExpression
-        )
-        return normalized
-            .split(whereSeparator: \.isWhitespace)
-            .map { comparisonToken(from: String($0)) }
-            .filter { !$0.isEmpty }
-    }
-
-    private static func comparisonToken(from token: String) -> String {
-        if let canonicalPrice = canonicalPriceToken(token) {
-            return canonicalPrice
-        }
-        return unifiedOCRToken(token)
-    }
-
-    private static func canonicalPriceToken(_ token: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: canonicalPricePattern) else {
-            return nil
-        }
-        let range = NSRange(token.startIndex..., in: token)
-        guard let match = regex.firstMatch(in: token, range: range),
-              let coreRange = Range(match.range(at: 1), in: token)
-        else {
-            return nil
-        }
-        return token[coreRange].replacingOccurrences(of: ",", with: ".")
-    }
-
-    private static func unifiedOCRToken(_ token: String) -> String {
-        let mapped = token.map { character in
-            switch character {
-            case "0", "o":
-                return "o"
-            case "1", "l", "i":
-                return "l"
-            case "5", "s":
-                return "s"
-            case "8", "b":
-                return "b"
-            default:
-                return "\(character)"
-            }
-        }
-        return mapped.filter { character in
-            character.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
-        }
-        .joined(separator: "")
-    }
-
-    private static func cleanlinessScore(for observation: OCRTextObservation) -> Double {
-        let confidenceScore = Double(observation.confidence)
-        let currencyBonus = observation.string.contains("$") ? 0.2 : 0
-        let digitPenalty = Double(digitsAsLettersCount(in: observation.string)) * 0.05
-        return confidenceScore + currencyBonus - digitPenalty
-    }
-
-    private static func digitsAsLettersCount(in line: String) -> Int {
-        let tokens = line
-            .split(whereSeparator: \.isWhitespace)
-            .map(String.init)
-        var count = 0
-        for token in tokens {
-            let hasLetters = token.unicodeScalars.contains { CharacterSet.letters.contains($0) }
-            let hasDigits = token.contains(where: \.isNumber)
-            guard hasLetters && hasDigits else {
-                continue
-            }
-            count += token.filter { ["0", "1", "5", "8"].contains($0) }.count
-        }
-        return count
-    }
-
-    private static func isSingleWordNearMatch(_ lhs: String, _ rhsKey: String) -> Bool {
-        guard !lhs.isEmpty else {
-            return false
-        }
-        guard !rhsKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return false
-        }
-        return editDistanceAtMostOne(lhs, rhsKey)
-    }
-
-    private static func isNearMultiWordMatch(_ lhsWords: [String], _ rhsWords: [String]) -> Bool {
-        guard lhsWords.count >= 2, lhsWords.count == rhsWords.count else {
-            return false
-        }
-
-        var nonExactCount = 0
-        for (lhs, rhs) in zip(lhsWords, rhsWords) {
-            if lhs == rhs {
-                continue
-            }
-
-            guard isLikelyOCRTokenVariant(lhs, rhs) else {
-                return false
-            }
-
-            nonExactCount += 1
-            if nonExactCount > 1 {
-                return false
-            }
-        }
-
-        return true
-    }
-
-    private static func isLikelyOCRTokenVariant(_ lhs: String, _ rhs: String) -> Bool {
-        if editDistanceAtMostOne(lhs, rhs) {
-            return true
-        }
-
-        if abs(lhs.count - rhs.count) <= 2, min(lhs.count, rhs.count) >= 5 {
-            return lhs.hasPrefix(rhs) || rhs.hasPrefix(lhs)
-        }
-
-        return false
-    }
-
-    private static func editDistanceAtMostOne(_ lhs: String, _ rhs: String) -> Bool {
-        let lhsChars = Array(lhs)
-        let rhsChars = Array(rhs)
-        let lengthDelta = abs(lhsChars.count - rhsChars.count)
-        if lengthDelta > 1 {
-            return false
-        }
-
-        var i = 0
-        var j = 0
-        var mismatches = 0
-
-        while i < lhsChars.count && j < rhsChars.count {
-            if lhsChars[i] == rhsChars[j] {
-                i += 1
-                j += 1
-                continue
-            }
-
-            mismatches += 1
-            if mismatches > 1 {
-                return false
-            }
-
-            if lhsChars.count > rhsChars.count {
-                i += 1
-            } else if lhsChars.count < rhsChars.count {
-                j += 1
-            } else {
-                i += 1
-                j += 1
-            }
-        }
-
-        if i < lhsChars.count || j < rhsChars.count {
-            mismatches += 1
-        }
-
-        return mismatches <= 1
     }
 
     static func normalize(price: Decimal, unit: UnitType, quantity: Decimal?) -> (Decimal, UnitType)? {
@@ -1426,7 +1102,7 @@ enum PriceParsingService {
 
 #if DEBUG
     static func _test_consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
-        consolidateObservations(observations)
+        ConsolidateObservations.consolidateObservations(observations)
     }
 
     static func _test_buildProductFamilies(from observations: [OCRTextObservation]) -> [ProductFamily] {
