@@ -54,6 +54,24 @@ struct PriceParsingServiceDataSanitation {
                     expectedPriceCandidateValue: nil
                 ),
                 BuildProductFamiliesTestCase(
+                    observations: [
+                        OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
+                        OCRTextObservation(string: "Selected Varieties", confidence: 0.8),
+                        OCRTextObservation(string: "2/$5", confidence: 0.9)
+                    ],
+                    expectedFamilyGroupSize: 1,
+                    expectedFamilyTitle: "Old Dutch Chips Mesquite BBQ",
+                    expectedFamilySupportingLines: [
+                        "Old Dutch Chips Mesquite BBQ",
+                        "Selected Varieties",
+                        "2/$5"
+                    ],
+                    idPrefix: nil,
+                    keyword: nil,
+                    itemNameHint: nil,
+                    expectedPriceCandidateValue: "5"
+                ),
+                BuildProductFamiliesTestCase(
                     observations: [OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.8)],
                     expectedFamilyGroupSize: 1,
                     expectedFamilyTitle: "Old Dutch Chips Mesquite BBQ",
@@ -136,27 +154,6 @@ struct PriceParsingServiceDataSanitation {
                     #expect(priceCandidate.value == Decimal(string: expectedPriceCandidateValue))
                 }
             }
-        }
-        
-        
-        
-        
-        @Test func buildProductFamilies_groupsRelatedLinesIntoSameFamily() async throws {
-            let families = PriceParsingService._test_buildProductFamilies(
-                from: [
-                    OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
-                    OCRTextObservation(string: "Selected Varieties", confidence: 0.8),
-                    OCRTextObservation(string: "2/$5", confidence: 0.9)
-                ]
-            )
-
-            #expect(families.count == 1)
-            let family = families[0]
-            #expect(family.supportingLines.contains("Old Dutch Chips Mesquite BBQ"))
-            #expect(family.supportingLines.contains("Selected Varieties"))
-            #expect(family.supportingLines.contains("2/$5"))
-            let priceCandiate = try #require(family.priceCandidates.first)
-            #expect(priceCandiate.value == Decimal(string: "5"))
         }
         
         @Test func buildProductFamilies_separatesTwoClearFamilies() async throws {
