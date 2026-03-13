@@ -19,7 +19,7 @@ struct PriceParsingServiceDataSanitation {
         let observations: [OCRTextObservation]
         let expectedFamilyGroupSize: Int
         let expectedFamilyTitle: String?
-        let expectedFamilySupportingLines: String?
+        let expectedFamilySupportingLines: [String]
         let idPrefix: String?
         let keyword: String?
         let itemNameHint: String?
@@ -32,7 +32,7 @@ struct PriceParsingServiceDataSanitation {
                     observations: [],
                     expectedFamilyGroupSize: 0,
                     expectedFamilyTitle: nil,
-                    expectedFamilySupportingLines: nil,
+                    expectedFamilySupportingLines: [],
                     idPrefix: nil,
                     keyword: nil,
                     itemNameHint: nil,
@@ -47,7 +47,7 @@ struct PriceParsingServiceDataSanitation {
                     ],
                     expectedFamilyGroupSize: 1,
                     expectedFamilyTitle: "Old Dutch Chips Mesquite BBQ",
-                    expectedFamilySupportingLines: "Old Dutch Chips Mesquite BBQ",
+                    expectedFamilySupportingLines: ["Old Dutch Chips Mesquite BBQ"],
                     idPrefix: nil,
                     keyword: nil,
                     itemNameHint: nil,
@@ -57,7 +57,7 @@ struct PriceParsingServiceDataSanitation {
                     observations: [OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.8)],
                     expectedFamilyGroupSize: 1,
                     expectedFamilyTitle: "Old Dutch Chips Mesquite BBQ",
-                    expectedFamilySupportingLines: "Old Dutch Chips Mesquite BBQ",
+                    expectedFamilySupportingLines: ["Old Dutch Chips Mesquite BBQ"],
                     idPrefix: "family-0-",
                     keyword: "dutch",
                     itemNameHint: nil,
@@ -70,7 +70,7 @@ struct PriceParsingServiceDataSanitation {
                     ],
                     expectedFamilyGroupSize: 1,
                     expectedFamilyTitle: "Mesquite BBQ",
-                    expectedFamilySupportingLines: "Mesquite BBQ",
+                    expectedFamilySupportingLines: ["Mesquite BBQ"],
                     idPrefix: "family-0",
                     keyword: "bbq",
                     itemNameHint: "Mesquite BBQ",
@@ -85,7 +85,7 @@ struct PriceParsingServiceDataSanitation {
                     ],
                     expectedFamilyGroupSize: 1,
                     expectedFamilyTitle: "Acme Organic Tomato Soup",
-                    expectedFamilySupportingLines: "Acme Organic Tomato Soup",
+                    expectedFamilySupportingLines: ["Acme Organic Tomato Soup"],
                     idPrefix: nil,
                     keyword: "soup",
                     itemNameHint: "Acme Organic Tomato Soup",
@@ -100,7 +100,7 @@ struct PriceParsingServiceDataSanitation {
                     ],
                     expectedFamilyGroupSize: 0,
                     expectedFamilyTitle: nil,
-                    expectedFamilySupportingLines: nil,
+                    expectedFamilySupportingLines: [],
                     idPrefix: nil,
                     keyword: nil,
                     itemNameHint: nil,
@@ -119,8 +119,9 @@ struct PriceParsingServiceDataSanitation {
                 let family = try #require(families.first)
                 let extectedTitle = try #require(buildProductFamiliesTestCase.expectedFamilyTitle)
                 #expect(family.title == extectedTitle)
-                let extectedSupportingLines = try #require(buildProductFamiliesTestCase.expectedFamilySupportingLines)
-                #expect(family.supportingLines.contains(extectedSupportingLines))
+                for expectedSupportingLine in buildProductFamiliesTestCase.expectedFamilySupportingLines {
+                    #expect(family.supportingLines.contains(expectedSupportingLine))
+                }
                 if let idPrefix = buildProductFamiliesTestCase.idPrefix {
                     #expect(family.id.hasPrefix(idPrefix))
                 }
