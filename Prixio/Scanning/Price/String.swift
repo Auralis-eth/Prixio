@@ -7,6 +7,8 @@
 
 import Foundation
 extension String {
+    private static let canonicalPricePattern = #"^[sS\$]*\s*(\d+[.,]\d{2})"#
+
     func sanitizeOCRLine() -> String {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -67,6 +69,49 @@ extension String {
         }
         .joined(separator: "")
     }
+    
+    func comparisonToken() -> String {
+        if let canonicalPrice = canonicalPriceToken() {
+            return canonicalPrice
+        }
+        return unifiedOCRToken()
+    }
+
+    func canonicalPriceToken() -> String? {
+        guard let regex = try? NSRegularExpression(pattern: Self.canonicalPricePattern) else {
+            return nil
+        }
+        let range = NSRange(startIndex..., in: self)
+        guard let match = regex.firstMatch(in: self, range: range),
+              let coreRange = Range(match.range(at: 1), in: self)
+        else {
+            return nil
+        }
+        return self[coreRange].replacingOccurrences(of: ",", with: ".")
+    }
+
+    func isMeaningfulObservationLine() -> Bool {
+        guard count > 1 else {
+            return false
+        }
+
+        return unicodeScalars.contains { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+        }
+    }
+
+    func comparisonNormalizedWords() -> [String] {
+        let lowered = folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let normalized = lowered.replacingOccurrences(
+            of: #"[^\p{L}\p{N}\.,\$]+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        return normalized
+            .split(whereSeparator: \.isWhitespace)
+            .map { String($0).comparisonToken() }
+            .filter { !$0.isEmpty }
+    }
 }
 
 extension String {
@@ -109,5 +154,27 @@ extension String {
         }
 
         return mismatches <= 1
+    }
+    
+    func isSingleWordNearMatch(_ rhsKey: String) -> Bool {
+        guard !isEmpty else {
+            return false
+        }
+        guard !rhsKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return editDistanceAtMostOne(rhsKey)
+    }
+    
+    func isLikelyOCRTokenVariant(_ rhs: String) -> Bool {
+        if editDistanceAtMostOne(rhs) {
+            return true
+        }
+
+        if abs(count - rhs.count) <= 2, min(count, rhs.count) >= 5 {
+            return hasPrefix(rhs) || rhs.hasPrefix(self)
+        }
+
+        return false
     }
 }

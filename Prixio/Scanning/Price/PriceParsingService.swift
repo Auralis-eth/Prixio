@@ -72,7 +72,7 @@ enum PriceParsingService {
         }
         let cleanedObservations = removeObviousNoise(from: supportedObservations)
         let normalizedObservations = applyContextualNormalization(to: cleanedObservations)
-        let consolidatedObservations = ConsolidateObservations.consolidateObservations(normalizedObservations)
+        let consolidatedObservations = normalizedObservations.consolidateObservations()
         let productFamilies = buildProductFamilies(from: consolidatedObservations)
         let primaryFamily = primaryFamily(from: productFamilies)
         let text = consolidatedObservations.map(\.string)
@@ -611,6 +611,9 @@ enum PriceParsingService {
             if familyStopWords.contains(word) {
                 return false
             }
+            guard word.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else {
+                return false
+            }
             if word.count >= 3 {
                 return true
             }
@@ -1102,7 +1105,7 @@ enum PriceParsingService {
 
 #if DEBUG
     static func _test_consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
-        ConsolidateObservations.consolidateObservations(observations)
+        observations.consolidateObservations()
     }
 
     static func _test_buildProductFamilies(from observations: [OCRTextObservation]) -> [ProductFamily] {
