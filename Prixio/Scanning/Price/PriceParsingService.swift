@@ -688,6 +688,27 @@ enum PriceParsingService {
 
         let hasGenericSignals = signals.keywords.isEmpty
             && (signals.hasPriceSignal || signals.hasSizeSignal || signals.hasPromotionSignal)
+        let isDescriptiveOnly = !signals.keywords.isEmpty
+            && !signals.hasPriceSignal
+            && !signals.hasSizeSignal
+            && !signals.hasPromotionSignal
+
+        if isDescriptiveOnly {
+            let tailLine = clusters[best.index].observations.last?.string ?? ""
+            let tailSignals = PriceParsingService.signals(for: tailLine)
+            let isNear = best.distance <= 1
+            let hasStrongAnchor = best.anchorCount >= 1
+            let tailIsDescriptive =
+                !tailSignals.keywords.isEmpty
+                && !tailSignals.hasPriceSignal
+                && !tailSignals.hasSizeSignal
+                && !tailSignals.hasPromotionSignal
+            guard best.score >= 1, isNear, hasStrongAnchor, tailIsDescriptive else {
+                return nil
+            }
+            return best.index
+        }
+
         if hasGenericSignals {
             if clusters.count > 1 {
                 let scoreGap = best.score - (secondBest?.score ?? 0)

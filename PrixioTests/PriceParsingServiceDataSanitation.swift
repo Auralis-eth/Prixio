@@ -15,29 +15,131 @@ extension Tag {
 }
 
 struct PriceParsingServiceDataSanitation {
-
-    
-
+    struct BuildProductFamiliesTestCase {
+        let observations: [OCRTextObservation]
+        let expectedFamilyGroupSize: Int
+        let expectedFamilyTitle: String?
+        let expectedFamilySupportingLines: String?
+        let idPrefix: String?
+        let keyword: String?
+        let itemNameHint: String?
+        let expectedPriceCandidateValue: String?
+    }
     struct buildProductFamilies {
-        @Test func buildProductFamilies_emptyInputReturnsEmpty() async throws {
-            let families = PriceParsingService._test_buildProductFamilies(from: [])
-            #expect(families.isEmpty)
-        }
-
-        @Test func buildProductFamilies_singleObservationBuildsOneFamilyWithMetadata() async throws {
+        @Test(
+            arguments: [
+                BuildProductFamiliesTestCase(
+                    observations: [],
+                    expectedFamilyGroupSize: 0,
+                    expectedFamilyTitle: nil,
+                    expectedFamilySupportingLines: nil,
+                    idPrefix: nil,
+                    keyword: nil,
+                    itemNameHint: nil,
+                    expectedPriceCandidateValue: nil
+                ),
+                BuildProductFamiliesTestCase(
+                    observations: [
+                        OCRTextObservation(string: "Selected Varieties", confidence: 0.7),
+                        OCRTextObservation(string: "Selected Varieties", confidence: 0.6),
+                        OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
+                        OCRTextObservation(string: "$4.99", confidence: 0.9)
+                    ],
+                    expectedFamilyGroupSize: 1,
+                    expectedFamilyTitle: "Old Dutch Chips Mesquite BBQ",
+                    expectedFamilySupportingLines: "Old Dutch Chips Mesquite BBQ",
+                    idPrefix: nil,
+                    keyword: nil,
+                    itemNameHint: nil,
+                    expectedPriceCandidateValue: nil
+                ),
+                BuildProductFamiliesTestCase(
+                    observations: [OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.8)],
+                    expectedFamilyGroupSize: 1,
+                    expectedFamilyTitle: "Old Dutch Chips Mesquite BBQ",
+                    expectedFamilySupportingLines: "Old Dutch Chips Mesquite BBQ",
+                    idPrefix: "family-0-",
+                    keyword: "dutch",
+                    itemNameHint: nil,
+                    expectedPriceCandidateValue: nil
+                ),
+                BuildProductFamiliesTestCase(
+                    observations: [
+                        OCRTextObservation(string: "Mesquite BBQ", confidence: 0.8),
+                        OCRTextObservation(string: "$4.99", confidence: 0.8)
+                    ],
+                    expectedFamilyGroupSize: 1,
+                    expectedFamilyTitle: "Mesquite BBQ",
+                    expectedFamilySupportingLines: "Mesquite BBQ",
+                    idPrefix: "family-0",
+                    keyword: "bbq",
+                    itemNameHint: "Mesquite BBQ",
+                    expectedPriceCandidateValue: "4.99"
+                ),
+                BuildProductFamiliesTestCase(
+                    observations: [
+                        OCRTextObservation(string: "Acme Organic Tomato Soup", confidence: 0.8),
+                        OCRTextObservation(string: "No artificial flavors", confidence: 0.8),
+                        OCRTextObservation(string: "Low sodium", confidence: 0.8),
+                        OCRTextObservation(string: "$3.49", confidence: 0.9)
+                    ],
+                    expectedFamilyGroupSize: 1,
+                    expectedFamilyTitle: "Acme Organic Tomato Soup",
+                    expectedFamilySupportingLines: "Acme Organic Tomato Soup",
+                    idPrefix: nil,
+                    keyword: "soup",
+                    itemNameHint: "Acme Organic Tomato Soup",
+                    expectedPriceCandidateValue: "3.49"
+                ),
+                BuildProductFamiliesTestCase(
+                    observations: [
+                        OCRTextObservation(string: "for", confidence: 0.7),
+                        OCRTextObservation(string: "and", confidence: 0.7),
+                        OCRTextObservation(string: "...", confidence: 0.7),
+                        OCRTextObservation(string: "12345", confidence: 0.7)
+                    ],
+                    expectedFamilyGroupSize: 0,
+                    expectedFamilyTitle: nil,
+                    expectedFamilySupportingLines: nil,
+                    idPrefix: nil,
+                    keyword: nil,
+                    itemNameHint: nil,
+                    expectedPriceCandidateValue: nil
+                )
+            ]
+        )
+        func buildProductFamilies(
+            buildProductFamiliesTestCase: BuildProductFamiliesTestCase
+        ) async throws {
             let families = PriceParsingService._test_buildProductFamilies(
-                from: [
-                    OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.8)
-                ]
+                from: buildProductFamiliesTestCase.observations
             )
-
-            #expect(families.count == 1)
-            #expect(families[0].title == "Old Dutch Chips Mesquite BBQ")
-            #expect(families[0].id.hasPrefix("family-0-"))
-            #expect(families[0].supportingLines == ["Old Dutch Chips Mesquite BBQ"])
-            #expect(families[0].keywords.contains("dutch"))
+            #expect(families.count == buildProductFamiliesTestCase.expectedFamilyGroupSize)
+            if buildProductFamiliesTestCase.expectedFamilyGroupSize > 0 {
+                let family = try #require(families.first)
+                let extectedTitle = try #require(buildProductFamiliesTestCase.expectedFamilyTitle)
+                #expect(family.title == extectedTitle)
+                let extectedSupportingLines = try #require(buildProductFamiliesTestCase.expectedFamilySupportingLines)
+                #expect(family.supportingLines.contains(extectedSupportingLines))
+                if let idPrefix = buildProductFamiliesTestCase.idPrefix {
+                    #expect(family.id.hasPrefix(idPrefix))
+                }
+                if let keyword = buildProductFamiliesTestCase.keyword {
+                    #expect(family.keywords.contains(keyword))
+                }
+                if let itemNameHint = buildProductFamiliesTestCase.itemNameHint {
+                    #expect(family.itemNameHint == itemNameHint)
+                }
+                if let expectedPriceCandidateValue = buildProductFamiliesTestCase.expectedPriceCandidateValue {
+                    let priceCandidate = try #require(family.priceCandidates.first)
+                    #expect(priceCandidate.value == Decimal(string: expectedPriceCandidateValue))
+                }
+            }
         }
-
+        
+        
+        
+        
         @Test func buildProductFamilies_groupsRelatedLinesIntoSameFamily() async throws {
             let families = PriceParsingService._test_buildProductFamilies(
                 from: [
@@ -88,47 +190,8 @@ struct PriceParsingServiceDataSanitation {
             #expect(laysFamily != nil)
         }
 
-        @Test func buildProductFamilies_doesNotCreateFamilyFromGenericOrUnknownNoiseOnly() async throws {
-            let families = PriceParsingService._test_buildProductFamilies(
-                from: [
-                    OCRTextObservation(string: "for", confidence: 0.7),
-                    OCRTextObservation(string: "and", confidence: 0.7),
-                    OCRTextObservation(string: "...", confidence: 0.7),
-                    OCRTextObservation(string: "12345", confidence: 0.7)
-                ]
-            )
-
-            #expect(families.isEmpty)
-        }
         
-        @Test func buildProductFamilies_partialEvidenceStillBuildsFamilySafely() async throws {
-            let families = PriceParsingService._test_buildProductFamilies(
-                from: [
-                    OCRTextObservation(string: "Mesquite BBQ", confidence: 0.8),
-                    OCRTextObservation(string: "$4.99", confidence: 0.8)
-                ]
-            )
-
-            #expect(families.count == 1)
-            #expect(families[0].itemNameHint == "Mesquite BBQ")
-            let priceCandidate = try #require(families[0].priceCandidates.first)
-            #expect(priceCandidate.value == Decimal(string: "4.99"))
-        }
-
-        @Test func buildProductFamilies_genericRepeatedEvidenceDoesNotOverrideStrongerDescriptorTitle() async throws {
-            let families = PriceParsingService._test_buildProductFamilies(
-                from: [
-                    OCRTextObservation(string: "Selected Varieties", confidence: 0.7),
-                    OCRTextObservation(string: "Selected Varieties", confidence: 0.6),
-                    OCRTextObservation(string: "Old Dutch Chips Mesquite BBQ", confidence: 0.9),
-                    OCRTextObservation(string: "$4.99", confidence: 0.9)
-                ]
-            )
-
-            #expect(families.count == 1)
-            #expect(families[0].title == "Old Dutch Chips Mesquite BBQ")
-            #expect(families[0].supportingLines.contains("Old Dutch Chips Mesquite BBQ"))
-        }
+        
         
         @Test func buildProductFamilies_orderIndependentForClearlySeparatedFamilies() async throws {
             let input = [
@@ -144,22 +207,6 @@ struct PriceParsingServiceDataSanitation {
             let lhsDescriptors = Set(lhs.map(\.title))
             let rhsDescriptors = Set(rhs.map(\.title))
             #expect(lhsDescriptors == rhsDescriptors)
-        }
-        
-        @Test func keepsLongSingleProductDescriptionInOneFamily() async throws {
-            let families = PriceParsingService._test_buildProductFamilies(
-                from: [
-                    OCRTextObservation(string: "Acme Organic Tomato Soup", confidence: 0.8),
-                    OCRTextObservation(string: "No artificial flavors", confidence: 0.8),
-                    OCRTextObservation(string: "Low sodium", confidence: 0.8),
-                    OCRTextObservation(string: "$3.49", confidence: 0.9)
-                ]
-            )
-
-            #expect(families.count == 1)
-            #expect(families[0].supportingLines.contains("Acme Organic Tomato Soup"))
-            let priceCandiate = try #require(families[0].priceCandidates.first)
-            #expect(priceCandiate.value == Decimal(string: "3.49"))
         }
     }
 
