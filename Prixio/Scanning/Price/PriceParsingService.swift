@@ -62,6 +62,21 @@ enum PriceParsingService {
     /// - Returns: A normalized `OCRResult` containing the most likely price metadata
     ///   inferred from those observations.
     static func extract(from observations: [OCRTextObservation]) -> OCRResult {
+        // Foundation Models reference notes:
+        // - Use `LanguageModelSession` as a second-pass parser when heuristics produce
+        //   weak or ambiguous results, not as a replacement for deterministic parsing.
+        // - Prefer guided generation with a typed `@Generable` response so the model
+        //   returns structured fields instead of free-form prose.
+        // - Strong early use cases:
+        //   1. Rank existing price candidates as sale, regular, unit, deposit, or noise.
+        //   2. Select the OCR lines that belong to the target product and normalize them
+        //      into a canonical item name.
+        //   3. Interpret promo semantics like "2/$5", "3 for $10", BOGO, and pack sizes.
+        //   4. Repair noisy OCR line-by-line while preserving a mapping to the originals.
+        // - If tool calling is added later, use it only for deterministic helpers such as
+        //   unit normalization, candidate scoring helpers, or known-brand lookups.
+        // - Final confidence should be derived from agreement between heuristic parsing
+        //   and model output, not from trusting a raw model score directly.
         // TODO: Use bounding boxes and reading order to score nearby lines together.
         // The current pipeline is text-only, so it can mix the target label with
         // neighboring products when OCR captures multiple shelf tags at once.
