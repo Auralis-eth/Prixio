@@ -15,5 +15,5 @@ struct OCRResult {
     var quantity: Decimal?
     var confidence: Float?
     var priceCandidates: [PriceCandidate]
-    var productFamilies: [ProductFamily] = []
+    let supportingLines: [String]
 }
