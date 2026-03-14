@@ -1,61 +1,51 @@
-# Journal
+# Prixio Journal
 
 ## The Big Picture
-Prixio is the app you use after that tiny produce sign or blurry shelf tag wins the first round. You snap a photo, the app tries to read the chaos, and it turns that mess into something you can actually compare later: what item, what store, what price, and in what unit.
+Prixio is the app you reach for when a grocery shelf is making promises your memory will not keep. Snap a shelf tag or product display, let OCR do the messy reading, and save a clean price record you can compare later without playing "was that chips deal actually good?" in aisle seven.
 
 ## Architecture Deep Dive
-Think of the app like a grocery store back room with three workers:
+Think of the app like a small kitchen with a very opinionated expeditor.
 
-- SwiftUI is the cashier up front. It handles the interaction, shows suggestions, and lets you correct anything the app guessed wrong.
-- Vision is the hurried stock clerk reading labels from a shaky photo. It gets a lot right, but sometimes it mumbles.
-- `ScanDomain.swift` is the department manager. It takes the clerk’s half-legible notes, decides what looks like a real price, normalizes units, and packages the result for storage.
+- SwiftUI is the dining room. It presents the flow, reacts to state, and keeps the experience moving.
+- The scanning stack is the line cook. Camera input, OCR, and location gathering prep raw ingredients.
+- `PriceParsingService` is the expeditor with a red pen. It takes noisy OCR fragments, throws out junk, groups related lines into product families, and decides which price signal deserves to be trusted.
+- SwiftData is the pantry. Once a price record is clean enough, it gets stored in a shape the app can query later.
 
-SwiftData is the pantry. Once a price is trustworthy enough, it gets shelved there for later comparisons.
+The important architectural choice here is that OCR interpretation is heuristic-first. That keeps the core extraction path deterministic, debuggable, and fast enough to reason about without handing every problem to a model.
 
 ## The Codebase Map
-- `Prixio/PrixioApp.swift`: app entry and model container wiring.
-- `Prixio/needs code sanitation/ContentView.swift`: scanner flow, confirmation UI, and applying OCR suggestions into the draft.
-- `Prixio/needs code sanitation/ScanDomain.swift`: the parsing brain. OCR services, price extraction, unit logic, store inference, and repository helpers live here.
-- `PrixioTests/PrixioTests.swift`: unit tests for parser behavior and draft rules.
-- `PrixioUITests/*`: smoke-test territory.
+- `Prixio/Prixio/Core`: app shell, shared formatters, shared UI, and model types.
+- `Prixio/Prixio/Scanning/Camera`: camera session and preview plumbing.
+- `Prixio/Prixio/Scanning/OCR`: OCR result types and extraction services.
+- `Prixio/Prixio/Scanning/Price`: the high-noise zone. Normalization, price extraction, and product-family clustering all live here.
+- `Prixio/Prixio/Scanning/Stores`: store detection, selection, and session state.
+- `Prixio/PrixioTests`: unit coverage, with several parser and OCR sanitation tests already aimed at regression-prone cases.
+
+If you are hunting parsing bugs, start in `PriceParsingService.swift`. That file is doing the work of a whole committee.
 
 ## Tech Stack & Why
-- SwiftUI, because the app is state-heavy and the scan-confirm-save loop maps naturally onto declarative UI.
-- Vision, because OCR is the first unavoidable step and Apple already ships the machinery.
-- SwiftData, because the app wants structured local persistence without building a storage framework from scratch.
-- Apple’s `Testing` framework, because parser regressions are exactly the kind of thing that quietly hurt users unless you pin behavior down with tests.
+- SwiftUI, because the app is state-driven and the scanner flow benefits from declarative UI updates.
+- Swift Concurrency, because async camera/OCR/location work is cleaner and safer than callback ladders.
+- SwiftData, because persisted price entries and store metadata fit the native Apple stack well and keep the project lightweight.
+- Vision/OCR-style parsing plus deterministic heuristics, because grocery shelf text is chaotic and the team needs results that can be explained line by line.
 
 ## The Journey
-- We loosened one clustering rule and tightened our grip on where it applies. Product sub-labels like `No artificial flavors` and `Low sodium` often live right beside the real title but share none of its keywords, which made the parser treat them like strangers at the same shelf tag. `bestClusterIndex` now gives those descriptive-only lines a proximity-based chaining path: if they sit adjacent to a cluster with real keyword anchors, they can join on closeness alone. Price, size, and promo lines still stay on the stricter path, so we solved the “helpful subtitle gets orphaned” problem without making dollar amounts wander into the wrong family.
-- We tightened family-building keyword intake in `PriceParsingService` after a particularly unhelpful OCR party guest: bare numbers like `12345` and symbol soup like `...` were still sneaking through as “keywords” if they were long enough. That meant the clustering logic could invent fake product families out of shelf codes and punctuation confetti. The fix was simple and strict in the right place: a token only counts as a keyword if it has at least one letter. Prices and real size tokens still work, but pure numeric or symbolic noise no longer gets a backstage pass into product-family creation.
-- We taught `ConsolidateObservations` one more social skill: if a shorter product phrase is fully contained inside a longer one, the shorter line now gets absorbed instead of surviving as a weird duplicate sidekick. Before this, `Cadbury` could be swallowed by `Cadbury Mini Eggs`, but `Mini Eggs` still slipped through because the cleanup pass only understood single-word crumbs. The new post-pass checks non-digit descriptions for full phrase containment, which means the parser now prefers the maximal product description without accidentally eating price lines for lunch.
-- We tightened OCR noise filtering in `ConsolidateObservations`, because the parser was still politely letting `"."`, `"|"`, and lonely one-character ghosts like `"i"` sit at the table as if they were product evidence. The fix is intentionally blunt at the front door: if a sanitized OCR line is only one character long or has no letters/digits at all, it never enters clustering. That keeps junk fragments from becoming fake “products” and clears up the `Old Dutch Chips` style failures without asking downstream heuristics to mop up the mess later.
-- We fixed a comparison-layer blind spot in `PriceParsingService`: clustering was still comparing raw or lightly sanitized OCR strings, so `"C0ca-C0la"` and `"Coca-Cola"` behaved like strangers, and `"$10.99"`, `"s10.99"`, and `"10.99"` could drift apart. The fix was to add a comparison-only normalization path that unifies common OCR swaps (`0/o`, `1/l/i`, `5/s`, `8/b`) and canonicalizes price tokens down to their numeric core, while still preserving the cleanest original line for final output.
-- We chased a sneaky dedup bug where `"Cadbury"` and `"Cadbury Mini Eggs"` were treated like roommates instead of parent/child evidence, and `"Sparkli"` refused to merge with `"Sparkling"` unless contextual normalization ran first. The consolidation stage now does two extra jobs on its own: (1) absorb single-word brand fragments into matching multi-word product lines, and (2) allow a tightly-scoped fuzzy multi-word merge for one-token OCR drift (including prefix-style truncation like `sparkli` -> `sparkling`). Net effect: raw consolidation now behaves closer to shelf reality even when you intentionally bypass earlier normalization steps.
-- We hardened parser tests to stop rewarding implementation trivia and start guarding business behavior. The pounds-to-kilograms check now validates rounded business precision (not ultra-specific internal decimals), the deterministic family test now checks repeatability without hard-coding `"Beta Yogurt"` as destiny, and savings/promo/date/phone assertions were rewritten to focus on “correct winner and no garbage candidates” instead of assuming one extraction strategy forever. We also added modifier-collision coverage (`Diet` vs `Regular`, `Salted` vs `Unsalted`) plus a scoped OCR repair check so `12 x 3355 ml` can be fixed without “correcting” unrelated `3355` values. In short: less brittle, more contract-driven, fewer false alarms when internals evolve.
-- Expanded `PrixioTests` with a broad “shelf chaos” matrix so parser regressions have far less room to hide: currency symbol variants (`$4.99`, `4,99`, `4.99$`), free/zero pricing, sale-vs-was precedence, multi-buy (`3 for $10`), price ranges, extreme prices, `100g` unit-price parsing, mixed-language and hyphenated product text preservation, three-family clustering in one scan, orphan-price handling, receipt false-positive guards, draft validation edge cases, and stress passes for repeated tokens and low-confidence noise. This one felt like switching from a smoke alarm in one hallway to alarms on every floor.
-- Added hard edge-case coverage for real shelf-tag messiness and patched parser behavior to match: weight pricing (`$1.99/lb` and `per lb`) now infers unit plus quantity, member pricing is preferred over regular pricing when both are present, `Save $X.XX` lines are excluded from candidate price selection, fractional quantity text like `1/2 lb` resolves to `0.5`, and date/phone artifacts stop generating implied price candidates. This one was a classic “regexes are easy until signs start talking like humans” moment.
-- We closed out parser-stage coverage with direct tests for `buildProductFamilies(from:)`: empty/single-family cases, clear multi-family separation, similar-flavor different-brand isolation, partial-evidence handling, and a “don’t let generic repeated lines steal the title” guardrail. In human terms: the clustering step now has tests that read like shelf reality, not just algorithm happy paths.
-- We added direct debug test seams for `consolidateObservations` and `primaryFamily`, then wrote focused unit suites that hit the awkward corners: duplicate collapse, near-match thresholds, contradiction safety, deterministic tie-breaking, and empty-input behavior. This was less “write more tests” and more “turn fuzzy parser instincts into contract law,” so future tweaks can’t quietly swap in a generic family or collapse two products into one blob.
-- We turned a parser TODO list into executable guardrails with test-first updates. Five pipeline behaviors now have explicit coverage and matching fixes: size-only clues like `200g` survive noise filtering, low-confidence/off-context brand typos stop getting “helpfully” rewritten, single-word near-matches need context or consensus before collapsing, generic promo/size lines are less likely to glue themselves to the wrong product family when multiple families exist, and `primaryFamily` tie-breaking now uses product-signal/proximity/recency instead of keyword count alone. This was one of those classic OCR war stories where every “small heuristic” felt harmless until they teamed up into weird cross-item pricing.
-- We taught `PriceParsingService` to think in product families instead of one giant text soup. Before this, chips lines, soda lines, and promo lines all got flattened together and the “best” price was chosen globally like every shelf tag belonged to one product. Now OCR lines are context-normalized (including fixes like `Old Tutch -> Old Dutch` and noisy pack sizes like `12 x 3355 ml -> 12 x 355 mL`), clustered by shared keywords plus proximity, and turned into explicit `ProductFamily` groups with per-family price candidates. Translation: fewer cross-item price hijacks and cleaner evidence when the shelf has neighbors crowding the frame.
-- We finally muzzled a noisy OCR gremlin in `PriceParsingService`: English-only shelf photos were still producing Cyrillic-looking tokens like `Сабвич`, which then flowed downstream as if they were real product text. The fix was a line-level sanitizer that keeps Latin-script text (including French-friendly accents), numbers, punctuation, and spaces, and drops unsupported-script lines before price extraction and summarization. Practical result: fewer hallucinated item hints, cleaner prompt input, and confidence now reflects surviving text instead of junk lines.
-- We put a seatbelt on nearby store lookup. `StoreDetectionService` was firing a burst of `MKLocalSearch` queries one after another, which is basically yelling every grocery-related keyword at MapKit in rapid succession and hoping it stays polite. Now queries are deduplicated, capped, and paced with a small delay between calls, plus throttled requests get one delayed retry instead of being dropped immediately.
-- We fixed a meaningful OCR blind spot: the app used to keep only the recognized text string and discard Vision’s confidence score. That meant two prices with the same regex priority were effectively decided by value, which is a terrible tie-breaker if one number came from a shaky read.
-- The parser now carries both the OCR `string` and its `confidence` together, and every extracted `PriceCandidate` keeps that provenance. Translation: we stopped treating all OCR lines like equally trustworthy eyewitnesses.
-- Split prices are still a little dramatic. Shelf tags love to put dollars on one line and cents on another, so the parser explicitly checks adjacent OCR lines as a pair. That bug class is the software equivalent of someone saying “seventeen” in one room and “ninety-nine” from the hallway.
-- We also started evicting persistent models from `ScanDomain.swift`. Moving `PriceEntry` into `Core/Models` is the codebase equivalent of finally taking the plates out of the toolbox: the parser still uses them, but it should not have to store them in the same drawer.
-- The photo import flow graduated from a UIKit chaperone to SwiftUI’s native `PhotosPicker`. That let us delete the `UIImagePickerController` wrapper entirely while keeping the live camera path on `AVCaptureSession`, which is the right split: use the built-in front desk for library browsing, keep the custom machinery for actual capture.
-- We squashed a sneaky race in `ScanViewModel`: scan A could still be doing OCR while the user had already retaken the photo and started scan B. Without a notion of “which async job currently owns the draft,” the older result could wander back late and repaint the form with stale text. The fix was intentionally boring and that is a compliment: each scan now gets an ID, and any late-arriving work that no longer owns the draft is ignored on sight.
+### March 13, 2026
+War story: the product-family clustering logic had a bad habit of acting like flavor text was the whole identity of a product. That meant lines such as `Old Dutch Mesquite BBQ` and `Lays Mesquite BBQ` could end up in the same family because `Mesquite` and `BBQ` were shouting loudly in the keyword overlap score.
+
+The fix was a brand anchor guard in the descriptive-only clustering path:
+- Take the first significant token from the incoming line.
+- Compare it with the first significant token from the cluster's anchor line.
+- If they differ and the incoming token has never appeared in that cluster's keyword map, refuse the merge.
+
+This is the OCR equivalent of checking the jersey name before seating someone on the team bus.
+
+Gotcha: generic descriptor lines like `Selected Varieties` are a different problem entirely. They are low-signal copy, not brand anchors, and should not be treated like one.
 
 ## Engineer's Wisdom
-- Preserve signal as long as possible. Throwing away confidence early is like deleting the “how sure are we?” column before making a decision.
-- Rank candidates using the information source, not just the extracted value. A parser that only sorts by number size will confidently choose the wrong thing the moment OCR gets noisy.
-- Separate comparison representations from display representations. It keeps clustering aggressive without making the final OCR output look "corrected" in weird ways.
-- Keep narrow normalizers near the code that needs them. OCR character unification and price canonicalization are useful here because they serve clustering, not because the whole app should start speaking in fuzzy tokens.
-- Tight tests around parsing logic pay for themselves quickly. OCR bugs do not announce themselves with polite compiler errors.
+- Heuristic systems fail at the edges where two different items share the same descriptive vocabulary. Always ask what the true anchor is.
+- Cheap scores are useful until they become overconfident. Add guardrails where false merges are more damaging than false splits.
+- In parser code, regression tests are not optional. Every weird shelf sign you fix today is tomorrow's boomerang.
 
 ## If I Were Starting Over...
-- I’d split `ScanDomain.swift` sooner. Right now it works, but it feels like one overstuffed kitchen drawer where the scissors, batteries, and soy sauce packets somehow all live together.
-- I’d also introduce a dedicated parser model for OCR observations earlier, because confidence, source line, and normalized text all want to travel together. Reconstructing that later is more annoying than just modeling it honestly from the start.
-- I’d carve out a dedicated normalization module earlier too, so de-duplication, clustering, and UI formatting do not keep negotiating their boundaries inside one service file.
+I would split `PriceParsingService.swift` earlier into smaller specialists: noise filtering, normalization, family clustering, and price ranking. Right now it still works, but it has the energy of a drawer full of useful cables that only one person knows how to untangle.

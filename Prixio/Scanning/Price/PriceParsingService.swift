@@ -19,6 +19,7 @@ enum PriceParsingService {
 
     private struct ObservationSignals {
         let keywords: Set<String>
+        let hasRetainableWordContent: Bool
         let hasPriceSignal: Bool
         let hasSizeSignal: Bool
         let hasPromotionSignal: Bool
@@ -488,12 +489,14 @@ enum PriceParsingService {
 
         for (index, observation) in observations.enumerated() {
             let lineSignals = signals(for: observation.string)
-            guard !lineSignals.keywords.isEmpty || lineSignals.hasPriceSignal else {
+            let hasRetainableWordContent = hasRetainableWordContent(in: observation.string)
+            guard !lineSignals.keywords.isEmpty || lineSignals.hasPriceSignal || hasRetainableWordContent else {
                 continue
             }
 
             if let bestIndex = bestClusterIndex(
-                for: lineSignals,
+                for: observation.string,
+                signals: lineSignals,
                 at: index,
                 in: clusters
             ) {
@@ -607,6 +610,10 @@ enum PriceParsingService {
     private static func signals(for line: String) -> ObservationSignals {
         let words = line.normalizedWords()
         let hasExplicitSizePattern = containsExplicitSizeToken(in: line)
+        let hasRetainableWordContent = words.contains { word in
+            word.count >= 3
+                && word.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+        }
         let keywordSet = Set(words.filter { word in
             if familyStopWords.contains(word) {
                 return false
@@ -622,6 +629,7 @@ enum PriceParsingService {
         let lowered = line.lowercased()
         return ObservationSignals(
             keywords: keywordSet,
+            hasRetainableWordContent: hasRetainableWordContent,
             hasPriceSignal: containsPriceSignal(in: line),
             hasSizeSignal: hasExplicitSizePattern || words.contains { token in
                 isSizeToken(token)
@@ -645,8 +653,16 @@ enum PriceParsingService {
         ) != nil
     }
 
+    private static func hasRetainableWordContent(in line: String) -> Bool {
+        line.normalizedWords().contains { word in
+            word.count >= 3
+                && word.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+        }
+    }
+
     private static func bestClusterIndex(
-        for signals: ObservationSignals,
+        for line: String,
+        signals: ObservationSignals,
         at lineIndex: Int,
         in clusters: [ProductFamilyCluster]
     ) -> Int? {
@@ -688,12 +704,47 @@ enum PriceParsingService {
 
         let hasGenericSignals = signals.keywords.isEmpty
             && (signals.hasPriceSignal || signals.hasSizeSignal || signals.hasPromotionSignal)
+        let isLowSignalSizeLine = signals.hasSizeSignal
+            && !signals.hasPriceSignal
+            && !signals.hasPromotionSignal
+        let isLowSignalDescriptive = signals.keywords.isEmpty
+            && signals.hasRetainableWordContent
+            && !signals.hasPriceSignal
+            && !signals.hasSizeSignal
+            && !signals.hasPromotionSignal
         let isDescriptiveOnly = !signals.keywords.isEmpty
             && !signals.hasPriceSignal
             && !signals.hasSizeSignal
             && !signals.hasPromotionSignal
 
+        if isLowSignalDescriptive {
+            let tailLine = clusters[best.index].observations.last?.string ?? ""
+            let tailSignals = PriceParsingService.signals(for: tailLine)
+            let isNear = best.distance <= 1
+            let hasStrongAnchor = best.anchorCount >= 1
+            let tailSupportsDescriptorBridge = tailSignals.hasRetainableWordContent
+                && !tailSignals.hasPriceSignal
+            guard isNear, hasStrongAnchor, tailSupportsDescriptorBridge else {
+                return nil
+            }
+            return best.index
+        }
+
+        if isLowSignalSizeLine {
+            let isNear = best.distance <= 1
+            let hasStrongAnchor = best.anchorCount >= 1
+            guard best.score >= 2, isNear, hasStrongAnchor else {
+                return nil
+            }
+            return best.index
+        }
+
         if isDescriptiveOnly {
+            let incomingAnchorToken = firstSignificantAnchorToken(in: line)
+            let clusterAnchorToken = anchorToken(for: clusters[best.index])
+            let incomingTokenFrequency = incomingAnchorToken.map {
+                clusters[best.index].keywordFrequency[$0, default: 0]
+            } ?? 0
             let tailLine = clusters[best.index].observations.last?.string ?? ""
             let tailSignals = PriceParsingService.signals(for: tailLine)
             let isNear = best.distance <= 1
@@ -703,6 +754,12 @@ enum PriceParsingService {
                 && !tailSignals.hasPriceSignal
                 && !tailSignals.hasSizeSignal
                 && !tailSignals.hasPromotionSignal
+            if let incomingAnchorToken,
+               let clusterAnchorToken,
+               incomingAnchorToken != clusterAnchorToken,
+               incomingTokenFrequency == 0 {
+                return nil
+            }
             guard best.score >= 1, isNear, hasStrongAnchor, tailIsDescriptive else {
                 return nil
             }
@@ -711,17 +768,15 @@ enum PriceParsingService {
 
         if hasGenericSignals {
             if clusters.count > 1 {
-                let scoreGap = best.score - (secondBest?.score ?? 0)
-                let strongerThanNext = scoreGap >= 2
                 let hasStrongAnchor = best.anchorCount >= 2
                 let isNear = best.distance <= 1
-                guard best.score >= 4, hasStrongAnchor, isNear, strongerThanNext else {
+                guard best.score >= 2, hasStrongAnchor, isNear else {
                     return nil
                 }
                 return best.index
             }
 
-            let relaxedThreshold = best.score >= 2
+            let relaxedThreshold = best.score >= 1
             return relaxedThreshold ? best.index : nil
         }
 
@@ -739,6 +794,28 @@ enum PriceParsingService {
             })
 
         return descriptiveLine ?? observations.first?.string ?? "Uncategorized Item"
+    }
+
+    private static func anchorToken(for cluster: ProductFamilyCluster) -> String? {
+        let anchorLine = cluster.observations
+            .map(\.string)
+            .first(where: { line in
+                let lineSignals = signals(for: line)
+                return !lineSignals.keywords.isEmpty
+                    && !lineSignals.hasPriceSignal
+            }) ?? cluster.observations.first?.string
+        guard let anchorLine else {
+            return nil
+        }
+        return firstSignificantAnchorToken(in: anchorLine)
+    }
+
+    private static func firstSignificantAnchorToken(in line: String) -> String? {
+        line.normalizedWords().first { token in
+            token.count >= 4
+                && !familyStopWords.contains(token)
+                && token.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+        }
     }
 
     private static func sortedKeywords(from frequency: [String: Int]) -> [String] {
