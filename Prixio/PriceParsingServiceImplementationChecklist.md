@@ -4,7 +4,7 @@ This file tracks the parser TODOs in strict sequence. Each step should be comple
 
 ## Current State
 
-Step 1 is complete.
+Step 2 is complete.
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -14,17 +14,21 @@ What already changed:
 - The snapshot now focuses parsing on the strongest spatial group instead of all supported lines.
 - Multi-product detection still works by checking `snapshot.spatialGroups` in `looksLikeMultiProductScan`.
 - Bounding boxes are preserved through sanitization, normalization, and consolidation paths where line identity survives.
+- `buildHeuristicSnapshot` now uses a deterministic fallback ladder when strict filtering starves sparse OCR.
+- The fallback prefers cleaned focused evidence first, then broader cleaned inputs, and only falls back to minimally sanitized observations as a last resort.
 
-Files touched in Step 1:
+Files touched through Step 2:
 - `Prixio/Scanning/OCR/OCRTextObservation.swift`
 - `Prixio/Scanning/OCR/OCRService.swift`
 - `Prixio/Scanning/OCR/Array+OCRTextObservation.swift`
 - `Prixio/Scanning/Price/PriceParsingService.swift`
 - `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
 
-Step 1 validation already done:
+Validation already done:
 - `BuildProject` succeeded
-- `PriceParsingServiceSpatialGroupingTests` passed `2/2`
+- `PriceParsingServiceSpatialGroupingTests` passed `5/5`
+- `PriceParsingServiceAmbiguityTests` passed
+- `ConsolidateObservationsTests` passed
 
 ## Sequential Plan
 
@@ -42,7 +46,13 @@ Known follow-up:
 - The Step 1 TODO comment still exists in `PriceParsingService.swift`. Remove or rewrite it only when the team is satisfied with the current spatial grouping behavior.
 
 2. Sparse OCR fallback in `buildHeuristicSnapshot`
-Status: Next
+Status: Complete
+
+Completed work:
+- Added `shouldFallbackFromFocusedObservations(...)` to detect when strict filtering starved the snapshot
+- Added `makeFallbackObservationSet(...)` and `bestAvailableObservations(...)` to apply a deterministic fallback ladder
+- Added `minimallySanitizedObservations(...)` as the last-resort evidence-preservation path
+- Added tests covering implied-price recovery, sparse single-tag recovery, and healthy focused-group non-regression
 
 Goal:
 - Add a fallback path when strict filtering leaves too little evidence
@@ -97,7 +107,7 @@ Definition of done for Step 2:
 - Build succeeds
 
 3. Snapshot normalization expansion
-Status: Pending
+Status: Next
 
 Scope:
 - Improve OCR repair for merged tokens, missing currency symbols, and decimal/comma variants
@@ -140,7 +150,7 @@ Scope:
 
 ## Next Session Handoff
 
-If a new session picks this up, start with Step 2 only.
+If a new session picks this up, start with Step 3 only.
 
 Do not touch yet:
 - candidate ranking rules
@@ -155,7 +165,7 @@ Read first:
 - `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
 
 Then implement:
-- a sparse OCR fallback inside `buildHeuristicSnapshot(from:)`
+- expanded snapshot normalization inside `buildHeuristicSnapshot(from:)`
 
 Then validate in this order:
 - file diagnostics for `PriceParsingService.swift`

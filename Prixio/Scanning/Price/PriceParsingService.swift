@@ -211,13 +211,13 @@ enum PriceParsingService {
             isSupportedOCRLine($0.string)
         })
         let spatialGroups = makeSpatialObservationGroups(from: supportedObservations)
-        let focusedObservations = spatialGroups.max(by: { lhs, rhs in
-            lhs.score < rhs.score
-        })?.observations ?? supportedObservations
-        // TODO: Give the snapshot phase a softer fallback path for sparse OCR. Strict
-        // filtering can drop the only useful line when the image is blurry or the shelf
-        // tag is partially cut off.
-        let cleanedObservations = removeObviousNoise(from: focusedObservations)
+        let strongestGroupObservations = spatialGroups.first?.observations ?? supportedObservations
+        let focusedObservations = strongestGroupObservations
+        let cleanedObservations = bestAvailableObservations(
+            focusedObservations: focusedObservations,
+            strongestGroupObservations: strongestGroupObservations,
+            supportedObservations: supportedObservations
+        )
         // TODO: Expand snapshot normalization to handle more OCR confusions and locale
         // variants, especially merged tokens, missing currency symbols, and
         // decimal-thousands ambiguity.
@@ -271,6 +271,85 @@ enum PriceParsingService {
             resolvedQuantity: resolvedQuantity,
             heuristicConfidence: heuristicConfidence
         )
+    }
+
+    private static func shouldFallbackFromFocusedObservations(
+        sourceObservations: [OCRTextObservation],
+        cleanedObservations: [OCRTextObservation]
+    ) -> Bool {
+        guard !sourceObservations.isEmpty else {
+            return false
+        }
+
+        guard !cleanedObservations.isEmpty else {
+            return true
+        }
+
+        let sourceHasPriceSignal = sourceObservations.contains { containsPriceSignal(in: $0.string) }
+        let cleanedHasPriceSignal = cleanedObservations.contains { containsPriceSignal(in: $0.string) }
+        if sourceHasPriceSignal && !cleanedHasPriceSignal {
+            return true
+        }
+
+        let sourceHasDescription = sourceObservations.contains { isDescriptiveObservation($0) }
+        let cleanedHasDescription = cleanedObservations.contains { isDescriptiveObservation($0) }
+        if sourceHasDescription && !cleanedHasDescription {
+            return true
+        }
+
+        if sourceObservations.count >= 2 && cleanedObservations.count < 2 && (sourceHasPriceSignal || sourceHasDescription) {
+            return true
+        }
+
+        return false
+    }
+
+    private static func makeFallbackObservationSet(
+        focusedObservations: [OCRTextObservation],
+        strongestGroupObservations: [OCRTextObservation],
+        supportedObservations: [OCRTextObservation]
+    ) -> [(source: [OCRTextObservation], cleaned: [OCRTextObservation])] {
+        [
+            (
+                source: focusedObservations,
+                cleaned: removeObviousNoise(from: focusedObservations)
+            ),
+            (
+                source: strongestGroupObservations,
+                cleaned: removeObviousNoise(from: strongestGroupObservations)
+            ),
+            (
+                source: supportedObservations,
+                cleaned: removeObviousNoise(from: supportedObservations)
+            ),
+            (
+                source: minimallySanitizedObservations(from: supportedObservations),
+                cleaned: minimallySanitizedObservations(from: supportedObservations)
+            )
+        ]
+    }
+
+    private static func bestAvailableObservations(
+        focusedObservations: [OCRTextObservation],
+        strongestGroupObservations: [OCRTextObservation],
+        supportedObservations: [OCRTextObservation]
+    ) -> [OCRTextObservation] {
+        let fallbackSets = makeFallbackObservationSet(
+            focusedObservations: focusedObservations,
+            strongestGroupObservations: strongestGroupObservations,
+            supportedObservations: supportedObservations
+        )
+
+        for fallback in fallbackSets {
+            if !shouldFallbackFromFocusedObservations(
+                sourceObservations: fallback.source,
+                cleanedObservations: fallback.cleaned
+            ) {
+                return fallback.cleaned
+            }
+        }
+
+        return fallbackSets.last?.cleaned ?? []
     }
 
     private static func analyzeAmbiguity(in snapshot: HeuristicExtractionSnapshot) -> ExtractionAmbiguityReport {
@@ -570,6 +649,29 @@ enum PriceParsingService {
                 return nil
             }
 
+            guard seenKeys.insert(key).inserted else {
+                return nil
+            }
+
+            return OCRTextObservation(
+                string: sanitized,
+                confidence: observation.confidence,
+                boundingBox: observation.boundingBox
+            )
+        }
+    }
+
+    private static func minimallySanitizedObservations(from observations: [OCRTextObservation]) -> [OCRTextObservation] {
+        var seenKeys = Set<String>()
+
+        return observations.compactMap { observation in
+            let sanitized = observation.string.sanitizeOCRLine()
+            guard !sanitized.isEmpty else {
+                return nil
+            }
+
+            let normalizedKey = sanitized.comparisonNormalizedWords().joined(separator: " ")
+            let key = normalizedKey.isEmpty ? sanitized.lowercased() : normalizedKey
             guard seenKeys.insert(key).inserted else {
                 return nil
             }
