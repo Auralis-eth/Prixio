@@ -5,6 +5,7 @@
 //  Created by Daniel Bell on 3/1/26.
 //
 
+import CoreGraphics
 import Foundation
 import FoundationModels
 
@@ -15,8 +16,14 @@ enum PriceParsingService {
         var lineIndexes: [Int]
     }
 
+    struct SpatialObservationGroup: Sendable {
+        let observations: [OCRTextObservation]
+        let score: Float
+    }
+
     struct HeuristicExtractionSnapshot: Sendable {
         let supportedObservations: [OCRTextObservation]
+        let spatialGroups: [SpatialObservationGroup]
         let cleanedObservations: [OCRTextObservation]
         let normalizedObservations: [OCRTextObservation]
         let consolidatedObservations: [OCRTextObservation]
@@ -200,13 +207,17 @@ enum PriceParsingService {
         // TODO: Teach the snapshot phase to use bounding boxes and reading order when it
         // groups OCR lines. The current preparation step is text-only, so it can mix the
         // target label with neighboring products when OCR captures multiple shelf tags at once.
-        let supportedObservations = observations.filter {
+        let supportedObservations = orderObservationsInReadingOrder(observations.filter {
             isSupportedOCRLine($0.string)
-        }
+        })
+        let spatialGroups = makeSpatialObservationGroups(from: supportedObservations)
+        let focusedObservations = spatialGroups.max(by: { lhs, rhs in
+            lhs.score < rhs.score
+        })?.observations ?? supportedObservations
         // TODO: Give the snapshot phase a softer fallback path for sparse OCR. Strict
         // filtering can drop the only useful line when the image is blurry or the shelf
         // tag is partially cut off.
-        let cleanedObservations = removeObviousNoise(from: supportedObservations)
+        let cleanedObservations = removeObviousNoise(from: focusedObservations)
         // TODO: Expand snapshot normalization to handle more OCR confusions and locale
         // variants, especially merged tokens, missing currency symbols, and
         // decimal-thousands ambiguity.
@@ -247,6 +258,7 @@ enum PriceParsingService {
 
         return HeuristicExtractionSnapshot(
             supportedObservations: supportedObservations,
+            spatialGroups: spatialGroups,
             cleanedObservations: cleanedObservations,
             normalizedObservations: normalizedObservations,
             consolidatedObservations: supportedLines,
@@ -432,6 +444,114 @@ enum PriceParsingService {
         return regex.firstMatch(in: trimmed, range: range) != nil
     }
 
+    private static func orderObservationsInReadingOrder(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
+        observations.enumerated().sorted { lhs, rhs in
+            guard let lhsBox = lhs.element.boundingBox, let rhsBox = rhs.element.boundingBox else {
+                return lhs.offset < rhs.offset
+            }
+
+            let rowTolerance = max(lhsBox.height, rhsBox.height) * 0.6
+            let verticalDelta = abs(lhsBox.midY - rhsBox.midY)
+            if verticalDelta > rowTolerance {
+                return lhsBox.midY > rhsBox.midY
+            }
+
+            if lhsBox.minX != rhsBox.minX {
+                return lhsBox.minX < rhsBox.minX
+            }
+
+            return lhs.offset < rhs.offset
+        }
+        .map(\.element)
+    }
+
+    private static func makeSpatialObservationGroups(from observations: [OCRTextObservation]) -> [SpatialObservationGroup] {
+        guard observations.contains(where: { $0.boundingBox != nil }) else {
+            return observations.isEmpty ? [] : [SpatialObservationGroup(observations: observations, score: spatialGroupScore(for: observations))]
+        }
+
+        var groupedObservations: [[OCRTextObservation]] = []
+
+        for observation in observations {
+            guard let boundingBox = observation.boundingBox else {
+                if groupedObservations.isEmpty {
+                    groupedObservations.append([observation])
+                } else {
+                    groupedObservations[groupedObservations.count - 1].append(observation)
+                }
+                continue
+            }
+
+            if let index = groupedObservations.lastIndex(where: { shouldJoinSpatialGroup(observation: observation, boundingBox: boundingBox, group: $0) }) {
+                groupedObservations[index].append(observation)
+            } else {
+                groupedObservations.append([observation])
+            }
+        }
+
+        return groupedObservations
+            .map { group in
+                SpatialObservationGroup(
+                    observations: group,
+                    score: spatialGroupScore(for: group)
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score {
+                    return lhs.score > rhs.score
+                }
+                return lhs.observations.count > rhs.observations.count
+            }
+    }
+
+    private static func shouldJoinSpatialGroup(
+        observation: OCRTextObservation,
+        boundingBox: CGRect,
+        group: [OCRTextObservation]
+    ) -> Bool {
+        guard let groupFrame = spatialFrame(for: group) else {
+            return false
+        }
+
+        let verticalGap = max(0, groupFrame.minY - boundingBox.maxY, boundingBox.minY - groupFrame.maxY)
+        guard verticalGap <= 0.12 else {
+            return false
+        }
+
+        let horizontalOverlap = groupFrame.intersection(boundingBox).width
+        let minimumWidth = min(groupFrame.width, boundingBox.width)
+        let overlapRatio = minimumWidth > 0 ? horizontalOverlap / minimumWidth : 0
+        let centerDistance = abs(groupFrame.midX - boundingBox.midX)
+        let sameColumn = overlapRatio >= 0.35 || centerDistance <= max(groupFrame.width, boundingBox.width) * 0.9
+
+        return sameColumn
+    }
+
+    private static func spatialFrame(for observations: [OCRTextObservation]) -> CGRect? {
+        observations.compactMap(\.boundingBox).reduce(nil) { partialResult, next in
+            guard let partialResult else {
+                return next
+            }
+            return partialResult.union(next)
+        }
+    }
+
+    private static func spatialGroupScore(for observations: [OCRTextObservation]) -> Float {
+        let lineScore = Float(observations.count) * 1.5
+        let priceScore = Float(observations.filter { containsPriceSignal(in: $0.string) }.count) * 2
+        let descriptiveScore = Float(observations.filter { observation in
+            isDescriptiveObservation(observation)
+        }.count) * 1.25
+        let confidenceScore = observations.map(\.confidence).reduce(0, +) / Float(max(1, observations.count))
+        return lineScore + priceScore + descriptiveScore + confidenceScore
+    }
+
+    private static func isDescriptiveObservation(_ observation: OCRTextObservation) -> Bool {
+        let line = observation.string
+        return line.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+            && !containsPriceSignal(in: line)
+    }
+
     private static func removeObviousNoise(from observations: [OCRTextObservation]) -> [OCRTextObservation] {
         var seenKeys = Set<String>()
 
@@ -454,7 +574,11 @@ enum PriceParsingService {
                 return nil
             }
 
-            return OCRTextObservation(string: sanitized, confidence: observation.confidence)
+            return OCRTextObservation(
+                string: sanitized,
+                confidence: observation.confidence,
+                boundingBox: observation.boundingBox
+            )
         }
     }
 
@@ -563,7 +687,8 @@ enum PriceParsingService {
 
             return OCRTextObservation(
                 string: correctedTokens.sanitizeOCRLine(),
-                confidence: observation.confidence
+                confidence: observation.confidence,
+                boundingBox: observation.boundingBox
             )
         }
     }
@@ -770,7 +895,8 @@ enum PriceParsingService {
         let normalizedObservations = observations.map { observation in
             OCRTextObservation(
                 string: observation.string.replacingOccurrences(of: ",", with: "."),
-                confidence: observation.confidence
+                confidence: observation.confidence,
+                boundingBox: observation.boundingBox
             )
         }
 
@@ -782,7 +908,8 @@ enum PriceParsingService {
             let combinedObservations = zip(normalizedObservations, normalizedObservations.dropFirst()).map { lhs, rhs in
                 OCRTextObservation(
                     string: "\(lhs.string)\n\(rhs.string)",
-                    confidence: min(lhs.confidence, rhs.confidence)
+                    confidence: min(lhs.confidence, rhs.confidence),
+                    boundingBox: nil
                 )
             }
 
@@ -1109,6 +1236,17 @@ enum PriceParsingService {
     }
 
     private static func looksLikeMultiProductScan(_ snapshot: HeuristicExtractionSnapshot) -> Bool {
+        let meaningfulSpatialGroups = snapshot.spatialGroups.filter { group in
+            let hasPrice = group.observations.contains { containsPriceSignal(in: $0.string) }
+            let hasDescription = group.observations.contains { observation in
+                isDescriptiveObservation(observation)
+            }
+            return group.observations.count >= 2 && hasPrice && hasDescription
+        }
+        if meaningfulSpatialGroups.count >= 2 {
+            return true
+        }
+
         let descriptiveLines = snapshot.lines.filter { line in
             !line.contains(where: \.isNumber) && !line.contains("$")
         }
@@ -1241,11 +1379,6 @@ enum PriceParsingService {
     }
 #endif
 }
-
-
-
-
-
 
 
 

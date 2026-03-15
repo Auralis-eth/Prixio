@@ -1,0 +1,174 @@
+# PriceParsingService Implementation Checklist
+
+This file tracks the parser TODOs in strict sequence. Each step should be completed, tested, and validated before the next one starts.
+
+## Current State
+
+Step 1 is complete.
+
+What already changed:
+- `OCRTextObservation` now carries an optional `boundingBox`.
+- Vision OCR now passes `VNRecognizedTextObservation.boundingBox` into `OCRTextObservation`.
+- `buildHeuristicSnapshot` now orders observations in reading order.
+- `buildHeuristicSnapshot` now groups nearby observations into `spatialGroups`.
+- The snapshot now focuses parsing on the strongest spatial group instead of all supported lines.
+- Multi-product detection still works by checking `snapshot.spatialGroups` in `looksLikeMultiProductScan`.
+- Bounding boxes are preserved through sanitization, normalization, and consolidation paths where line identity survives.
+
+Files touched in Step 1:
+- `Prixio/Scanning/OCR/OCRTextObservation.swift`
+- `Prixio/Scanning/OCR/OCRService.swift`
+- `Prixio/Scanning/OCR/Array+OCRTextObservation.swift`
+- `Prixio/Scanning/Price/PriceParsingService.swift`
+- `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
+
+Step 1 validation already done:
+- `BuildProject` succeeded
+- `PriceParsingServiceSpatialGroupingTests` passed `2/2`
+
+## Sequential Plan
+
+1. Spatial line grouping in `buildHeuristicSnapshot`
+Status: Complete
+
+Completed work:
+- Threaded OCR bounding boxes into `OCRTextObservation`
+- Ordered lines by reading order
+- Grouped nearby lines into product-level clusters
+- Focused the snapshot on the strongest cluster while preserving enough metadata for ambiguity detection
+- Added tests for side-by-side shelf tags
+
+Known follow-up:
+- The Step 1 TODO comment still exists in `PriceParsingService.swift`. Remove or rewrite it only when the team is satisfied with the current spatial grouping behavior.
+
+2. Sparse OCR fallback in `buildHeuristicSnapshot`
+Status: Next
+
+Goal:
+- Add a fallback path when strict filtering leaves too little evidence
+- Prefer degraded-but-usable input over an empty or starved snapshot
+- Keep the new spatial grouping behavior intact
+
+Start here:
+- `buildHeuristicSnapshot(from:)` in `Prixio/Scanning/Price/PriceParsingService.swift`
+- Focus on the transition from:
+  - `supportedObservations`
+  - `spatialGroups`
+  - `focusedObservations`
+  - `cleanedObservations`
+  - `normalizedObservations`
+
+Problem to solve:
+- The snapshot currently commits to the strongest spatial group first, then applies `removeObviousNoise`.
+- If that focused group is sparse or noisy, `cleanedObservations` can become too small and the parser has no recovery path.
+- Step 2 should recover evidence before later phases like normalization, candidate scoring, and ambiguity analysis try to reason over an underfed snapshot.
+
+Recommended implementation order for Step 2:
+- Add a small helper that decides whether the focused group survived filtering well enough.
+- If not, retry with a broader fallback input instead of immediately accepting the filtered result.
+- Keep the fallback deterministic and local to snapshot preparation.
+- Do not change candidate scoring, unit detection, item-name extraction, or confidence assembly in this step.
+
+Recommended fallback ladder:
+- First choice: cleaned focused group
+- Second choice: cleaned full strongest spatial group before any aggressive narrowing
+- Third choice: cleaned `supportedObservations`
+- Last resort: minimally sanitized observations if every stricter pass collapses
+
+Suggested helper seams:
+- `shouldFallbackFromFocusedObservations(...)`
+- `makeFallbackObservationSet(...)`
+- `bestAvailableObservations(...)`
+
+Minimum test coverage to add in Step 2:
+- A blurry or partial tag where filtering drops the only useful price line
+- A sparse single-tag case where fallback keeps one usable descriptive line and one usable price line
+- A case proving fallback does not collapse back into mixing two side-by-side products when the focused group is already healthy
+
+Existing tests to keep green while doing Step 2:
+- `PriceParsingServiceSpatialGroupingTests`
+- `PriceParsingServiceAmbiguityTests`
+- `ConsolidateObservationsTests`
+
+Definition of done for Step 2:
+- The snapshot retains usable evidence in sparse OCR cases
+- Existing spatial grouping behavior still passes
+- No regression in multi-product ambiguity detection
+- Build succeeds
+
+3. Snapshot normalization expansion
+Status: Pending
+
+Scope:
+- Improve OCR repair for merged tokens, missing currency symbols, and decimal/comma variants
+- Keep corrections deterministic and test-driven
+
+4. Price candidate scoring
+Status: Pending
+
+Scope:
+- Rank candidates using proximity to product text, promo markers, and sale-vs-regular hints
+- Add tests for competing candidate scenarios
+
+5. Unit detection hardening
+Status: Pending
+
+Scope:
+- Handle compound units, multi-pack signals, and split “price per” phrases
+- Add targeted unit parsing fixtures
+
+6. Item-name extraction
+Status: Pending
+
+Scope:
+- Replace the first-match shortcut with a scored extractor
+- Keep branded names even when they contain numbers or size markers
+
+7. Quantity inference
+Status: Pending
+
+Scope:
+- Infer quantities from multi-buy offers, BOGO-style promos, and pack notation
+- Tie quantity selection back to the chosen candidate and detected unit
+
+8. Final confidence assembly in `makeOCRResult`
+Status: Pending
+
+Scope:
+- Derive confidence from agreement across snapshot signals and ambiguity analysis
+- Add tests for clean, weak, and conflicting scans
+
+## Next Session Handoff
+
+If a new session picks this up, start with Step 2 only.
+
+Do not touch yet:
+- candidate ranking rules
+- unit parsing rules
+- item-name extraction logic
+- quantity inference logic
+- final confidence calculation
+
+Read first:
+- `Prixio/Scanning/Price/PriceParsingService.swift`
+- `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
+- `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
+
+Then implement:
+- a sparse OCR fallback inside `buildHeuristicSnapshot(from:)`
+
+Then validate in this order:
+- file diagnostics for `PriceParsingService.swift`
+- `PriceParsingServiceSpatialGroupingTests`
+- `PriceParsingServiceAmbiguityTests`
+- full project build
+
+## Execution Rule
+
+For every remaining step:
+- implement the change
+- add or update tests
+- run Xcode diagnostics
+- run targeted tests
+- run a full build
+- only then continue

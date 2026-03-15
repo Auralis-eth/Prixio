@@ -92,7 +92,11 @@ extension Array where Element == OCRTextObservation {
             }
 
             let candidate = ConsolidatedObservation(
-                observation: OCRTextObservation(string: sanitized, confidence: observation.confidence),
+                observation: OCRTextObservation(
+                    string: sanitized,
+                    confidence: observation.confidence,
+                    boundingBox: observation.boundingBox
+                ),
                 words: words,
                 hasDigits: hasDigits
             )

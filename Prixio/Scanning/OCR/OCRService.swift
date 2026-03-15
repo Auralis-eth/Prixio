@@ -19,7 +19,11 @@ extension UIImage {
                 let observations = request.results as? [VNRecognizedTextObservation] ?? []
                 let textObservations = observations.compactMap { observation in
                     observation.topCandidates(1).first.map { candidate in
-                        OCRTextObservation(string: candidate.string, confidence: candidate.confidence)
+                        OCRTextObservation(
+                            string: candidate.string,
+                            confidence: candidate.confidence,
+                            boundingBox: observation.boundingBox
+                        )
                     }
                 }
                 Task {
