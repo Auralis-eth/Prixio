@@ -204,9 +204,6 @@ enum PriceParsingService {
     }
 
     private static func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
-        // TODO: Teach the snapshot phase to use bounding boxes and reading order when it
-        // groups OCR lines. The current preparation step is text-only, so it can mix the
-        // target label with neighboring products when OCR captures multiple shelf tags at once.
         let supportedObservations = orderObservationsInReadingOrder(observations.filter {
             isSupportedOCRLine($0.string)
         })
