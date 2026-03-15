@@ -197,43 +197,48 @@ enum PriceParsingService {
     }
 
     private static func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
-        // TODO: Use bounding boxes and reading order to score nearby lines together.
-        // The current pipeline is text-only, so it can mix the target label with
-        // neighboring products when OCR captures multiple shelf tags at once.
+        // TODO: Teach the snapshot phase to use bounding boxes and reading order when it
+        // groups OCR lines. The current preparation step is text-only, so it can mix the
+        // target label with neighboring products when OCR captures multiple shelf tags at once.
         let supportedObservations = observations.filter {
             isSupportedOCRLine($0.string)
         }
-        // TODO: Add a softer fallback path for sparse OCR. Strict filtering can drop the
-        // only useful line when the image is blurry or the shelf tag is partially cut off.
+        // TODO: Give the snapshot phase a softer fallback path for sparse OCR. Strict
+        // filtering can drop the only useful line when the image is blurry or the shelf
+        // tag is partially cut off.
         let cleanedObservations = removeObviousNoise(from: supportedObservations)
-        // TODO: Expand normalization to handle more OCR confusions and locale variants,
-        // especially merged tokens, missing currency symbols, and decimal/thousands ambiguity.
+        // TODO: Expand snapshot normalization to handle more OCR confusions and locale
+        // variants, especially merged tokens, missing currency symbols, and
+        // decimal-thousands ambiguity.
         let normalizedObservations = applyContextualNormalization(to: cleanedObservations)
         let consolidatedObservations = normalizedObservations.consolidateObservations()
         let supportedLines = consolidatedObservations.isEmpty ? normalizedObservations : consolidatedObservations
         let rawText = supportedLines.map(\.string).joined(separator: "\n")
         let normalizedText = rawText.replacingOccurrences(of: ",", with: ".")
         let unitScopeText = supportedLines.map(\.string).joined(separator: "\n")
-        // TODO: Rank candidates using stronger context signals such as proximity to product
-        // text, promotional markers, "each"/unit labels, and sale-vs-regular price rules.
+        // TODO: Upgrade snapshot candidate scoring with stronger context signals such as
+        // proximity to product text, promotional markers, "each"/unit labels, and
+        // sale-vs-regular price rules.
         let consolidatedPriceCandidates = extractPriceCandidates(from: consolidatedObservations)
         let priceCandidates = consolidatedPriceCandidates.isEmpty
             ? extractPriceCandidates(from: normalizedObservations)
             : consolidatedPriceCandidates
-        // TODO: Detect compound and normalized units more robustly, including cases like
-        // multi-pack counts, mixed-unit labels, and "price per" phrases split across lines.
+        // TODO: Make snapshot unit detection handle compound and normalized units more
+        // robustly, including multi-pack counts, mixed-unit labels, and "price per"
+        // phrases split across lines.
         let detectedUnit = detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
         let lines = (unitScopeText.isEmpty ? normalizedText : unitScopeText)
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        // TODO: Replace this first-match heuristic with a scored item-name extractor that
-        // can keep branded product text even when it contains numbers, sizes, or promo words.
+        // TODO: Replace this snapshot item-name shortcut with a scored extractor that can
+        // keep branded product text even when it contains numbers, sizes, or promo words.
         let itemNameHint = lines.first { line in
             !line.contains("$") && detectUnit(in: line) == nil && !line.contains(where: { $0.isNumber })
         }
-        // TODO: Infer quantities from offer patterns like "2/$5", "3 for $10", "buy one get one",
-        // and pack-size notation instead of relying on a single candidate or plain unit parsing.
+        // TODO: Let the snapshot phase infer quantities from offer patterns like "2/$5",
+        // "3 for $10", "buy one get one", and pack-size notation instead of relying on a
+        // single candidate or plain unit parsing.
         let resolvedQuantity = priceCandidates.first?.quantity ?? detectQuantity(
             in: unitScopeText.isEmpty ? normalizedText : unitScopeText,
             unit: detectedUnit
@@ -295,8 +300,9 @@ enum PriceParsingService {
     }
 
     private static func makeOCRResult(from snapshot: HeuristicExtractionSnapshot) -> OCRResult {
-        // TODO: Calibrate confidence from pipeline agreement rather than defaulting mostly to
-        // the top price candidate. Confidence should reflect ambiguity across price, unit, and item parsing.
+        // TODO: Move confidence assembly beyond the top price candidate. The final result
+        // should reflect agreement between snapshot data and ambiguity signals across
+        // price, unit, and item parsing.
         OCRResult(
             rawText: snapshot.rawText,
             itemNameHint: snapshot.itemNameHint,
@@ -1235,7 +1241,6 @@ enum PriceParsingService {
     }
 #endif
 }
-
 
 
 
