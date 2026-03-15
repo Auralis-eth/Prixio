@@ -4,7 +4,7 @@ This file tracks the parser TODOs in strict sequence. Each step should be comple
 
 ## Current State
 
-Step 2 is complete.
+Step 3 is complete.
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -16,19 +16,22 @@ What already changed:
 - Bounding boxes are preserved through sanitization, normalization, and consolidation paths where line identity survives.
 - `buildHeuristicSnapshot` now uses a deterministic fallback ladder when strict filtering starves sparse OCR.
 - The fallback prefers cleaned focused evidence first, then broader cleaned inputs, and only falls back to minimally sanitized observations as a last resort.
+- Snapshot normalization now repairs comma-decimal price variants, split price tokens, and merged price/unit lines before extraction.
 
-Files touched through Step 2:
+Files touched through Step 3:
 - `Prixio/Scanning/OCR/OCRTextObservation.swift`
 - `Prixio/Scanning/OCR/OCRService.swift`
 - `Prixio/Scanning/OCR/Array+OCRTextObservation.swift`
 - `Prixio/Scanning/Price/PriceParsingService.swift`
 - `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
+- `PrixioTests/PriceParsingServiceDataSanitation.swift`
 
 Validation already done:
 - `BuildProject` succeeded
 - `PriceParsingServiceSpatialGroupingTests` passed `5/5`
-- `PriceParsingServiceAmbiguityTests` passed
+- `PriceParsingServiceDataSanitation` passed `3/3`
 - `ConsolidateObservationsTests` passed
+- `PriceParsingServiceAmbiguityTests` targeted runner still returned `No result` for its parameterized case in the MCP harness, with no failure output
 
 ## Sequential Plan
 
@@ -107,14 +110,21 @@ Definition of done for Step 2:
 - Build succeeds
 
 3. Snapshot normalization expansion
-Status: Next
+Status: Complete
+
+Completed work:
+- Added deterministic price-token normalization ahead of contextual token repair
+- Repaired comma-decimal price variants like `1,29/lb` into canonical currency text
+- Repaired split price tokens like `1 29 /lb` before candidate extraction
+- Repaired merged price/unit lines like `S299ea` so the existing price and unit parsers can consume them
+- Added test coverage for the new normalization behaviors
 
 Scope:
 - Improve OCR repair for merged tokens, missing currency symbols, and decimal/comma variants
 - Keep corrections deterministic and test-driven
 
 4. Price candidate scoring
-Status: Pending
+Status: Next
 
 Scope:
 - Rank candidates using proximity to product text, promo markers, and sale-vs-regular hints
@@ -150,7 +160,7 @@ Scope:
 
 ## Next Session Handoff
 
-If a new session picks this up, start with Step 3 only.
+If a new session picks this up, start with Step 4 only.
 
 Do not touch yet:
 - candidate ranking rules
@@ -165,7 +175,7 @@ Read first:
 - `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
 
 Then implement:
-- expanded snapshot normalization inside `buildHeuristicSnapshot(from:)`
+- price candidate scoring improvements inside `buildHeuristicSnapshot(from:)`
 
 Then validate in this order:
 - file diagnostics for `PriceParsingService.swift`

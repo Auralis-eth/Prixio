@@ -215,9 +215,6 @@ enum PriceParsingService {
             strongestGroupObservations: strongestGroupObservations,
             supportedObservations: supportedObservations
         )
-        // TODO: Expand snapshot normalization to handle more OCR confusions and locale
-        // variants, especially merged tokens, missing currency symbols, and
-        // decimal-thousands ambiguity.
         let normalizedObservations = applyContextualNormalization(to: cleanedObservations)
         let consolidatedObservations = normalizedObservations.consolidateObservations()
         let supportedLines = consolidatedObservations.isEmpty ? normalizedObservations : consolidatedObservations
@@ -772,7 +769,8 @@ enum PriceParsingService {
 
         return observations.enumerated().map { index, observation in
             let repairedPackText = repairPackSizeNoise(in: observation.string)
-            let correctedTokens = repairedPackText
+            let repairedPriceText = repairPriceTokenNoise(in: repairedPackText)
+            let correctedTokens = repairedPriceText
                 .split(whereSeparator: \.isWhitespace)
                 .map { token in
                     correctedToken(
@@ -790,6 +788,13 @@ enum PriceParsingService {
                 boundingBox: observation.boundingBox
             )
         }
+    }
+
+    private static func repairPriceTokenNoise(in text: String) -> String {
+        let mergedUnitSpacing = repairMergedPriceUnitTokens(in: text)
+        let splitDecimals = repairSplitPriceTokens(in: mergedUnitSpacing)
+        let decimalVariants = repairDecimalCommaPriceTokens(in: splitDecimals)
+        return canonicalizeStandalonePriceLine(in: decimalVariants)
     }
 
     private static func contextualVocabulary(from observations: [OCRTextObservation]) -> [String: VocabularySignal] {
@@ -924,6 +929,81 @@ enum PriceParsingService {
         }
 
         return result
+    }
+
+    private static func repairMergedPriceUnitTokens(in text: String) -> String {
+        let slashSeparated = text.replacingOccurrences(
+            of: #"(?i)([\$s]?\d{1,4}(?:[.,]\d{2})?)(/(?:lb|lbs|kg|l))"#,
+            with: "$1 $2",
+            options: .regularExpression
+        )
+        return slashSeparated.replacingOccurrences(
+            of: #"(?i)([\$s]?\d{1,4}(?:[.,]\d{2})?)(ea|each|lb|lbs|kg|l)\b"#,
+            with: "$1 $2",
+            options: .regularExpression
+        )
+    }
+
+    private static func repairSplitPriceTokens(in text: String) -> String {
+        text.replacingOccurrences(
+            of: #"(?i)(?<!\d)([\$s]?\d{1,2})\s+(\d{2})(?=\s*(?:/(?:lb|lbs|kg|l)|lb|lbs|kg|l|ea|each|$))"#,
+            with: "$1.$2",
+            options: .regularExpression
+        )
+    }
+
+    private static func repairDecimalCommaPriceTokens(in text: String) -> String {
+        text.replacingOccurrences(
+            of: #"(?i)(?<!\d)([\$s]?\d+),(\d{2})(?!\d)"#,
+            with: "$1.$2",
+            options: .regularExpression
+        )
+    }
+
+    private static func canonicalizeStandalonePriceLine(in text: String) -> String {
+        let trimmed = text.sanitizeOCRLine()
+        guard
+            let regex = try? NSRegularExpression(
+                pattern: #"(?i)^([\$s]?)(\d{1,4}(?:\.\d{2})?)(?:\s+|)(/(?:lb|lbs|kg|l)|lb|lbs|kg|l|ea|each)?$"#
+            ),
+            let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+            let amountRange = Range(match.range(at: 2), in: trimmed)
+        else {
+            return trimmed
+        }
+
+        let currencyMarker = Range(match.range(at: 1), in: trimmed).map { String(trimmed[$0]) } ?? ""
+        let amountText = String(trimmed[amountRange])
+        let unitText = Range(match.range(at: 3), in: trimmed).map { String(trimmed[$0]).lowercased() } ?? ""
+        let hasStrongPriceContext = !currencyMarker.isEmpty || !unitText.isEmpty || amountText.contains(".")
+        guard hasStrongPriceContext, let canonicalAmount = canonicalPriceAmount(from: amountText) else {
+            return trimmed
+        }
+
+        let suffix = unitText.isEmpty ? "" : " \(unitText)"
+        return "$\(canonicalAmount)\(suffix)"
+    }
+
+    private static func canonicalPriceAmount(from text: String) -> String? {
+        if text.contains(".") {
+            return Decimal(string: text).map { "\($0)" }
+        }
+
+        guard
+            text.count >= 3,
+            text.count <= 4,
+            let integerValue = Int(text)
+        else {
+            return nil
+        }
+
+        let dollars = integerValue / 100
+        let cents = integerValue % 100
+        guard dollars > 0 else {
+            return nil
+        }
+
+        return "\(dollars).\(String(format: "%02d", cents))"
     }
 
     private static func correctedVolumeToken(_ token: String) -> String {
