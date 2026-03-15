@@ -15,6 +15,103 @@ enum PriceParsingService {
         var lineIndexes: [Int]
     }
 
+    struct HeuristicExtractionSnapshot: Sendable {
+        let supportedObservations: [OCRTextObservation]
+        let cleanedObservations: [OCRTextObservation]
+        let normalizedObservations: [OCRTextObservation]
+        let consolidatedObservations: [OCRTextObservation]
+        let rawText: String
+        let normalizedText: String
+        let lines: [String]
+        let priceCandidates: [PriceCandidate]
+        let detectedUnit: UnitType?
+        let itemNameHint: String?
+        let resolvedQuantity: Decimal?
+        let heuristicConfidence: Float
+    }
+
+    enum ExtractionWeakness: String, CaseIterable, Sendable {
+        case noPriceCandidates
+        case multipleCompetingPrices
+        case missingItemName
+        case missingUnit
+        case missingQuantity
+        case lowConfidence
+        case sparseOCR
+        case possibleMultiProductScan
+    }
+
+    struct ExtractionAmbiguityReport: Sendable {
+        let weaknesses: [ExtractionWeakness]
+
+        var shouldUseFoundationModel: Bool {
+            let severeWeaknesses: Set<ExtractionWeakness> = [
+                .noPriceCandidates,
+                .multipleCompetingPrices,
+                .possibleMultiProductScan
+            ]
+            if !severeWeaknesses.isDisjoint(with: weaknesses) {
+                return true
+            }
+
+            let moderateWeaknesses = weaknesses.filter { weakness in
+                !severeWeaknesses.contains(weakness)
+            }
+            return moderateWeaknesses.count >= 2
+        }
+    }
+
+    enum AssistedPriceKind: String, Codable, Sendable {
+        case sale
+        case regular
+        case unitPrice
+        case deposit
+        case noise
+        case unknown
+    }
+
+    enum AssistedConfidenceBucket: String, Codable, Sendable {
+        case low
+        case medium
+        case high
+    }
+
+    struct PromptLineContext: Codable, Sendable {
+        let index: Int
+        let text: String
+        let confidence: Float
+    }
+
+    struct PromptPriceCandidateContext: Codable, Sendable {
+        let index: Int
+        let value: String
+        let quantity: String?
+        let confidence: Float
+        let priority: Int
+        let label: String
+        let sourceText: String
+        let sourceLineIndexes: [Int]
+    }
+
+    @Generable
+    struct AssistedExtractionResponse: Sendable {
+        let targetLineIndexes: [Int]
+        let selectedPriceCandidateIndex: Int?
+        let selectedPriceKind: String
+        let canonicalItemName: String?
+        let ambiguityNotes: [String]
+        let confidenceBucket: String
+    }
+
+    struct AssistedExtractionResult: Sendable {
+        let targetLineIndexes: [Int]
+        let selectedPriceCandidateIndex: Int?
+        let selectedPriceKind: AssistedPriceKind
+        let canonicalItemName: String?
+        let ambiguityNotes: [String]
+        let confidenceBucket: AssistedConfidenceBucket
+    }
+
     private static let currencyPattern = #"\$?\s*(\d+[.,]\d{2})"#
     private static let multiBuyPattern = #"(\d+)\s*(?:/|for)\s*\$?\s*(\d+(?:[.,]\d{2})?)"#
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
@@ -26,7 +123,7 @@ enum PriceParsingService {
     private static let shelfCodePattern = #"^[A-Z0-9]{2,}(?:[/\-][A-Z0-9]{2,})+$"#
     private static let skuLikeTokenPattern = #"^[A-Z]*\d+[A-Z\d\-\/]*$"#
     private static let poundsPerKilogram = Decimal(string: "2.2046226218")!
-    private static let supportedOCRLinePattern = #"^[\p{Latin}\p{N}\p{P}\p{Zs}]+$"#
+    private static let supportedOCRLinePattern = #"^[\p{Latin}\p{N}\p{P}\p{Sc}\p{Zs}]+$"#
     private static let explicitTokenCorrections: [String: String] = [
         "tutch": "dutch",
         "sparkli": "sparkling",
@@ -46,6 +143,13 @@ enum PriceParsingService {
         "visa",
         "mastercard"
     ]
+    private static let assistedExtractionInstructions = """
+    You are helping parse OCR text from grocery shelf labels into structured product pricing data.
+    Pick the OCR lines most likely to describe one target product.
+    Choose only from the provided price candidates.
+    Prefer product-level prices over deposits, fees, or unrelated numbers.
+    Do not invent prices, line indexes, or product names that are not supported by the OCR evidence.
+    """
 
     /// Converts raw OCR observations into a best-effort structured grocery price result.
     ///
@@ -61,7 +165,7 @@ enum PriceParsingService {
     /// - Parameter observations: Raw text observations returned by the OCR layer.
     /// - Returns: A normalized `OCRResult` containing the most likely price metadata
     ///   inferred from those observations.
-    static func extract(from observations: [OCRTextObservation]) -> OCRResult {
+    static func extract(from observations: [OCRTextObservation]) async -> OCRResult {
         // Foundation Models reference notes:
         // - Use `LanguageModelSession` as a second-pass parser when heuristics produce
         //   weak or ambiguous results, not as a replacement for deterministic parsing.
@@ -77,6 +181,22 @@ enum PriceParsingService {
         //   unit normalization, candidate scoring helpers, or known-brand lookups.
         // - Final confidence should be derived from agreement between heuristic parsing
         //   and model output, not from trusting a raw model score directly.
+        let snapshot = buildHeuristicSnapshot(from: observations)
+        let ambiguity = analyzeAmbiguity(in: snapshot)
+        let heuristicResult = makeOCRResult(from: snapshot)
+
+        guard ambiguity.shouldUseFoundationModel else {
+            return heuristicResult
+        }
+
+        guard let assisted = try? await resolveWithFoundationModel(snapshot: snapshot, ambiguity: ambiguity) else {
+            return heuristicResult
+        }
+
+        return mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
+    }
+
+    private static func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
         // TODO: Use bounding boxes and reading order to score nearby lines together.
         // The current pipeline is text-only, so it can mix the target label with
         // neighboring products when OCR captures multiple shelf tags at once.
@@ -90,15 +210,19 @@ enum PriceParsingService {
         // especially merged tokens, missing currency symbols, and decimal/thousands ambiguity.
         let normalizedObservations = applyContextualNormalization(to: cleanedObservations)
         let consolidatedObservations = normalizedObservations.consolidateObservations()
-        let text = consolidatedObservations.map(\.string)
-        let normalizedText = text.joined(separator: "\n").replacingOccurrences(of: ",", with: ".")
+        let supportedLines = consolidatedObservations.isEmpty ? normalizedObservations : consolidatedObservations
+        let rawText = supportedLines.map(\.string).joined(separator: "\n")
+        let normalizedText = rawText.replacingOccurrences(of: ",", with: ".")
+        let unitScopeText = supportedLines.map(\.string).joined(separator: "\n")
         // TODO: Rank candidates using stronger context signals such as proximity to product
         // text, promotional markers, "each"/unit labels, and sale-vs-regular price rules.
-        let priceCandidates = extractPriceCandidates(from: consolidatedObservations)
-        let unitScopeText = consolidatedObservations.map(\.string).joined(separator: "\n")
+        let consolidatedPriceCandidates = extractPriceCandidates(from: consolidatedObservations)
+        let priceCandidates = consolidatedPriceCandidates.isEmpty
+            ? extractPriceCandidates(from: normalizedObservations)
+            : consolidatedPriceCandidates
         // TODO: Detect compound and normalized units more robustly, including cases like
         // multi-pack counts, mixed-unit labels, and "price per" phrases split across lines.
-        let unit = detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
+        let detectedUnit = detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
         let lines = (unitScopeText.isEmpty ? normalizedText : unitScopeText)
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -108,25 +232,184 @@ enum PriceParsingService {
         let itemNameHint = lines.first { line in
             !line.contains("$") && detectUnit(in: line) == nil && !line.contains(where: { $0.isNumber })
         }
-
         // TODO: Infer quantities from offer patterns like "2/$5", "3 for $10", "buy one get one",
         // and pack-size notation instead of relying on a single candidate or plain unit parsing.
         let resolvedQuantity = priceCandidates.first?.quantity ?? detectQuantity(
             in: unitScopeText.isEmpty ? normalizedText : unitScopeText,
-            unit: unit
+            unit: detectedUnit
         )
+        let heuristicConfidence = priceCandidates.first?.confidence ?? averageConfidence(in: consolidatedObservations) ?? 0.1
 
+        return HeuristicExtractionSnapshot(
+            supportedObservations: supportedObservations,
+            cleanedObservations: cleanedObservations,
+            normalizedObservations: normalizedObservations,
+            consolidatedObservations: supportedLines,
+            rawText: rawText,
+            normalizedText: normalizedText,
+            lines: lines,
+            priceCandidates: priceCandidates,
+            detectedUnit: detectedUnit,
+            itemNameHint: itemNameHint,
+            resolvedQuantity: resolvedQuantity,
+            heuristicConfidence: heuristicConfidence
+        )
+    }
+
+    private static func analyzeAmbiguity(in snapshot: HeuristicExtractionSnapshot) -> ExtractionAmbiguityReport {
+        var weaknesses: [ExtractionWeakness] = []
+
+        if snapshot.priceCandidates.isEmpty {
+            weaknesses.append(.noPriceCandidates)
+        }
+
+        if hasCompetingTopCandidates(snapshot.priceCandidates) {
+            weaknesses.append(.multipleCompetingPrices)
+        }
+
+        if snapshot.itemNameHint?.isEmpty != false {
+            weaknesses.append(.missingItemName)
+        }
+
+        if snapshot.detectedUnit == nil {
+            weaknesses.append(.missingUnit)
+        }
+
+        if snapshot.resolvedQuantity == nil && snapshot.detectedUnit != .each {
+            weaknesses.append(.missingQuantity)
+        }
+
+        if snapshot.heuristicConfidence < 0.45 {
+            weaknesses.append(.lowConfidence)
+        }
+
+        if snapshot.cleanedObservations.count <= 1 || snapshot.lines.count <= 1 {
+            weaknesses.append(.sparseOCR)
+        }
+
+        if looksLikeMultiProductScan(snapshot) {
+            weaknesses.append(.possibleMultiProductScan)
+        }
+
+        return ExtractionAmbiguityReport(weaknesses: weaknesses)
+    }
+
+    private static func makeOCRResult(from snapshot: HeuristicExtractionSnapshot) -> OCRResult {
         // TODO: Calibrate confidence from pipeline agreement rather than defaulting mostly to
         // the top price candidate. Confidence should reflect ambiguity across price, unit, and item parsing.
+        OCRResult(
+            rawText: snapshot.rawText,
+            itemNameHint: snapshot.itemNameHint,
+            price: snapshot.priceCandidates.first?.value,
+            unit: snapshot.detectedUnit,
+            quantity: snapshot.resolvedQuantity,
+            confidence: snapshot.heuristicConfidence,
+            priceCandidates: snapshot.priceCandidates,
+            supportingLines: snapshot.consolidatedObservations.map(\.string)
+        )
+    }
+
+    private static func resolveWithFoundationModel(
+        snapshot: HeuristicExtractionSnapshot,
+        ambiguity: ExtractionAmbiguityReport
+    ) async throws -> AssistedExtractionResult? {
+        guard SystemLanguageModel.default.availability == .available else {
+            return nil
+        }
+
+        let session = LanguageModelSession(instructions: assistedExtractionInstructions)
+        let prompt = buildAssistedExtractionPrompt(snapshot: snapshot, ambiguity: ambiguity)
+        let response = try await session.respond(to: prompt, generating: AssistedExtractionResponse.self)
+        return AssistedExtractionResult(
+            targetLineIndexes: response.content.targetLineIndexes,
+            selectedPriceCandidateIndex: response.content.selectedPriceCandidateIndex,
+            selectedPriceKind: AssistedPriceKind(rawValue: response.content.selectedPriceKind) ?? .unknown,
+            canonicalItemName: response.content.canonicalItemName,
+            ambiguityNotes: response.content.ambiguityNotes,
+            confidenceBucket: AssistedConfidenceBucket(rawValue: response.content.confidenceBucket) ?? .low
+        )
+    }
+
+    private static func buildAssistedExtractionPrompt(
+        snapshot: HeuristicExtractionSnapshot,
+        ambiguity: ExtractionAmbiguityReport
+    ) -> String {
+        let lineContext = snapshot.consolidatedObservations.enumerated().map { index, observation in
+            PromptLineContext(index: index, text: observation.string, confidence: observation.confidence)
+        }
+        let candidateContext = snapshot.priceCandidates.enumerated().map { index, candidate in
+            PromptPriceCandidateContext(
+                index: index,
+                value: "\(candidate.value)",
+                quantity: candidate.quantity.map { "\($0)" },
+                confidence: candidate.confidence,
+                priority: candidate.priority,
+                label: candidate.label,
+                sourceText: candidate.sourceText,
+                sourceLineIndexes: sourceLineIndexes(for: candidate, in: snapshot)
+            )
+        }
+
+        let encodedLines = encodeForPrompt(lineContext)
+        let encodedCandidates = encodeForPrompt(candidateContext)
+        let weaknessList = ambiguity.weaknesses.map(\.rawValue).joined(separator: ", ")
+
+        return """
+        OCR lines:
+        \(encodedLines)
+
+        Price candidates:
+        \(encodedCandidates)
+
+        Current heuristic item name hint: \(snapshot.itemNameHint ?? "nil")
+        Current heuristic unit: \(snapshot.detectedUnit?.rawValue ?? "nil")
+        Current heuristic quantity: \(snapshot.resolvedQuantity.map { "\($0)" } ?? "nil")
+        Current heuristic confidence: \(snapshot.heuristicConfidence)
+        Ambiguity reasons: \(weaknessList.isEmpty ? "none" : weaknessList)
+
+        Select the OCR lines most likely to describe the target grocery product. Choose at most one existing price candidate index.
+        Classify the chosen price candidate as sale, regular, unitPrice, deposit, noise, or unknown.
+        Return a canonical item name only if the OCR evidence supports it.
+        Do not invent new prices, new lines, or missing values. If the data is unclear, leave fields empty and explain ambiguity in ambiguityNotes.
+        """
+    }
+
+    private static func mergeAssistedExtraction(
+        snapshot: HeuristicExtractionSnapshot,
+        assisted: AssistedExtractionResult
+    ) -> OCRResult {
+        let heuristicResult = makeOCRResult(from: snapshot)
+        let selectedCandidate = assisted.selectedPriceCandidateIndex.flatMap { index in
+            snapshot.priceCandidates.indices.contains(index) ? snapshot.priceCandidates[index] : nil
+        }
+        let shouldTrustModelCandidate = assisted.confidenceBucket != .low
+            && selectedCandidate != nil
+            && assisted.selectedPriceKind != .noise
+
+        let finalPrice = shouldTrustModelCandidate ? selectedCandidate?.value : heuristicResult.price
+        let finalQuantity = shouldTrustModelCandidate
+            ? (selectedCandidate?.quantity ?? snapshot.resolvedQuantity)
+            : heuristicResult.quantity
+        let finalItemName = normalizedCanonicalItemName(
+            from: assisted,
+            snapshot: snapshot
+        ) ?? heuristicResult.itemNameHint
+        let finalLines = supportingLines(from: assisted.targetLineIndexes, snapshot: snapshot)
+        let finalConfidence = mergedConfidence(
+            heuristicConfidence: snapshot.heuristicConfidence,
+            assistedConfidence: assisted.confidenceBucket,
+            replacedPrice: shouldTrustModelCandidate
+        )
+
         return OCRResult(
-            rawText: text.joined(separator: "\n"),
-            itemNameHint: itemNameHint,
-            price: priceCandidates.first?.value,
-            unit: unit,
-            quantity: resolvedQuantity,
-            confidence: priceCandidates.first?.confidence ?? averageConfidence(in: consolidatedObservations) ?? 0.1,
-            priceCandidates: priceCandidates,
-            supportingLines: consolidatedObservations.map(\.string)
+            rawText: snapshot.rawText,
+            itemNameHint: finalItemName,
+            price: finalPrice,
+            unit: snapshot.detectedUnit,
+            quantity: finalQuantity,
+            confidence: finalConfidence,
+            priceCandidates: snapshot.priceCandidates,
+            supportingLines: finalLines
         )
     }
 
@@ -800,6 +1083,104 @@ enum PriceParsingService {
         return containsPhoneNumber(in: lowered) || looksLikeDateLine(lowered)
     }
 
+    private static func hasCompetingTopCandidates(_ candidates: [PriceCandidate]) -> Bool {
+        guard candidates.count >= 2 else {
+            return false
+        }
+
+        let top = candidates[0]
+        let runnerUp = candidates[1]
+        if top.priority != runnerUp.priority {
+            return false
+        }
+
+        let confidenceGap = abs(top.confidence - runnerUp.confidence)
+        if confidenceGap > 0.08 {
+            return false
+        }
+
+        return top.sourceText != runnerUp.sourceText || top.value != runnerUp.value
+    }
+
+    private static func looksLikeMultiProductScan(_ snapshot: HeuristicExtractionSnapshot) -> Bool {
+        let descriptiveLines = snapshot.lines.filter { line in
+            !line.contains(where: \.isNumber) && !line.contains("$")
+        }
+        let distinctPriceSources = Set(snapshot.priceCandidates.map(\.sourceText))
+        return descriptiveLines.count >= 2 && distinctPriceSources.count >= 2
+    }
+
+    private static func sourceLineIndexes(
+        for candidate: PriceCandidate,
+        in snapshot: HeuristicExtractionSnapshot
+    ) -> [Int] {
+        snapshot.consolidatedObservations.enumerated().compactMap { index, observation in
+            let line = observation.string.lowercased()
+            let source = candidate.sourceText.lowercased()
+            return line.contains(source) || source.contains(line) ? index : nil
+        }
+    }
+
+    private static func encodeForPrompt<T: Encodable>(_ value: T) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        guard
+            let data = try? encoder.encode(value),
+            let string = String(data: data, encoding: .utf8)
+        else {
+            return "[]"
+        }
+
+        return string
+    }
+
+    private static func normalizedCanonicalItemName(
+        from assisted: AssistedExtractionResult,
+        snapshot: HeuristicExtractionSnapshot
+    ) -> String? {
+        if let name = assisted.canonicalItemName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
+
+        let selectedLines = supportingLines(from: assisted.targetLineIndexes, snapshot: snapshot)
+        return selectedLines.first { line in
+            !line.contains("$") && !line.contains(where: \.isNumber)
+        }
+    }
+
+    private static func supportingLines(
+        from targetLineIndexes: [Int],
+        snapshot: HeuristicExtractionSnapshot
+    ) -> [String] {
+        let lines = targetLineIndexes.compactMap { index in
+            snapshot.consolidatedObservations.indices.contains(index)
+                ? snapshot.consolidatedObservations[index].string
+                : nil
+        }
+
+        return lines.isEmpty ? snapshot.consolidatedObservations.map(\.string) : lines
+    }
+
+    private static func mergedConfidence(
+        heuristicConfidence: Float,
+        assistedConfidence: AssistedConfidenceBucket,
+        replacedPrice: Bool
+    ) -> Float {
+        let modelAdjustment: Float
+        switch assistedConfidence {
+        case .low:
+            modelAdjustment = -0.05
+        case .medium:
+            modelAdjustment = 0.03
+        case .high:
+            modelAdjustment = 0.08
+        }
+
+        let replacementAdjustment: Float = replacedPrice ? 0.02 : 0
+        return min(1, max(0.1, heuristicConfidence + modelAdjustment + replacementAdjustment))
+    }
+
     private static func containsPhoneNumber(in text: String) -> Bool {
         text.range(of: #"\d{10,}"#, options: .regularExpression) != nil
     }
@@ -815,6 +1196,40 @@ enum PriceParsingService {
     }
 
 #if DEBUG
+    static func _test_buildHeuristicSnapshot(_ observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
+        buildHeuristicSnapshot(from: observations)
+    }
+
+    static func _test_analyzeAmbiguity(_ observations: [OCRTextObservation]) -> ExtractionAmbiguityReport {
+        analyzeAmbiguity(in: buildHeuristicSnapshot(from: observations))
+    }
+
+    static func _test_assistedExtractionResult(
+        targetLineIndexes: [Int],
+        selectedPriceCandidateIndex: Int?,
+        selectedPriceKind: AssistedPriceKind,
+        canonicalItemName: String?,
+        ambiguityNotes: [String],
+        confidenceBucket: AssistedConfidenceBucket
+    ) -> AssistedExtractionResult {
+        AssistedExtractionResult(
+            targetLineIndexes: targetLineIndexes,
+            selectedPriceCandidateIndex: selectedPriceCandidateIndex,
+            selectedPriceKind: selectedPriceKind,
+            canonicalItemName: canonicalItemName,
+            ambiguityNotes: ambiguityNotes,
+            confidenceBucket: confidenceBucket
+        )
+    }
+
+    static func _test_mergeAssistedExtraction(
+        observations: [OCRTextObservation],
+        assisted: AssistedExtractionResult
+    ) -> OCRResult {
+        let snapshot = buildHeuristicSnapshot(from: observations)
+        return mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
+    }
+
     static func _test_consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {
         observations.consolidateObservations()
     }

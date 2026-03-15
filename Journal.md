@@ -28,6 +28,8 @@ If you are hunting parsing bugs, start in `PriceParsingService.swift`. That file
 - Swift Concurrency, because async camera/OCR/location work is cleaner and safer than callback ladders.
 - SwiftData, because persisted price entries and store metadata fit the native Apple stack well and keep the project lightweight.
 - Vision/OCR-style parsing plus deterministic heuristics, because grocery shelf text is chaotic and the team needs results that can be explained line by line.
+- Swift Testing over XCTest, because the lighter syntax fits this codebase better and keeps parser regressions easier to express and maintain.
+- Parameterized tests over one-off test methods, because parsing logic usually fails as a family of related inputs rather than as isolated snowflakes.
 
 ## The Journey
 ### March 13, 2026
@@ -42,10 +44,20 @@ This is the OCR equivalent of checking the jersey name before seating someone on
 
 Gotcha: generic descriptor lines like `Selected Varieties` are a different problem entirely. They are low-signal copy, not brand anchors, and should not be treated like one.
 
+### August 16, 2025
+Architecture turn: `PriceParsingService` now has the beginnings of a two-stage brain.
+
+Stage one is still the practical, deterministic parser: filter junk, normalize OCR, consolidate lines, and extract price/unit/item hints the old-fashioned way. Stage two is a guarded "ask the model only when the heuristics look shaky" path. That matters because grocery OCR is messy enough to need help sometimes, but not so messy that we should hand the steering wheel to a model on every scan.
+
+The useful lesson here is that Foundation Models are better treated like a specialist consultant than a replacement parser. Let the code do candidate generation and basic sanity checks first. Then, only when the result smells ambiguous, ask the model to break a tie: which lines belong to the product, which existing price candidate is the real one, and what should the product be called in human language.
+
+Gotcha: the `@Generable` response path was less forgiving than expected. Enums looked clean in app code, but the generated schema wanted simpler raw-string fields. The fix was to keep the app-facing result strongly typed while using a raw-string bridge for the generated response. Classic boundary design problem: keep the outside world loose, keep your own house typed.
+
 ## Engineer's Wisdom
 - Heuristic systems fail at the edges where two different items share the same descriptive vocabulary. Always ask what the true anchor is.
 - Cheap scores are useful until they become overconfident. Add guardrails where false merges are more damaging than false splits.
 - In parser code, regression tests are not optional. Every weird shelf sign you fix today is tomorrow's boomerang.
+- Prefer Swift Testing with parameterized coverage when possible. Parser behavior is easier to trust when one test shape can prove the same rule across many OCR fixtures.
 
 ## If I Were Starting Over...
 I would split `PriceParsingService.swift` earlier into smaller specialists: noise filtering, normalization, family clustering, and price ranking. Right now it still works, but it has the energy of a drawer full of useful cables that only one person knows how to untangle.

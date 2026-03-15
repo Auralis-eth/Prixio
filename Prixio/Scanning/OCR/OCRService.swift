@@ -11,7 +11,7 @@ import Vision
 extension UIImage {
     func extractOCR() async -> OCRResult {
         guard let cgImage = cgImage else {
-            return PriceParsingService.extract(from: [OCRTextObservation(string: "", confidence: 0)])
+            return await PriceParsingService.extract(from: [OCRTextObservation(string: "", confidence: 0)])
         }
 
         return await withCheckedContinuation { continuation in
@@ -22,7 +22,10 @@ extension UIImage {
                         OCRTextObservation(string: candidate.string, confidence: candidate.confidence)
                     }
                 }
-                continuation.resume(returning: PriceParsingService.extract(from: textObservations))
+                Task {
+                    let result = await PriceParsingService.extract(from: textObservations)
+                    continuation.resume(returning: result)
+                }
             }
 
             request.recognitionLevel = .accurate
