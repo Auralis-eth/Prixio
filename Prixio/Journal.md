@@ -108,6 +108,18 @@ The fix was to make item-name selection a scoring problem instead of a veto prob
 
 The nice little sting in the tail was that the first Step 6 probe came back with `nil` for `Coca Cola Zero Sugar 2L`, which immediately exposed the remaining weak assumption: the SKU filter was still too aggressive for branded names that include explicit size tokens. Relax that one gate, and the extractor starts acting like it has met a soda bottle before. Final state: the build is green, direct in-project verification shows the right item-name choices, and the harness is still occasionally timing out like a coworker who agrees to help and then vanishes into Slack.
 
+### War Story: The Parser Knew the Price, but Not How Many Things You Were Buying
+Step seven was the quantity pass, which is where parsers discover that humans love offer math and OCR does not. Before this step, the snapshot could carry a quantity if it happened to fall out of the direct `2/$5` candidate extraction, but anything more contextual was basically left to vibes. A tag saying `Buy One Get One Free` next to `$5.99` would give you a price, maybe a unit, maybe a product name, and then stare blankly when asked how many items the price actually covered.
+
+The fix was to make quantity inference candidate-aware. Instead of reading the entire OCR text like a conspiracy board, the snapshot now starts from the chosen price candidate, gathers the nearby lines that are most likely to belong to that price, and looks there for quantity signals. That matters because pack counts and promo phrases are often adjacent to the chosen price, not smeared uniformly across the scan.
+
+That produced a few useful rules that feel obvious in hindsight:
+- If the chosen candidate already carries a quantity, trust it.
+- If the nearby text says `Buy One Get One Free` or `BOGO`, quantity is `2`.
+- If the nearby text says `12 x 355 mL` or `6 pk`, quantity is the pack count when the parser is dealing with an `.each`-style product.
+
+This was one of those steps where the parser started sounding more like a cashier and less like a dictionary. `2/$5` now means two items. BOGO now means two items. A 12-pack now means twelve items. Revolutionary stuff, but only if you have ever debugged a parser that proudly divided by `nil` in its heart.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

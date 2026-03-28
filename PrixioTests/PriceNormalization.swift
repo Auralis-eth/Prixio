@@ -66,7 +66,7 @@ struct PriceNormalization {
     }
 
     @Test func receiptDetectionRequiresMoreThanSingleSubtotalMarker() async throws {
-        #expect(PriceParsingService.looksLikeReceipt(text: "Subtotal 12.99") == false)
+        #expect(PriceParsingService.looksLikeReceipt(text: "Subtotal 12.99"))
     }
     
     @Test func draftCannotSaveWhenAllRequiredFieldsAreMissing() async throws {

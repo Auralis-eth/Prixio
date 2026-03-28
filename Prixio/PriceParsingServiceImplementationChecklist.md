@@ -4,7 +4,7 @@ This file tracks the parser TODOs in strict sequence. Each step should be comple
 
 ## Current State
 
-Step 6 is implemented. Build validation succeeds, and the new item-name extraction cases were verified in-project, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
+Step 7 is implemented. Build validation succeeds, and the new quantity inference cases were verified in-project, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -42,6 +42,8 @@ Validation already done:
 - Step 6 introduced a scored item-name extractor and new branded-name fixtures
 - Step 6 snippet verification confirms branded names with numbers and size markers now survive snapshot extraction, promo-only lines no longer win by default, and short unit-only fragments no longer beat the product line
 - Step 6 `RunSomeTests` and `ExecuteSnippet` attempts hit harness timeouts before the final smaller in-project snippet verification succeeded
+- Step 7 introduced candidate-aware quantity inference for multi-buy offers, BOGO-style promos, and pack/count notation
+- Step 7 snippet verification confirms `2/$5` resolves quantity `2`, `Buy One Get One Free` resolves quantity `2`, and pack/count notation resolves per-each quantities like `12` and `6`
 - Live test diagnostics were previously polluted by a `TestingMacros` plugin path conflict between two local Xcode installs, so targeted test validation still cannot be treated as cleanly complete from the assistant harness
 
 ## Sequential Plan
@@ -175,11 +177,18 @@ Completed work:
 - Added targeted fixtures covering branded names with numbers and sizes, promo-only competing lines, and short unit fragments that should not become the item name
 
 7. Quantity inference
-Status: Pending
+Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
 
 Scope:
 - Infer quantities from multi-buy offers, BOGO-style promos, and pack notation
 - Tie quantity selection back to the chosen candidate and detected unit
+
+Completed work:
+- Added a single snapshot quantity-inference helper that starts with the chosen price candidate instead of guessing from the entire OCR blob
+- Preserve explicit candidate quantities for direct multi-buy offers like `2/$5` and `3 for $10`
+- Infer BOGO-style quantities from nearby promo lines tied to the selected price candidate
+- Infer per-each quantities from multi-pack and count-pack notation like `12 x 355 mL` and `6 pk`
+- Added targeted fixtures covering multi-buy, BOGO, multi-pack, and count-pack quantity resolution
 
 8. Final confidence assembly in `makeOCRResult`
 Status: Pending
@@ -190,7 +199,7 @@ Scope:
 
 ## Next Session Handoff
 
-If a new session picks this up, start with Step 7 only.
+If a new session picks this up, start with Step 8 only.
 
 Do not touch yet:
 - candidate ranking rules
@@ -204,7 +213,7 @@ Read first:
 - `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
 
 Then implement:
-- quantity inference improvements inside `buildHeuristicSnapshot(from:)`
+- final confidence assembly improvements in `makeOCRResult(from:)`
 
 Then validate in this order:
 - file diagnostics for `PriceParsingService.swift`

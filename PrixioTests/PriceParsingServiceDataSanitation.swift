@@ -127,4 +127,50 @@ struct PriceParsingServiceDataSanitation {
 
         #expect(snapshot.itemNameHint == "Organic Strawberries 454g")
     }
+
+    @Test(.tags(.ocr, .product))
+    func multiBuyCandidateKeepsItsQuantity() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Tortilla Chips", confidence: 0.94),
+            OCRTextObservation(string: "2/$5", confidence: 0.91)
+        ])
+
+        #expect(snapshot.priceCandidates.first?.quantity == Decimal(2))
+        #expect(snapshot.resolvedQuantity == Decimal(2))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func bogoPromoInfersQuantityFromNearbyLine() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Potato Chips", confidence: 0.93),
+            OCRTextObservation(string: "Buy One Get One Free", confidence: 0.82),
+            OCRTextObservation(string: "$5.99", confidence: 0.90)
+        ])
+
+        #expect(snapshot.resolvedQuantity == Decimal(2))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func multiPackNotationInfersEachQuantity() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Sparkling Water", confidence: 0.95),
+            OCRTextObservation(string: "12 x 355 mL", confidence: 0.88),
+            OCRTextObservation(string: "$5.99", confidence: 0.91)
+        ])
+
+        #expect(snapshot.detectedUnit == .each)
+        #expect(snapshot.resolvedQuantity == Decimal(12))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func countPackNotationInfersEachQuantity() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Granola Bars", confidence: 0.94),
+            OCRTextObservation(string: "6 pk", confidence: 0.83),
+            OCRTextObservation(string: "$4.49", confidence: 0.89)
+        ])
+
+        #expect(snapshot.detectedUnit == .each)
+        #expect(snapshot.resolvedQuantity == Decimal(6))
+    }
 }

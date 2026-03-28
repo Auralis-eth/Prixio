@@ -142,6 +142,7 @@ enum PriceParsingService {
     private static let unitLabelPattern = #"\b(ea|each)\b|/(lb|lbs|kg|l|liter|litre|100\s?g)\b"#
     private static let quantityFractionPattern = #"\b(\d+)\s*/\s*(\d+)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
     private static let quantityDecimalPattern = #"\b(\d+(?:[.,]\d+)?)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
+    private static let buyGetPattern = #"\bbuy\s+(\d+|one|two|three|four|five)\s+get\s+(\d+|one|two|three|four|five)(?:\s+free)?\b"#
     private static let monthNamePattern = #"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b"#
     private static let shelfCodePattern = #"^[A-Z0-9]{2,}(?:[/\-][A-Z0-9]{2,})+$"#
     private static let skuLikeTokenPattern = #"^[A-Z]*\d+[A-Z\d\-\/]*$"#
@@ -281,12 +282,11 @@ enum PriceParsingService {
             from: supportedLines,
             priceCandidates: priceCandidates
         )
-        // TODO: Let the snapshot phase infer quantities from offer patterns like "2/$5",
-        // "3 for $10", "buy one get one", and pack-size notation instead of relying on a
-        // single candidate or plain unit parsing.
-        let resolvedQuantity = priceCandidates.first?.quantity ?? detectQuantity(
-            in: unitScopeText.isEmpty ? normalizedText : unitScopeText,
-            unit: detectedUnit
+        let resolvedQuantity = inferResolvedQuantity(
+            from: supportedLines,
+            priceCandidates: priceCandidates,
+            detectedUnit: detectedUnit,
+            fallbackText: unitScopeText.isEmpty ? normalizedText : unitScopeText
         )
         let heuristicConfidence = priceCandidates.first?.confidence ?? averageConfidence(in: consolidatedObservations) ?? 0.1
 
@@ -1425,6 +1425,126 @@ enum PriceParsingService {
         }
 
         return nil
+    }
+
+    private static func inferResolvedQuantity(
+        from observations: [OCRTextObservation],
+        priceCandidates: [PriceCandidate],
+        detectedUnit: UnitType?,
+        fallbackText: String
+    ) -> Decimal? {
+        if let candidateQuantity = priceCandidates.first?.quantity {
+            return candidateQuantity
+        }
+
+        let contextText = quantityContextText(
+            for: priceCandidates.first,
+            observations: observations,
+            fallbackText: fallbackText
+        )
+
+        if let offerQuantity = inferOfferQuantity(in: contextText) {
+            return offerQuantity
+        }
+
+        if detectedUnit == .each || detectedUnit == nil,
+           let packQuantity = inferPackQuantity(in: contextText) {
+            return packQuantity
+        }
+
+        return detectQuantity(in: contextText, unit: detectedUnit)
+    }
+
+    private static func quantityContextText(
+        for candidate: PriceCandidate?,
+        observations: [OCRTextObservation],
+        fallbackText: String
+    ) -> String {
+        guard let candidate else {
+            return fallbackText
+        }
+
+        let sourceIndexes = sourceLineIndexes(for: candidate, in: observations)
+        guard !sourceIndexes.isEmpty else {
+            return fallbackText
+        }
+
+        let nearbyIndexes = Set(sourceIndexes.flatMap { index in
+            [(index - 1), index, (index + 1)].filter { observations.indices.contains($0) }
+        })
+        let nearbyLines = observations.enumerated().compactMap { index, observation in
+            nearbyIndexes.contains(index) ? observation.string : nil
+        }
+
+        return nearbyLines.isEmpty ? fallbackText : nearbyLines.joined(separator: "\n")
+    }
+
+    private static func inferOfferQuantity(in text: String) -> Decimal? {
+        let lowered = normalizedUnitDetectionText(text)
+
+        if let regex = try? NSRegularExpression(pattern: multiBuyPattern, options: [.caseInsensitive]),
+           let match = regex.firstMatch(in: lowered, range: NSRange(lowered.startIndex..., in: lowered)),
+           let quantityRange = Range(match.range(at: 1), in: lowered),
+           let quantity = Decimal(string: String(lowered[quantityRange])),
+           quantity > 0 {
+            return quantity
+        }
+
+        if lowered.contains("bogo") || lowered.contains("buy one get one") || lowered.contains("buy 1 get 1") {
+            return Decimal(2)
+        }
+
+        if let regex = try? NSRegularExpression(pattern: buyGetPattern, options: [.caseInsensitive]),
+           let match = regex.firstMatch(in: lowered, range: NSRange(lowered.startIndex..., in: lowered)),
+           let buyRange = Range(match.range(at: 1), in: lowered),
+           let getRange = Range(match.range(at: 2), in: lowered),
+           let buyQuantity = quantityWordValue(String(lowered[buyRange])),
+           let getQuantity = quantityWordValue(String(lowered[getRange])) {
+            return buyQuantity + getQuantity
+        }
+
+        return nil
+    }
+
+    private static func inferPackQuantity(in text: String) -> Decimal? {
+        let lowered = normalizedUnitDetectionText(text)
+
+        let patterns = [
+            #"\b(\d{1,2})\s*[x×]\s*\d{1,4}(?:\.\d+)?\s*(?:ml|g|kg|l|oz)\b"#,
+            #"\b(\d{1,3})\s*(?:pk|pack|ct|count)\b"#,
+            #"\bpack\s+of\s+(\d{1,3})\b"#
+        ]
+
+        for pattern in patterns {
+            guard
+                let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+                let match = regex.firstMatch(in: lowered, range: NSRange(lowered.startIndex..., in: lowered)),
+                let quantityRange = Range(match.range(at: 1), in: lowered),
+                let quantity = Decimal(string: String(lowered[quantityRange])),
+                quantity > 0
+            else {
+                continue
+            }
+
+            return quantity
+        }
+
+        return nil
+    }
+
+    private static func quantityWordValue(_ token: String) -> Decimal? {
+        if let numeric = Decimal(string: token), numeric > 0 {
+            return numeric
+        }
+
+        let wordValues: [String: Decimal] = [
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5
+        ]
+        return wordValues[token]
     }
 
     private static func extractItemNameHint(

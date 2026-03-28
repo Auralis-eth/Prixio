@@ -670,9 +670,9 @@
             filePath = "Prixio/Scanning/Price/PriceParsingService.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "156"
-            endingLineNumber = "156"
-            landmarkName = "explicitTokenCorrections"
+            startingLineNumber = "157"
+            endingLineNumber = "157"
+            landmarkName = "receiptMarkers"
             landmarkType = "24">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1086,8 +1086,8 @@
             filePath = "Prixio/Scanning/Price/PriceParsingService.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "230"
-            endingLineNumber = "230"
+            startingLineNumber = "231"
+            endingLineNumber = "231"
             landmarkName = "extract(from:)"
             landmarkType = "7">
          </BreakpointContent>
@@ -1102,8 +1102,8 @@
             filePath = "Prixio/Scanning/Price/PriceParsingService.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "157"
-            endingLineNumber = "157"
+            startingLineNumber = "158"
+            endingLineNumber = "158"
             landmarkName = "receiptMarkers"
             landmarkType = "24">
          </BreakpointContent>
