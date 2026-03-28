@@ -95,4 +95,36 @@ struct PriceParsingServiceDataSanitation {
 
         #expect(snapshot.detectedUnit == .each)
     }
+
+    @Test(.tags(.ocr, .product))
+    func itemNameKeepsBrandAndSizeMarkersWhenTheyShareOneLine() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Coca Cola Zero Sugar 2L", confidence: 0.95),
+            OCRTextObservation(string: "$2.99", confidence: 0.91)
+        ])
+
+        #expect(snapshot.itemNameHint == "Coca Cola Zero Sugar 2 L")
+    }
+
+    @Test(.tags(.ocr, .product))
+    func itemNamePrefersBrandedLineOverPromoOnlyLine() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Member Deal", confidence: 0.84),
+            OCRTextObservation(string: "7UP Zero Sugar 2L", confidence: 0.93),
+            OCRTextObservation(string: "$2.49", confidence: 0.90)
+        ])
+
+        #expect(snapshot.itemNameHint == "7UP Zero Sugar 2 L")
+    }
+
+    @Test(.tags(.ocr, .product))
+    func itemNameDoesNotCollapseToShortUnitLikeLine() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Organic Strawberries 454g", confidence: 0.94),
+            OCRTextObservation(string: "per lb", confidence: 0.78),
+            OCRTextObservation(string: "$4.99", confidence: 0.89)
+        ])
+
+        #expect(snapshot.itemNameHint == "Organic Strawberries 454g")
+    }
 }

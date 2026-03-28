@@ -4,7 +4,7 @@ This file tracks the parser TODOs in strict sequence. Each step should be comple
 
 ## Current State
 
-Step 5 is implemented. Build validation succeeds, and the new unit-detection cases were verified in-project, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
+Step 6 is implemented. Build validation succeeds, and the new item-name extraction cases were verified in-project, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -39,6 +39,9 @@ Validation already done:
 - Step 5 targeted tests initially surfaced two real regressions, both of which were fixed in `PriceParsingService.swift`
 - After the Step 5 fixes, follow-up `RunSomeTests` invocations failed with incomplete Xcode result bundles instead of parser assertions
 - `ExecuteSnippet` verification now confirms the new Step 5 cases for mixed-unit labels, split `price per` OCR, and multi-pack/count-pack signals inside the project context
+- Step 6 introduced a scored item-name extractor and new branded-name fixtures
+- Step 6 snippet verification confirms branded names with numbers and size markers now survive snapshot extraction, promo-only lines no longer win by default, and short unit-only fragments no longer beat the product line
+- Step 6 `RunSomeTests` and `ExecuteSnippet` attempts hit harness timeouts before the final smaller in-project snippet verification succeeded
 - Live test diagnostics were previously polluted by a `TestingMacros` plugin path conflict between two local Xcode installs, so targeted test validation still cannot be treated as cleanly complete from the assistant harness
 
 ## Sequential Plan
@@ -159,11 +162,17 @@ Completed work:
 - Added targeted fixtures covering mixed-unit labels, split `price per` phrases, multi-pack package sizing, and count-pack labels
 
 6. Item-name extraction
-Status: Pending
+Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
 
 Scope:
 - Replace the first-match shortcut with a scored extractor
 - Keep branded names even when they contain numbers or size markers
+
+Completed work:
+- Replaced the first acceptable-line shortcut with a scored item-name extractor inside `buildHeuristicSnapshot(from:)`
+- Score item-name candidates using descriptive-token density, proximity to the top price candidate, confidence, and penalties for promo-only or receipt-like text
+- Relaxed SKU-style rejection when a line carries explicit size tokens so branded names like `7UP Zero Sugar 2L` survive
+- Added targeted fixtures covering branded names with numbers and sizes, promo-only competing lines, and short unit fragments that should not become the item name
 
 7. Quantity inference
 Status: Pending
@@ -181,7 +190,7 @@ Scope:
 
 ## Next Session Handoff
 
-If a new session picks this up, start with Step 6 only.
+If a new session picks this up, start with Step 7 only.
 
 Do not touch yet:
 - candidate ranking rules
@@ -195,7 +204,7 @@ Read first:
 - `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
 
 Then implement:
-- item-name extraction improvements inside `buildHeuristicSnapshot(from:)`
+- quantity inference improvements inside `buildHeuristicSnapshot(from:)`
 
 Then validate in this order:
 - file diagnostics for `PriceParsingService.swift`

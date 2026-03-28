@@ -99,6 +99,15 @@ The fix was to stop treating unit detection like a reflex and start treating it 
 
 This one also produced a small tooling comedy. The new Step 5 tests were useful enough to catch two real regressions immediately: multi-pack lines were still getting dropped as fake SKUs, and split `price per` OCR was recovering the unit but not the default quantity. Both were fixed. Then the harness test runner decided it had done enough work for one day and started returning incomplete result bundles. So the final verification story is delightfully modern: green build, clean service-file diagnostics, direct in-project snippet verification for the new cases, and a test runner that still needs adult supervision.
 
+### War Story: `7UP Zero Sugar 2L` Is a Product Name, Not a Crime Scene
+Step six was about item-name extraction, which sounds polite until you look at the old rule: find the first line that is not a price, not a unit, and does not contain digits. That works fine if every shelf tag is a schoolbook noun phrase like `Fresh Bananas`. It falls over the moment the grocery aisle starts behaving like the real world.
+
+Real product names are full of things the old shortcut treated like suspicious activity: brand names with numbers, size markers, and promo-adjacent wording. `7UP Zero Sugar 2L` is obviously a product line to a human. To the old parser, it was dangerously close to a SKU because it mixed letters and digits. Meanwhile, a useless line like `Member Deal` could sneak past as the item name simply because it had no price and no numbers. That is how you end up with an app that sounds like it shops entirely from cardboard sale placards.
+
+The fix was to make item-name selection a scoring problem instead of a veto problem. Candidate lines now get judged on descriptive-token density, closeness to the top-ranked price line, OCR confidence, and whether they look like actual product text instead of promo confetti or receipt leftovers. Size-bearing product names are allowed to live. Promo-only fragments get penalized. Short unit-ish lines like `per lb` stop pretending they are a product.
+
+The nice little sting in the tail was that the first Step 6 probe came back with `nil` for `Coca Cola Zero Sugar 2L`, which immediately exposed the remaining weak assumption: the SKU filter was still too aggressive for branded names that include explicit size tokens. Relax that one gate, and the extractor starts acting like it has met a soda bottle before. Final state: the build is green, direct in-project verification shows the right item-name choices, and the harness is still occasionally timing out like a coworker who agrees to help and then vanishes into Slack.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

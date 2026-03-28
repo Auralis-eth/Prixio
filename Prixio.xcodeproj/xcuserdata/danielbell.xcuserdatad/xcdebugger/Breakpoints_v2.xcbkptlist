@@ -672,7 +672,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "156"
             endingLineNumber = "156"
-            landmarkName = "receiptMarkers"
+            landmarkName = "explicitTokenCorrections"
             landmarkType = "24">
          </BreakpointContent>
       </BreakpointProxy>
@@ -688,7 +688,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1272"
             endingLineNumber = "1272"
-            landmarkName = "splitCurrencyCandidate(dollarsText:centsText:sourceText:confidence:)"
+            landmarkName = "extractInlinePriceCandidates(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -704,7 +704,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1268"
             endingLineNumber = "1268"
-            landmarkName = "splitCurrencyCandidate(dollarsText:centsText:sourceText:confidence:)"
+            landmarkName = "extractInlinePriceCandidates(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -720,7 +720,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1264"
             endingLineNumber = "1264"
-            landmarkName = "splitCurrencyCandidate(dollarsText:centsText:sourceText:confidence:)"
+            landmarkName = "extractInlinePriceCandidates(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -816,7 +816,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1165"
             endingLineNumber = "1165"
-            landmarkName = "scorePriceCandidates(_:in:)"
+            landmarkName = "extractPriceCandidates(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -832,7 +832,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1143"
             endingLineNumber = "1143"
-            landmarkName = "scorePriceCandidates(_:in:)"
+            landmarkName = "extractPriceCandidates(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -848,7 +848,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1132"
             endingLineNumber = "1132"
-            landmarkName = "scorePriceCandidates(_:in:)"
+            landmarkName = "extractPriceCandidates(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -864,7 +864,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1103"
             endingLineNumber = "1103"
-            landmarkName = "extractPriceCandidates(from:)"
+            landmarkName = "unitPrice(price:quantity:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -880,7 +880,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "1078"
             endingLineNumber = "1078"
-            landmarkName = "extractPriceCandidates(from:)"
+            landmarkName = "containsExplicitSizeToken(in:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -896,7 +896,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "908"
             endingLineNumber = "908"
-            landmarkName = "repairPackSizeNoise(in:)"
+            landmarkName = "correctedToken(_:vocabularyFrequency:observationConfidence:lineIndex:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -912,7 +912,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "885"
             endingLineNumber = "885"
-            landmarkName = "supportsContextualCorrection(signal:observationConfidence:lineIndex:)"
+            landmarkName = "correctedToken(_:vocabularyFrequency:observationConfidence:lineIndex:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -928,7 +928,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "854"
             endingLineNumber = "854"
-            landmarkName = "correctedToken(_:vocabularyFrequency:observationConfidence:lineIndex:)"
+            landmarkName = "contextualVocabulary(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -944,7 +944,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "841"
             endingLineNumber = "841"
-            landmarkName = "correctedToken(_:vocabularyFrequency:observationConfidence:lineIndex:)"
+            landmarkName = "contextualVocabulary(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -960,7 +960,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "831"
             endingLineNumber = "831"
-            landmarkName = "correctedToken(_:vocabularyFrequency:observationConfidence:lineIndex:)"
+            landmarkName = "applyContextualNormalization(to:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -976,8 +976,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "764"
             endingLineNumber = "764"
-            landmarkName = "isLikelySKU(_:)"
-            landmarkType = "7">
+            landmarkName = "PriceParsingService"
+            landmarkType = "13">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -992,7 +992,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "742"
             endingLineNumber = "742"
-            landmarkName = "isLikelyShelfCode(_:)"
+            landmarkName = "isObviousNoiseLine(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1008,7 +1008,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "718"
             endingLineNumber = "718"
-            landmarkName = "isObviousNoiseLine(_:)"
+            landmarkName = "minimallySanitizedObservations(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1024,7 +1024,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "714"
             endingLineNumber = "714"
-            landmarkName = "isObviousNoiseLine(_:)"
+            landmarkName = "minimallySanitizedObservations(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1040,7 +1040,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "696"
             endingLineNumber = "696"
-            landmarkName = "isObviousNoiseLine(_:)"
+            landmarkName = "removeObviousNoise(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1056,7 +1056,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "688"
             endingLineNumber = "688"
-            landmarkName = "isObviousNoiseLine(_:)"
+            landmarkName = "removeObviousNoise(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1072,7 +1072,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "499"
             endingLineNumber = "499"
-            landmarkName = "mergeAssistedExtraction(snapshot:assisted:)"
+            landmarkName = "buildAssistedExtractionPrompt(snapshot:ambiguity:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1088,7 +1088,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "230"
             endingLineNumber = "230"
-            landmarkName = "buildHeuristicSnapshot(from:)"
+            landmarkName = "extract(from:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1104,7 +1104,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "157"
             endingLineNumber = "157"
-            landmarkName = "assistedExtractionInstructions"
+            landmarkName = "receiptMarkers"
             landmarkType = "24">
          </BreakpointContent>
       </BreakpointProxy>
