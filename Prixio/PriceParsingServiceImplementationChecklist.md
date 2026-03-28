@@ -1,10 +1,28 @@
 # PriceParsingService Implementation Checklist
 
-This file tracks the parser TODOs in strict sequence. Each step should be completed, tested, and validated before the next one starts.
+This file originally tracked the parser TODOs in strict sequence. That eight-step parser pass is now complete.
+
+The file now serves as the handoff for the next phase of work around parser reliability, maintainability, and integration.
 
 ## Current State
 
-Step 7 is implemented. Build validation succeeds, and the new quantity inference cases were verified in-project, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
+The parser implementation checklist is complete.
+
+What is done:
+- Spatial grouping
+- Sparse OCR fallback
+- Snapshot normalization expansion
+- Price candidate scoring
+- Unit detection hardening
+- Item-name extraction
+- Quantity inference
+- Final confidence assembly
+
+What is not done:
+- Clean, repeatable targeted test execution from the assistant/Xcode harness
+- Parser maintainability cleanup after the feature push
+- Broader real-world OCR fixture coverage
+- Downstream scan-flow review for low-confidence and ambiguous parser results
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -44,7 +62,92 @@ Validation already done:
 - Step 6 `RunSomeTests` and `ExecuteSnippet` attempts hit harness timeouts before the final smaller in-project snippet verification succeeded
 - Step 7 introduced candidate-aware quantity inference for multi-buy offers, BOGO-style promos, and pack/count notation
 - Step 7 snippet verification confirms `2/$5` resolves quantity `2`, `Buy One Get One Free` resolves quantity `2`, and pack/count notation resolves per-each quantities like `12` and `6`
+- Step 8 replaced raw top-candidate confidence with assembled result confidence derived from snapshot agreement and ambiguity penalties
+- Step 8 snippet verification confirms clean scans score high confidence, weak single-line scans score low confidence, and conflicting scans land in between
 - Live test diagnostics were previously polluted by a `TestingMacros` plugin path conflict between two local Xcode installs, so targeted test validation still cannot be treated as cleanly complete from the assistant harness
+
+## Completed Parser Work
+
+1. Spatial line grouping in `buildHeuristicSnapshot`
+Status: Complete
+
+2. Sparse OCR fallback in `buildHeuristicSnapshot`
+Status: Complete
+
+3. Snapshot normalization expansion
+Status: Complete
+
+4. Price candidate scoring
+Status: Complete
+
+5. Unit detection hardening
+Status: Complete
+
+6. Item-name extraction
+Status: Complete
+
+7. Quantity inference
+Status: Complete
+
+8. Final confidence assembly in `makeOCRResult`
+Status: Complete
+
+## Next Phase
+
+This section replaces the old sequential parser TODO list. The parser feature push is done. The next work should happen in this order.
+
+1. Validation hardening
+Status: Next
+
+Scope:
+- Make targeted parser tests run cleanly and repeatably from the current Xcode/tooling environment
+- Diagnose whether the remaining failures are `TestingMacros`, result-bundle corruption, timeouts, or test-plan/configuration issues
+- End this phase with reliable targeted runs for:
+  - `PriceParsingServiceSpatialGroupingTests`
+  - `PriceParsingServiceAmbiguityTests`
+  - `PriceParsingServiceDataSanitation`
+
+Definition of done:
+- Targeted parser tests run without `No result`, incomplete result bundles, or repeated harness timeouts
+- Full project build still succeeds
+- The validation story no longer relies on snippet verification as the primary fallback
+
+2. Parser refactor
+Status: Pending
+
+Scope:
+- Break up `PriceParsingService.swift` without changing parser behavior
+- Separate snapshot prep, candidate scoring, item-name extraction, quantity inference, and confidence assembly into clearer helper seams or types
+- Preserve current test coverage and behavior while reducing file density and coupling
+
+Definition of done:
+- `PriceParsingService.swift` is materially easier to navigate
+- Existing parser behavior remains stable
+- No checklist-era heuristics are lost during extraction
+
+3. Real-world OCR fixture coverage
+Status: Pending
+
+Scope:
+- Add more fixtures that look like actual shelf tags instead of only narrow synthetic inputs
+- Cover sale tags, deposit-heavy beverage tags, side-by-side products, weird pack notation, and noisy flyer/receipt edge cases
+- Prefer regression-style fixtures that preserve bugs we already learned from
+
+Definition of done:
+- Parser coverage better reflects real shelf-tag failure modes
+- At least a few new regression fixtures come from real captured OCR patterns
+
+4. Scan-flow integration review
+Status: Pending
+
+Scope:
+- Review how `ScanViewModel` and the scanner UI consume low-confidence, ambiguous, or assisted parser results
+- Check whether confidence, quantity, and item-name improvements are surfaced clearly in the confirmation flow
+- Look for places where parser uncertainty should drive different UI behavior
+
+Definition of done:
+- Parser confidence meaning is reflected coherently in the scan flow
+- Ambiguous parses do not silently look “done” in the UI
 
 ## Sequential Plan
 
@@ -191,42 +294,37 @@ Completed work:
 - Added targeted fixtures covering multi-buy, BOGO, multi-pack, and count-pack quantity resolution
 
 8. Final confidence assembly in `makeOCRResult`
-Status: Pending
+Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
 
 Scope:
 - Derive confidence from agreement across snapshot signals and ambiguity analysis
 - Add tests for clean, weak, and conflicting scans
 
+Completed work:
+- Replaced the raw top-candidate confidence shortcut in `makeOCRResult(from:)` with assembled heuristic confidence
+- Added confidence boosts for signal agreement across price, item name, unit, quantity, and OCR support density
+- Added confidence penalties for ambiguity weaknesses like missing fields, sparse OCR, competing prices, and multi-product scans
+- Added focused tests for clean, weak, and conflicting confidence outcomes
+
 ## Next Session Handoff
 
-If a new session picks this up, start with Step 8 only.
-
-Do not touch yet:
-- candidate ranking rules
-- item-name extraction logic
-- quantity inference logic
-- final confidence calculation
+If a new session picks this up, start with `Validation hardening`.
 
 Read first:
 - `Prixio/Scanning/Price/PriceParsingService.swift`
 - `PrixioTests/PriceParsingServiceDataSanitation.swift`
 - `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
+- `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
 
-Then implement:
-- final confidence assembly improvements in `makeOCRResult(from:)`
-
-Then validate in this order:
-- file diagnostics for `PriceParsingService.swift`
-- `PriceParsingServiceSpatialGroupingTests`
-- `PriceParsingServiceAmbiguityTests`
-- full project build
+Then focus on:
+- making targeted parser tests reliable before doing broader refactors
 
 ## Execution Rule
 
-For every remaining step:
-- implement the change
-- add or update tests
+For each next-phase item:
+- make the smallest change that resolves the actual blocker
+- prefer validation and regression coverage before further heuristics
 - run Xcode diagnostics
-- run targeted tests
+- run targeted tests when the harness allows it
 - run a full build
-- only then continue
+- update this file and `Journal.md` with the real outcome

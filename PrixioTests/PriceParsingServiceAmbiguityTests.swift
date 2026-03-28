@@ -122,4 +122,43 @@ struct PriceParsingServiceAmbiguityTests {
         #expect(snapshot.priceCandidates.first?.value == Decimal(string: "5.99"))
         #expect(report.weaknesses.contains(.multipleCompetingPrices) == false)
     }
+
+    @Test(.tags(.ocr, .product))
+    @MainActor
+    func cleanScanProducesHighConfidenceResult() async throws {
+        let result = PriceParsingService._test_makeOCRResult([
+            OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),
+            OCRTextObservation(string: "$1.29 /lb", confidence: 0.91)
+        ])
+
+        #expect((result.confidence ?? 0) >= 0.85)
+    }
+
+    @Test(.tags(.ocr, .product))
+    @MainActor
+    func weakSingleLineScanProducesLowConfidenceResult() async throws {
+        let result = PriceParsingService._test_makeOCRResult([
+            OCRTextObservation(string: "$3.99", confidence: 0.66)
+        ])
+
+        #expect((result.confidence ?? 1) <= 0.45)
+    }
+
+    @Test(.tags(.ocr, .product))
+    @MainActor
+    func conflictingScanProducesLowerConfidenceThanCleanScan() async throws {
+        let cleanResult = PriceParsingService._test_makeOCRResult([
+            OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),
+            OCRTextObservation(string: "$1.29 /lb", confidence: 0.91)
+        ])
+        let conflictingResult = PriceParsingService._test_makeOCRResult([
+            OCRTextObservation(string: "Coke Zero", confidence: 0.93),
+            OCRTextObservation(string: "$2.99", confidence: 0.91),
+            OCRTextObservation(string: "Pepsi", confidence: 0.92),
+            OCRTextObservation(string: "$3.49", confidence: 0.90)
+        ])
+
+        #expect((conflictingResult.confidence ?? 0) < (cleanResult.confidence ?? 1))
+        #expect((conflictingResult.confidence ?? 1) <= 0.65)
+    }
 }

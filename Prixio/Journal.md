@@ -120,6 +120,20 @@ That produced a few useful rules that feel obvious in hindsight:
 
 This was one of those steps where the parser started sounding more like a cashier and less like a dictionary. `2/$5` now means two items. BOGO now means two items. A 12-pack now means twelve items. Revolutionary stuff, but only if you have ever debugged a parser that proudly divided by `nil` in its heart.
 
+### War Story: Confidence Needed a Jury, Not a Single Witness
+Step eight cleaned up the last suspicious shortcut in the parser: confidence used to be little more than “whatever confidence came with the top price candidate.” That is convenient, but it is also the kind of logic that lets one confident OCR line swagger into court and testify on behalf of an entire shelf tag.
+
+The problem is obvious once you say it out loud. A good grocery parse is not just “I found a price.” It is “I found a price, and the item name makes sense, and the unit makes sense, and the quantity makes sense, and the scan does not look like two products fighting for custody of the same result.” Confidence had to become a summary of agreement, not a souvenir from the price extractor.
+
+So `makeOCRResult(from:)` now assembles confidence more like a jury verdict. Helpful signals push it up: a stable price candidate, a believable item name, a resolved unit, a resolved quantity, and enough OCR support lines that the parse does not feel like it was reconstructed from a ransom note. Weaknesses push it down: missing fields, sparse OCR, competing prices, multi-product scans, and other ambiguity flags.
+
+The nice part is that the new scores feel sane in human terms:
+- clean product tag: very high confidence
+- one lonely price line: low confidence
+- conflicting multi-product frame: middling at best
+
+That is a much better contract for the rest of the app. Confidence is now the parser’s closing argument, not just the loudest witness in the room.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

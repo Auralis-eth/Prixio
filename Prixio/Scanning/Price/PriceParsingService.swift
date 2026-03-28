@@ -425,16 +425,14 @@ enum PriceParsingService {
     }
 
     private static func makeOCRResult(from snapshot: HeuristicExtractionSnapshot) -> OCRResult {
-        // TODO: Move confidence assembly beyond the top price candidate. The final result
-        // should reflect agreement between snapshot data and ambiguity signals across
-        // price, unit, and item parsing.
-        OCRResult(
+        let ambiguity = analyzeAmbiguity(in: snapshot)
+        return OCRResult(
             rawText: snapshot.rawText,
             itemNameHint: snapshot.itemNameHint,
             price: snapshot.priceCandidates.first?.value,
             unit: snapshot.detectedUnit,
             quantity: snapshot.resolvedQuantity,
-            confidence: snapshot.heuristicConfidence,
+            confidence: assembleHeuristicConfidence(snapshot: snapshot, ambiguity: ambiguity),
             priceCandidates: snapshot.priceCandidates,
             supportingLines: snapshot.consolidatedObservations.map(\.string)
         )
@@ -2018,6 +2016,62 @@ enum PriceParsingService {
         return min(1, max(0.1, heuristicConfidence + modelAdjustment + replacementAdjustment))
     }
 
+    private static func assembleHeuristicConfidence(
+        snapshot: HeuristicExtractionSnapshot,
+        ambiguity: ExtractionAmbiguityReport
+    ) -> Float {
+        var confidence = max(0.15, snapshot.heuristicConfidence)
+
+        if !snapshot.priceCandidates.isEmpty {
+            confidence += 0.06
+        }
+        if snapshot.itemNameHint?.isEmpty == false {
+            confidence += 0.06
+        }
+        if snapshot.detectedUnit != nil {
+            confidence += 0.05
+        }
+        if snapshot.resolvedQuantity != nil || snapshot.detectedUnit == .each {
+            confidence += 0.05
+        }
+        if snapshot.cleanedObservations.count >= 2 && snapshot.lines.count >= 2 {
+            confidence += 0.04
+        }
+        if !hasCompetingTopCandidates(snapshot.priceCandidates) {
+            confidence += 0.04
+        }
+        if !looksLikeMultiProductScan(snapshot) {
+            confidence += 0.03
+        }
+
+        for weakness in ambiguity.weaknesses {
+            confidence -= confidencePenalty(for: weakness)
+        }
+
+        return min(0.99, max(0.1, confidence))
+    }
+
+    private static func confidencePenalty(for weakness: ExtractionWeakness) -> Float {
+        switch weakness {
+        case .noPriceCandidates:
+            return 0.28
+        case .multipleCompetingPrices:
+            return 0.18
+        case .missingItemName:
+            return 0.12
+        case .missingUnit:
+            return 0.12
+        case .missingQuantity:
+            return 0.08
+        case .lowConfidence:
+            return 0.10
+        case .sparseOCR:
+            return 0.10
+        case .possibleMultiProductScan:
+            return 0.16
+        }
+    }
+
     private static func containsPhoneNumber(in text: String) -> Bool {
         text.range(of: #"\d{10,}"#, options: .regularExpression) != nil
     }
@@ -2035,6 +2089,10 @@ enum PriceParsingService {
 #if DEBUG
     static func _test_buildHeuristicSnapshot(_ observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
         buildHeuristicSnapshot(from: observations)
+    }
+
+    static func _test_makeOCRResult(_ observations: [OCRTextObservation]) -> OCRResult {
+        makeOCRResult(from: buildHeuristicSnapshot(from: observations))
     }
 
     static func _test_analyzeAmbiguity(_ observations: [OCRTextObservation]) -> ExtractionAmbiguityReport {
