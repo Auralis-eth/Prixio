@@ -23,6 +23,7 @@ What is not done:
 - Parser maintainability cleanup after the feature push
 - Broader real-world OCR fixture coverage
 - Downstream scan-flow review for low-confidence and ambiguous parser results
+- A deliberate Foundation Models rollout plan beyond the current second-pass prototype
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -148,6 +149,67 @@ Scope:
 Definition of done:
 - Parser confidence meaning is reflected coherently in the scan flow
 - Ambiguous parses do not silently look “done” in the UI
+
+5. Foundation Models rollout
+Status: Pending
+
+Scope:
+- Keep Foundation Models as a constrained second-pass parser, not the primary parser
+- Expand the current assisted extraction path deliberately instead of letting it grow ad hoc
+- Use guided generation with typed `@Generable` responses and keep prompts/session state small
+
+Implementation order:
+1. Stabilize the current assisted extraction path
+2. Improve prompt/schema quality before expanding responsibilities
+3. Expand model responsibilities only where heuristics remain structurally weak
+4. Add explicit validation for heuristic-vs-assisted agreement
+
+Phase 1: Stabilize current assisted extraction
+- Keep the current trigger boundary: only escalate when `analyzeAmbiguity(in:)` says the heuristic parse is weak or ambiguous
+- Audit `AssistedExtractionResponse`, `AssistedExtractionResult`, `buildAssistedExtractionPrompt(...)`, and `mergeAssistedExtraction(...)`
+- Make sure the model is only selecting among existing OCR lines and existing price candidates
+- Add regression coverage for:
+  - assisted line selection
+  - assisted candidate classification
+  - assisted item-name normalization
+  - confidence changes when assisted output agrees or disagrees with heuristics
+
+Phase 2: Tighten prompt/schema design
+- Keep `LanguageModelSession` single-turn for this parser flow unless there is a proven benefit to multi-turn context
+- Keep instructions short to reduce token/context pressure
+- Continue using guided generation with `@Generable` output instead of raw string parsing
+- Prefer explicit field semantics over long narrative prompts
+- If needed, split one large assisted task into smaller single-purpose model calls rather than growing one oversized prompt
+
+Phase 3: Expand only the right model responsibilities
+- Good next uses:
+  - classify existing price candidates as sale, regular, unit price, deposit, noise, or unknown
+  - select which OCR lines belong to the target product when nearby tags compete
+  - normalize a final canonical item name from messy OCR evidence
+  - interpret promo semantics when deterministic quantity rules remain insufficient
+- Lower-priority uses:
+  - line-by-line OCR repair, only if real fixtures prove deterministic normalization has hit a ceiling
+- Avoid:
+  - inventing new prices, units, quantities, or line indexes
+  - replacing deterministic parsing for clean single-tag scans
+  - turning model output into the sole confidence source
+
+Phase 4: Confidence and merge policy
+- Keep final confidence derived from agreement between heuristic parsing and assisted parsing
+- Reward assisted output when it agrees with strong heuristic signals
+- Penalize or ignore assisted output when it conflicts with strong deterministic evidence
+- Treat low-confidence model output as advisory, not authoritative
+
+Tool-calling rule:
+- Do not add Foundation Models tool calling by default
+- If tool calling is introduced later, limit it to deterministic helpers such as known-brand lookup, normalization helpers, or catalog-backed disambiguation
+- Do not use tools for side effects in the parser path
+
+Definition of done:
+- The assisted path is explicitly scoped and documented
+- Prompt/schema design is lean and testable
+- Assisted extraction improves real ambiguous scans without regressing clean heuristic-only scans
+- Confidence and merge behavior are covered by tests or deterministic in-project verification
 
 ## Sequential Plan
 
@@ -318,6 +380,7 @@ Read first:
 
 Then focus on:
 - making targeted parser tests reliable before doing broader refactors
+- keeping any future Foundation Models expansion constrained to second-pass ambiguity resolution
 
 ## Execution Rule
 
