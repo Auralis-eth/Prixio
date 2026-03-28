@@ -90,6 +90,15 @@ That changed the parser from “two prices, panic” to “two prices, read the 
 
 There was one annoying side quest on the tooling side too: validation from the assistant harness ran into a `TestingMacros` plugin path conflict between two local Xcode installs, plus flaky MCP test execution. The good news is that the project build now succeeds again from the harness. The bad news is that targeted parser test runs still refuse to behave like adults: one invocation returned `No result` for every selected test, and the follow-up run timed out. So the scoring work is in, the service file diagnostics are clean, the build is green, and the remaining problem is squarely in harness-level test execution rather than the candidate-ranking code itself.
 
+### War Story: A 12-Pack Is Not a Liter, and `lb` Is Not Noise
+Step five turned out to be a good reminder that OCR parsers do not fail because they are dumb. They fail because they are confidently literal in exactly the wrong place.
+
+The old unit detector was basically a row of `contains(...)` checks. That worked for friendly tags like `$1.29 /lb`, but it got confused the minute real shelf-tag chaos showed up. A line like `12 x 355 mL` would tempt the parser toward `.liter` even though that text describes package size, not a per-liter price. Meanwhile, a split OCR sequence like `Price`, `per`, `lb`, `$1.29` could lose the word `per`, decide `lb` looked too short to be useful, toss it out as noise, and then act surprised that no unit survived.
+
+The fix was to stop treating unit detection like a reflex and start treating it like evidence. `PriceParsingService` now scores unit signals instead of grabbing the first substring that looks vaguely unit-shaped. Direct rate signals like `/lb`, `per kg`, or `price per 100 g` outrank package-size hints. Package-size hints like `12 x 355 mL` and `6 pk` now map to `.each` as a safer fallback instead of masquerading as rate units. And the noise filter learned one extremely practical lesson: if a tiny token like `lb` is the only bridge between OCR fragments and a valid unit price, do not throw it in the trash just because it is short.
+
+This one also produced a small tooling comedy. The new Step 5 tests were useful enough to catch two real regressions immediately: multi-pack lines were still getting dropped as fake SKUs, and split `price per` OCR was recovering the unit but not the default quantity. Both were fixed. Then the harness test runner decided it had done enough work for one day and started returning incomplete result bundles. So the final verification story is delightfully modern: green build, clean service-file diagnostics, direct in-project snippet verification for the new cases, and a test runner that still needs adult supervision.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

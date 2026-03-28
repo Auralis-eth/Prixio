@@ -1106,36 +1106,6 @@
             endingLineNumber = "157"
             landmarkName = "assistedExtractionInstructions"
             landmarkType = "24">
-            <Locations>
-               <Location
-                  uuid = "12BE5BB0-0258-4973-872B-05D02EA7516F - 9853d2cf37f6bba2"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "one-time initialization function for assistedExtractionInstructions"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "157"
-                  endingLineNumber = "157">
-               </Location>
-               <Location
-                  uuid = "12BE5BB0-0258-4973-872B-05D02EA7516F - 8775125bf8f28f7f"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "Prixio.PriceParsingService.assistedExtractionInstructions.unsafeMutableAddressor : Swift.String"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "157"
-                  endingLineNumber = "157">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>

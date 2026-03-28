@@ -48,4 +48,51 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.detectedUnit == .each)
         #expect(snapshot.priceCandidates.first?.value == Decimal(string: "2.99"))
     }
+
+    @Test(.tags(.ocr, .product))
+    func mixedUnitLabelPrefersFirstDirectRateUnit() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Fresh Salmon", confidence: 0.94),
+            OCRTextObservation(string: "$1.29 /lb $2.84 /kg", confidence: 0.89)
+        ])
+
+        #expect(snapshot.detectedUnit == .lb)
+        #expect(snapshot.resolvedQuantity == Decimal(1))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func splitPricePerPhraseAcrossLinesStillDetectsUnit() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Price", confidence: 0.81),
+            OCRTextObservation(string: "per", confidence: 0.78),
+            OCRTextObservation(string: "lb", confidence: 0.82),
+            OCRTextObservation(string: "$1.29", confidence: 0.92)
+        ])
+
+        #expect(snapshot.detectedUnit == .lb)
+        #expect(snapshot.resolvedQuantity == Decimal(1))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func multiPackSignalDefaultsToEachInsteadOfLiter() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Sparkling Water", confidence: 0.95),
+            OCRTextObservation(string: "$5.99", confidence: 0.91),
+            OCRTextObservation(string: "12 x 355 mL", confidence: 0.88)
+        ])
+
+        #expect(snapshot.detectedUnit == .each)
+        #expect(snapshot.resolvedQuantity == nil)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func countPackSignalDefaultsToEach() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Granola Bars", confidence: 0.94),
+            OCRTextObservation(string: "$4.49", confidence: 0.89),
+            OCRTextObservation(string: "6 pk", confidence: 0.83)
+        ])
+
+        #expect(snapshot.detectedUnit == .each)
+    }
 }

@@ -4,7 +4,7 @@ This file tracks the parser TODOs in strict sequence. Each step should be comple
 
 ## Current State
 
-Step 4 is implemented. Build validation now succeeds, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
+Step 5 is implemented. Build validation succeeds, and the new unit-detection cases were verified in-project, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -36,6 +36,9 @@ Validation already done:
 - `BuildProject` now succeeds from the MCP harness
 - A targeted `RunSomeTests` invocation reported `No result` for the selected parser tests
 - A follow-up targeted `RunSomeTests` invocation timed out after 120 seconds
+- Step 5 targeted tests initially surfaced two real regressions, both of which were fixed in `PriceParsingService.swift`
+- After the Step 5 fixes, follow-up `RunSomeTests` invocations failed with incomplete Xcode result bundles instead of parser assertions
+- `ExecuteSnippet` verification now confirms the new Step 5 cases for mixed-unit labels, split `price per` OCR, and multi-pack/count-pack signals inside the project context
 - Live test diagnostics were previously polluted by a `TestingMacros` plugin path conflict between two local Xcode installs, so targeted test validation still cannot be treated as cleanly complete from the assistant harness
 
 ## Sequential Plan
@@ -142,11 +145,18 @@ Scope:
 - Add tests for competing candidate scenarios
 
 5. Unit detection hardening
-Status: Next
+Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
 
 Scope:
 - Handle compound units, multi-pack signals, and split “price per” phrases
 - Add targeted unit parsing fixtures
+
+Completed work:
+- Replaced the snapshot unit detector’s first-match substring checks with scored unit evidence
+- Prefer direct rate-unit signals over package-size text when mixed-unit labels appear on the same shelf tag
+- Preserve standalone unit tokens like `lb` during noise filtering so split `price per` OCR still resolves a unit
+- Preserve multi-pack size lines like `12 x 355 mL` and count-pack lines like `6 pk` instead of misclassifying them as SKU noise
+- Added targeted fixtures covering mixed-unit labels, split `price per` phrases, multi-pack package sizing, and count-pack labels
 
 6. Item-name extraction
 Status: Pending
@@ -171,22 +181,21 @@ Scope:
 
 ## Next Session Handoff
 
-If a new session picks this up, start with Step 5 only.
+If a new session picks this up, start with Step 6 only.
 
 Do not touch yet:
 - candidate ranking rules
-- unit parsing rules
 - item-name extraction logic
 - quantity inference logic
 - final confidence calculation
 
 Read first:
 - `Prixio/Scanning/Price/PriceParsingService.swift`
-- `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
+- `PrixioTests/PriceParsingServiceDataSanitation.swift`
 - `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
 
 Then implement:
-- unit detection hardening inside `buildHeuristicSnapshot(from:)`
+- item-name extraction improvements inside `buildHeuristicSnapshot(from:)`
 
 Then validate in this order:
 - file diagnostics for `PriceParsingService.swift`

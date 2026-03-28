@@ -16,6 +16,12 @@ enum PriceParsingService {
         var lineIndexes: [Int]
     }
 
+    private struct UnitDetectionSignal {
+        let unit: UnitType
+        let score: Int
+        let location: String.Index
+    }
+
     struct SpatialObservationGroup: Sendable {
         let observations: [OCRTextObservation]
         let score: Float
@@ -233,9 +239,6 @@ enum PriceParsingService {
             extractedPriceCandidates,
             in: supportedLines
         )
-        // TODO: Make snapshot unit detection handle compound and normalized units more
-        // robustly, including multi-pack counts, mixed-unit labels, and "price per"
-        // phrases split across lines.
         let detectedUnit = detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
         let lines = (unitScopeText.isEmpty ? normalizedText : unitScopeText)
             .components(separatedBy: .newlines)
@@ -699,7 +702,7 @@ enum PriceParsingService {
         let hasPriceSignal = containsPriceSignal(in: trimmed)
         let hasUnitSignal = detectUnit(in: trimmed) != nil || containsExplicitSizeToken(in: trimmed)
 
-        if isLikelyShelfCode(trimmed) || isLikelySKU(trimmed) {
+        if (isLikelyShelfCode(trimmed) || isLikelySKU(trimmed)) && !hasUnitSignal {
             return true
         }
 
@@ -1034,8 +1037,14 @@ enum PriceParsingService {
         if words.contains(where: { isSizeToken($0) }) {
             return true
         }
+        if line.range(
+            of: #"\d{1,2}\s*[x×]\s*\d{1,4}(?:\.\d+)?\s*(ml|g|kg|l|oz)"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
+            return true
+        }
         return line.range(
-            of: #"\d{1,4}\s*(ml|g|kg|l|oz|lb|pk|ct)"#,
+            of: #"\d{1,4}\s*(ml|g|kg|l|oz|lb|pk|ct|count|pack)"#,
             options: [.regularExpression, .caseInsensitive]
         ) != nil
     }
@@ -1326,25 +1335,14 @@ enum PriceParsingService {
     }
 
     private static func detectUnit(in text: String) -> UnitType? {
-        let lowered = text.lowercased()
-
-        if lowered.contains("100 g") || lowered.contains("100g") {
-            return .hundredGrams
-        }
-        if lowered.contains(" lbs") || lowered.contains("/lb") || lowered.contains(" lb") {
-            return .lb
-        }
-        if lowered.contains("/kg") || lowered.contains(" kg") {
-            return .kg
-        }
-        if lowered.contains(" ea") || lowered.contains(" each") {
-            return .each
-        }
-        if lowered.contains(" l") || lowered.contains("/l") {
-            return .liter
+        let normalized = normalizedUnitDetectionText(text)
+        let directSignals = directUnitSignals(in: normalized)
+        if let strongestDirectSignal = strongestUnitSignal(in: directSignals) {
+            return strongestDirectSignal.unit
         }
 
-        return nil
+        let packageSignals = packageUnitSignals(in: normalized)
+        return strongestUnitSignal(in: packageSignals)?.unit
     }
 
     private static func detectQuantity(in text: String, unit: UnitType?) -> Decimal? {
@@ -1352,15 +1350,15 @@ enum PriceParsingService {
             return nil
         }
 
-        let lowered = text.lowercased().replacingOccurrences(of: ",", with: ".")
+        let lowered = normalizedUnitDetectionText(text)
 
         if unit == .lb {
-            if lowered.contains("/lb") || lowered.contains(" per lb") || lowered.contains(" lbs") {
+            if lowered.contains("/lb") || lowered.contains(" per lb") || lowered.contains(" lbs") || lowered == "lb" || lowered.contains(" lb ") {
                 return Decimal(1)
             }
-        } else if unit == .kg, lowered.contains("/kg") || lowered.contains(" per kg") {
+        } else if unit == .kg, lowered.contains("/kg") || lowered.contains(" per kg") || lowered == "kg" || lowered.contains(" kg ") {
             return Decimal(1)
-        } else if unit == .liter, lowered.contains("/l") || lowered.contains(" per l") {
+        } else if unit == .liter, lowered.contains("/l") || lowered.contains(" per l") || lowered.contains(" per liter") || lowered.contains(" per litre") {
             return Decimal(1)
         }
 
@@ -1395,6 +1393,132 @@ enum PriceParsingService {
         }
 
         return nil
+    }
+
+    private static func normalizedUnitDetectionText(_ text: String) -> String {
+        text
+            .lowercased()
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func directUnitSignals(in text: String) -> [UnitDetectionSignal] {
+        let unitPatterns: [(UnitType, Int, [String])] = [
+            (
+                .hundredGrams,
+                7,
+                [
+                    #"(?:price\s+)?per\s+100\s*g\b"#,
+                    #"/\s*100\s*g\b"#,
+                    #"\b100\s*g\s+price\b"#,
+                    #"\b100\s*g\b"#
+                ]
+            ),
+            (
+                .lb,
+                6,
+                [
+                    #"(?:price\s+)?per\s+lbs?\b"#,
+                    #"/\s*lbs?\b"#,
+                    #"\blbs?\s+price\b"#,
+                    #"\blbs?\b"#
+                ]
+            ),
+            (
+                .kg,
+                6,
+                [
+                    #"(?:price\s+)?per\s+kg\b"#,
+                    #"/\s*kg\b"#,
+                    #"\bkg\s+price\b"#,
+                    #"\bkg\b"#
+                ]
+            ),
+            (
+                .liter,
+                6,
+                [
+                    #"(?:price\s+)?per\s+l(?:iter|itre)?s?\b"#,
+                    #"/\s*l(?:iter|itre)?s?\b"#,
+                    #"\bl(?:iter|itre)?s?\s+price\b"#
+                ]
+            ),
+            (
+                .each,
+                5,
+                [
+                    #"(?:price\s+)?per\s+(?:ea|each)\b"#,
+                    #"/\s*(?:ea|each)\b"#,
+                    #"\b(?:ea|each)\b"#
+                ]
+            )
+        ]
+
+        return unitPatterns.flatMap { unit, baseScore, patterns in
+            patterns.enumerated().compactMap { index, pattern in
+                firstUnitSignal(unit: unit, pattern: pattern, in: text, score: baseScore - index)
+            }
+        }
+    }
+
+    private static func packageUnitSignals(in text: String) -> [UnitDetectionSignal] {
+        var signals = [
+            firstUnitSignal(
+                unit: .each,
+                pattern: #"\b\d{1,2}\s*[x×]\s*\d{1,4}(?:\.\d+)?\s*(?:ml|l|g|kg|oz)\b"#,
+                in: text,
+                score: 4
+            ),
+            firstUnitSignal(
+                unit: .each,
+                pattern: #"\b\d{1,3}\s*(?:pk|pack|ct|count)\b"#,
+                in: text,
+                score: 4
+            ),
+            firstUnitSignal(
+                unit: .each,
+                pattern: #"\b\d+(?:\.\d+)?\s*(?:ml|l|g|kg|oz)\b"#,
+                in: text,
+                score: 2
+            )
+        ].compactMap { $0 }
+
+        if containsPriceSignal(in: text),
+           let hundredGramSignal = firstUnitSignal(
+                unit: .hundredGrams,
+                pattern: #"\b(?:100\s*g|100g)\b"#,
+                in: text,
+                score: 3
+           ) {
+            signals.append(hundredGramSignal)
+        }
+
+        return signals
+    }
+
+    private static func strongestUnitSignal(in signals: [UnitDetectionSignal]) -> UnitDetectionSignal? {
+        signals.max { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score < rhs.score
+            }
+            return lhs.location > rhs.location
+        }
+    }
+
+    private static func firstUnitSignal(
+        unit: UnitType,
+        pattern: String,
+        in text: String,
+        score: Int
+    ) -> UnitDetectionSignal? {
+        guard
+            let range = text.range(of: pattern, options: [.regularExpression, .caseInsensitive])
+        else {
+            return nil
+        }
+
+        return UnitDetectionSignal(unit: unit, score: score, location: range.lowerBound)
     }
 
     private static func contextualPricePriority(in text: String, basePriority: Int) -> Int {
