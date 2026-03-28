@@ -45,7 +45,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "$3.99", confidence: 0.94),
                     OCRTextObservation(string: "$4.49", confidence: 0.94)
                 ],
-                expectedWeaknesses: [.multipleCompetingPrices, .missingUnit],
+                expectedWeaknesses: [.missingUnit, .missingQuantity],
                 shouldEscalate: true
             ),
             AmbiguityCase(
@@ -69,10 +69,57 @@ struct PriceParsingServiceAmbiguityTests {
             )
         ]
     )
+    @MainActor
     func analyzesAmbiguity(case testCase: AmbiguityCase) async throws {
         let report = PriceParsingService._test_analyzeAmbiguity(testCase.observations)
 
         #expect(report.shouldUseFoundationModel == testCase.shouldEscalate, Comment(rawValue: testCase.name))
         #expect(Set(report.weaknesses).isSuperset(of: testCase.expectedWeaknesses), Comment(rawValue: testCase.name))
+    }
+
+    @Test(.tags(.ocr, .product))
+    @MainActor
+    func proximityScoringKeepsCloserShelfPriceAsTopCandidate() async throws {
+        let observations = [
+            OCRTextObservation(string: "Organic Mango", confidence: 0.95),
+            OCRTextObservation(string: "$1.49 ea", confidence: 0.89),
+            OCRTextObservation(string: "$2.49", confidence: 0.89)
+        ]
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(observations)
+        let report = PriceParsingService._test_analyzeAmbiguity(observations)
+
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "1.49"))
+        #expect(report.weaknesses.contains(.multipleCompetingPrices) == false)
+        #expect(report.shouldUseFoundationModel == false)
+    }
+
+    @Test(.tags(.ocr, .product))
+    @MainActor
+    func saleMarkersOutrankRegularPriceFallback() async throws {
+        let observations = [
+            OCRTextObservation(string: "Fresh Blueberries", confidence: 0.95),
+            OCRTextObservation(string: "Sale $3.99 ea", confidence: 0.90),
+            OCRTextObservation(string: "Regular $4.99 ea", confidence: 0.90)
+        ]
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(observations)
+        let report = PriceParsingService._test_analyzeAmbiguity(observations)
+
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "3.99"))
+        #expect(report.weaknesses.contains(.multipleCompetingPrices) == false)
+    }
+
+    @Test(.tags(.ocr, .product))
+    @MainActor
+    func depositFeeLineDoesNotCompeteWithPrimaryShelfPrice() async throws {
+        let observations = [
+            OCRTextObservation(string: "Sparkling Water", confidence: 0.94),
+            OCRTextObservation(string: "$5.99", confidence: 0.91),
+            OCRTextObservation(string: "$0.10 deposit", confidence: 0.91)
+        ]
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(observations)
+        let report = PriceParsingService._test_analyzeAmbiguity(observations)
+
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "5.99"))
+        #expect(report.weaknesses.contains(.multipleCompetingPrices) == false)
     }
 }

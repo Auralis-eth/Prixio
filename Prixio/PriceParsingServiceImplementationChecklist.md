@@ -4,7 +4,7 @@ This file tracks the parser TODOs in strict sequence. Each step should be comple
 
 ## Current State
 
-Step 3 is complete.
+Step 4 is implemented. Build validation now succeeds, but targeted test validation is still partially blocked by the current Xcode test environment and MCP test execution instability.
 
 What already changed:
 - `OCRTextObservation` now carries an optional `boundingBox`.
@@ -17,21 +17,26 @@ What already changed:
 - `buildHeuristicSnapshot` now uses a deterministic fallback ladder when strict filtering starves sparse OCR.
 - The fallback prefers cleaned focused evidence first, then broader cleaned inputs, and only falls back to minimally sanitized observations as a last resort.
 - Snapshot normalization now repairs comma-decimal price variants, split price tokens, and merged price/unit lines before extraction.
+- Snapshot price candidates are now re-ranked with deterministic context scoring after extraction.
+- Candidate scoring now rewards proximity to descriptive product text, promo markers, and unit labels.
+- Candidate scoring now penalizes regular-price fallback lines and deposit/fee lines so they do not crowd the primary shelf price.
+- Added competing-candidate tests covering nearby-vs-distant price lines, sale-vs-regular price lines, and deposit fee lines.
 
-Files touched through Step 3:
+Files touched through Step 4:
 - `Prixio/Scanning/OCR/OCRTextObservation.swift`
 - `Prixio/Scanning/OCR/OCRService.swift`
 - `Prixio/Scanning/OCR/Array+OCRTextObservation.swift`
 - `Prixio/Scanning/Price/PriceParsingService.swift`
 - `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
 - `PrixioTests/PriceParsingServiceDataSanitation.swift`
+- `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
 
 Validation already done:
-- `BuildProject` succeeded
-- `PriceParsingServiceSpatialGroupingTests` passed `5/5`
-- `PriceParsingServiceDataSanitation` passed `3/3`
-- `ConsolidateObservationsTests` passed
-- `PriceParsingServiceAmbiguityTests` targeted runner still returned `No result` for its parameterized case in the MCP harness, with no failure output
+- `PriceParsingService.swift` file diagnostics are clean
+- `BuildProject` now succeeds from the MCP harness
+- A targeted `RunSomeTests` invocation reported `No result` for the selected parser tests
+- A follow-up targeted `RunSomeTests` invocation timed out after 120 seconds
+- Live test diagnostics were previously polluted by a `TestingMacros` plugin path conflict between two local Xcode installs, so targeted test validation still cannot be treated as cleanly complete from the assistant harness
 
 ## Sequential Plan
 
@@ -124,14 +129,20 @@ Scope:
 - Keep corrections deterministic and test-driven
 
 4. Price candidate scoring
-Status: Next
+Status: Implemented; build-validated, test execution still blocked in harness
+
+Completed work:
+- Re-ranked extracted candidates using snapshot-local context instead of raw extraction priority alone
+- Added deterministic boosts for nearby descriptive product text, promo markers, and unit labels
+- Added deterministic penalties for regular-price fallback lines and deposit/fee lines
+- Added competing-candidate coverage in `PriceParsingServiceAmbiguityTests`
 
 Scope:
 - Rank candidates using proximity to product text, promo markers, and sale-vs-regular hints
 - Add tests for competing candidate scenarios
 
 5. Unit detection hardening
-Status: Pending
+Status: Next
 
 Scope:
 - Handle compound units, multi-pack signals, and split “price per” phrases
@@ -160,7 +171,7 @@ Scope:
 
 ## Next Session Handoff
 
-If a new session picks this up, start with Step 4 only.
+If a new session picks this up, start with Step 5 only.
 
 Do not touch yet:
 - candidate ranking rules
@@ -175,7 +186,7 @@ Read first:
 - `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
 
 Then implement:
-- price candidate scoring improvements inside `buildHeuristicSnapshot(from:)`
+- unit detection hardening inside `buildHeuristicSnapshot(from:)`
 
 Then validate in this order:
 - file diagnostics for `PriceParsingService.swift`

@@ -124,6 +124,10 @@ enum PriceParsingService {
     private static let splitCurrencyPattern = #"(^|[^\d])(\d{1,3})\s*(?:\n|\s)\s*(\d{2})(?=$|[^\d])"#
     private static let impliedCurrencyPattern = #"(^|[^\d])(\d{3,4})(?=$|[^\d])"#
     private static let simplePricePattern = #"\$?\s*\d+[.,]\d{2}"#
+    private static let promoMarkerPattern = #"\b(member|club|loyalty|sale|special|deal)\b"#
+    private static let regularPriceMarkerPattern = #"\b(regular|reg(?:ular)?|was|original|compare)\b"#
+    private static let depositMarkerPattern = #"\b(deposit|dep|crv|enviro|fee)\b"#
+    private static let unitLabelPattern = #"\b(ea|each)\b|/(lb|lbs|kg|l|liter|litre|100\s?g)\b"#
     private static let quantityFractionPattern = #"\b(\d+)\s*/\s*(\d+)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
     private static let quantityDecimalPattern = #"\b(\d+(?:[.,]\d+)?)\s*(?:lb|lbs|kg|l|liter|litre)\b"#
     private static let monthNamePattern = #"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b"#
@@ -221,13 +225,14 @@ enum PriceParsingService {
         let rawText = supportedLines.map(\.string).joined(separator: "\n")
         let normalizedText = rawText.replacingOccurrences(of: ",", with: ".")
         let unitScopeText = supportedLines.map(\.string).joined(separator: "\n")
-        // TODO: Upgrade snapshot candidate scoring with stronger context signals such as
-        // proximity to product text, promotional markers, "each"/unit labels, and
-        // sale-vs-regular price rules.
         let consolidatedPriceCandidates = extractPriceCandidates(from: consolidatedObservations)
-        let priceCandidates = consolidatedPriceCandidates.isEmpty
+        let extractedPriceCandidates = consolidatedPriceCandidates.isEmpty
             ? extractPriceCandidates(from: normalizedObservations)
             : consolidatedPriceCandidates
+        let priceCandidates = scorePriceCandidates(
+            extractedPriceCandidates,
+            in: supportedLines
+        )
         // TODO: Make snapshot unit detection handle compound and normalized units more
         // robustly, including multi-pack counts, mixed-unit labels, and "price per"
         // phrases split across lines.
@@ -1119,15 +1124,46 @@ enum PriceParsingService {
         }
 
         return candidates.sorted { lhs, rhs in
-            if lhs.priority != rhs.priority {
-                return lhs.priority > rhs.priority
-            }
+            comparePriceCandidates(lhs, rhs)
+        }
+    }
 
-            if lhs.confidence != rhs.confidence {
-                return lhs.confidence > rhs.confidence
-            }
+    private static func scorePriceCandidates(
+        _ candidates: [PriceCandidate],
+        in observations: [OCRTextObservation]
+    ) -> [PriceCandidate] {
+        guard !candidates.isEmpty else {
+            return []
+        }
 
-            return lhs.value > rhs.value
+        let descriptiveLineIndexes = observations.enumerated().compactMap { index, observation in
+            isDescriptiveObservation(observation) ? index : nil
+        }
+
+        let scoredCandidates = candidates.map { candidate in
+            let sourceIndexes = sourceLineIndexes(for: candidate, in: observations)
+            let adjustedPriority = candidate.priority
+                + proximityPriorityBoost(
+                    sourceLineIndexes: sourceIndexes,
+                    descriptiveLineIndexes: descriptiveLineIndexes
+                )
+                + promotionalPriorityBoost(for: candidate.sourceText)
+                + unitLabelPriorityBoost(for: candidate.sourceText)
+                - regularPricePenalty(for: candidate.sourceText)
+                - depositPenalty(for: candidate.sourceText)
+
+            return PriceCandidate(
+                label: candidate.label,
+                value: candidate.value,
+                quantity: candidate.quantity,
+                priority: max(0, adjustedPriority),
+                sourceText: candidate.sourceText,
+                confidence: candidate.confidence
+            )
+        }
+
+        return scoredCandidates.sorted { lhs, rhs in
+            comparePriceCandidates(lhs, rhs)
         }
     }
 
@@ -1374,6 +1410,68 @@ enum PriceParsingService {
         return basePriority
     }
 
+    private static func comparePriceCandidates(_ lhs: PriceCandidate, _ rhs: PriceCandidate) -> Bool {
+        if lhs.priority != rhs.priority {
+            return lhs.priority > rhs.priority
+        }
+
+        if lhs.confidence != rhs.confidence {
+            return lhs.confidence > rhs.confidence
+        }
+
+        return lhs.value > rhs.value
+    }
+
+    private static func proximityPriorityBoost(
+        sourceLineIndexes: [Int],
+        descriptiveLineIndexes: [Int]
+    ) -> Int {
+        guard
+            !sourceLineIndexes.isEmpty,
+            !descriptiveLineIndexes.isEmpty
+        else {
+            return 0
+        }
+
+        let nearestDistance = sourceLineIndexes.flatMap { sourceIndex in
+            descriptiveLineIndexes.map { abs(sourceIndex - $0) }
+        }.min()
+
+        switch nearestDistance {
+        case 0:
+            return 3
+        case 1:
+            return 2
+        case 2:
+            return 1
+        default:
+            return 0
+        }
+    }
+
+    private static func promotionalPriorityBoost(for text: String) -> Int {
+        matchesContextPattern(promoMarkerPattern, in: text) ? 1 : 0
+    }
+
+    private static func unitLabelPriorityBoost(for text: String) -> Int {
+        matchesContextPattern(unitLabelPattern, in: text) ? 1 : 0
+    }
+
+    private static func regularPricePenalty(for text: String) -> Int {
+        matchesContextPattern(regularPriceMarkerPattern, in: text) ? 2 : 0
+    }
+
+    private static func depositPenalty(for text: String) -> Int {
+        matchesContextPattern(depositMarkerPattern, in: text) ? 3 : 0
+    }
+
+    private static func matchesContextPattern(_ pattern: String, in text: String) -> Bool {
+        text.range(
+            of: pattern,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
     private static func shouldIgnoreDirectPriceLine(_ text: String) -> Bool {
         let lowered = text.lowercased()
 
@@ -1437,7 +1535,14 @@ enum PriceParsingService {
         for candidate: PriceCandidate,
         in snapshot: HeuristicExtractionSnapshot
     ) -> [Int] {
-        snapshot.consolidatedObservations.enumerated().compactMap { index, observation in
+        sourceLineIndexes(for: candidate, in: snapshot.consolidatedObservations)
+    }
+
+    private static func sourceLineIndexes(
+        for candidate: PriceCandidate,
+        in observations: [OCRTextObservation]
+    ) -> [Int] {
+        observations.enumerated().compactMap { index, observation in
             let line = observation.string.lowercased()
             let source = candidate.sourceText.lowercased()
             return line.contains(source) || source.contains(line) ? index : nil
@@ -1558,8 +1663,3 @@ enum PriceParsingService {
     }
 #endif
 }
-
-
-
-
-
