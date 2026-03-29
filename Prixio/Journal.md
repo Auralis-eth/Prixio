@@ -149,6 +149,17 @@ This matters more than it sounds. Refactors like this are not about aesthetics. 
 
 The encouraging part is that the build stayed green immediately after the split. That is the kind of boring success you want from structural work: less drama, more drawers with labels.
 
+### War Story: Refactors Love Sneaking In Tiny Behavioral Lies
+The first post-refactor test run found two failures that looked small and were not. One case lost the default quantity for a split `Price`, `per`, `lb`, `$1.29` scan. The other started inferring `12` from a trailing `12 x 355 mL` line even when the shelf price appeared before the pack-size note.
+
+Both bugs came from the same family of mistake: the refactor preserved the big pipeline shape but slightly changed what counted as quantity evidence. The parser had become a little too eager and a little too literal at the same time. It was happy to forget that a bare nearby `lb` should still imply quantity `1`, and it was equally happy to treat a pack-size line *after* the price as if it always belonged to the chosen candidate.
+
+The fix was precise:
+- restore token-boundary quantity detection for standalone unit markers like `lb`
+- keep offer inference broad, but make pack-count inference trust the chosen price line and its preceding context instead of blindly reaching forward
+
+That same pass also cleaned up a structural code smell from the refactor. The extracted parser files were leaning too hard on `static` helper style, which made Swift code read like a JavaScript utility pile wearing a trench coat. The ranking, unit/quantity, item-name, and confidence phases now live behind owned helper structs with thin service-level delegates. The service remains the entry point, but the real work has clearer owners now.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

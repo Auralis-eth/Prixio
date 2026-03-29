@@ -5,8 +5,8 @@
 
 import Foundation
 
-extension PriceParsingService {
-    static func extractPriceCandidates(from observations: [OCRTextObservation]) -> [PriceCandidate] {
+private struct PriceCandidateScorer {
+    func extractPriceCandidates(from observations: [OCRTextObservation]) -> [PriceCandidate] {
         var candidates: [PriceCandidate] = []
         let normalizedObservations = observations.map { observation in
             OCRTextObservation(
@@ -20,7 +20,7 @@ extension PriceParsingService {
             candidates.append(contentsOf: extractInlinePriceCandidates(from: observation))
         }
 
-        if let regex = try? NSRegularExpression(pattern: splitCurrencyPattern) {
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.splitCurrencyPattern) {
             let combinedObservations = zip(normalizedObservations, normalizedObservations.dropFirst()).map { lhs, rhs in
                 OCRTextObservation(
                     string: "\(lhs.string)\n\(rhs.string)",
@@ -55,12 +55,10 @@ extension PriceParsingService {
             }
         }
 
-        return candidates.sorted { lhs, rhs in
-            comparePriceCandidates(lhs, rhs)
-        }
+        return candidates.sorted(by: comparePriceCandidates)
     }
 
-    static func scorePriceCandidates(
+    func scorePriceCandidates(
         _ candidates: [PriceCandidate],
         in observations: [OCRTextObservation]
     ) -> [PriceCandidate] {
@@ -69,11 +67,11 @@ extension PriceParsingService {
         }
 
         let descriptiveLineIndexes = observations.enumerated().compactMap { index, observation in
-            isDescriptiveObservation(observation) ? index : nil
+            PriceParsingService.isDescriptiveObservation(observation) ? index : nil
         }
 
         let scoredCandidates = candidates.map { candidate in
-            let sourceIndexes = sourceLineIndexes(for: candidate, in: observations)
+            let sourceIndexes = PriceParsingService.sourceLineIndexes(for: candidate, in: observations)
             let adjustedPriority = candidate.priority
                 + proximityPriorityBoost(
                     sourceLineIndexes: sourceIndexes,
@@ -94,16 +92,14 @@ extension PriceParsingService {
             )
         }
 
-        return scoredCandidates.sorted { lhs, rhs in
-            comparePriceCandidates(lhs, rhs)
-        }
+        return scoredCandidates.sorted(by: comparePriceCandidates)
     }
 
-    static func extractInlinePriceCandidates(from observation: OCRTextObservation) -> [PriceCandidate] {
+    func extractInlinePriceCandidates(from observation: OCRTextObservation) -> [PriceCandidate] {
         var candidates: [PriceCandidate] = []
         let text = observation.string
 
-        if let regex = try? NSRegularExpression(pattern: multiBuyPattern, options: [.caseInsensitive]) {
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.multiBuyPattern, options: [.caseInsensitive]) {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             for match in matches {
                 guard
@@ -128,7 +124,7 @@ extension PriceParsingService {
             }
         }
 
-        if let regex = try? NSRegularExpression(pattern: currencyPattern) {
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.currencyPattern) {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             for match in matches {
                 if shouldIgnoreDirectPriceLine(text) {
@@ -159,7 +155,7 @@ extension PriceParsingService {
             }
         }
 
-        if let regex = try? NSRegularExpression(pattern: impliedCurrencyPattern) {
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.impliedCurrencyPattern) {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             for match in matches {
                 if shouldIgnoreImpliedCurrencyLine(text) {
@@ -188,7 +184,7 @@ extension PriceParsingService {
         return candidates
     }
 
-    static func splitCurrencyCandidate(
+    func splitCurrencyCandidate(
         dollarsText: String,
         centsText: String,
         sourceText: String,
@@ -213,7 +209,7 @@ extension PriceParsingService {
         )
     }
 
-    static func impliedCurrencyCandidate(
+    func impliedCurrencyCandidate(
         from text: String,
         sourceText: String,
         confidence: Float
@@ -246,7 +242,7 @@ extension PriceParsingService {
         )
     }
 
-    static func contextualPricePriority(in text: String, basePriority: Int) -> Int {
+    func contextualPricePriority(in text: String, basePriority: Int) -> Int {
         let lowered = text.lowercased()
 
         if lowered.contains("member") || lowered.contains("club") || lowered.contains("loyalty") {
@@ -259,7 +255,7 @@ extension PriceParsingService {
         return basePriority
     }
 
-    static func comparePriceCandidates(_ lhs: PriceCandidate, _ rhs: PriceCandidate) -> Bool {
+    func comparePriceCandidates(_ lhs: PriceCandidate, _ rhs: PriceCandidate) -> Bool {
         if lhs.priority != rhs.priority {
             return lhs.priority > rhs.priority
         }
@@ -271,7 +267,7 @@ extension PriceParsingService {
         return lhs.value > rhs.value
     }
 
-    static func proximityPriorityBoost(
+    func proximityPriorityBoost(
         sourceLineIndexes: [Int],
         descriptiveLineIndexes: [Int]
     ) -> Int {
@@ -298,51 +294,51 @@ extension PriceParsingService {
         }
     }
 
-    static func promotionalPriorityBoost(for text: String) -> Int {
-        matchesContextPattern(promoMarkerPattern, in: text) ? 1 : 0
+    func promotionalPriorityBoost(for text: String) -> Int {
+        matchesContextPattern(PriceParsingService.promoMarkerPattern, in: text) ? 1 : 0
     }
 
-    static func unitLabelPriorityBoost(for text: String) -> Int {
-        matchesContextPattern(unitLabelPattern, in: text) ? 1 : 0
+    func unitLabelPriorityBoost(for text: String) -> Int {
+        matchesContextPattern(PriceParsingService.unitLabelPattern, in: text) ? 1 : 0
     }
 
-    static func regularPricePenalty(for text: String) -> Int {
-        matchesContextPattern(regularPriceMarkerPattern, in: text) ? 2 : 0
+    func regularPricePenalty(for text: String) -> Int {
+        matchesContextPattern(PriceParsingService.regularPriceMarkerPattern, in: text) ? 2 : 0
     }
 
-    static func depositPenalty(for text: String) -> Int {
-        matchesContextPattern(depositMarkerPattern, in: text) ? 3 : 0
+    func depositPenalty(for text: String) -> Int {
+        matchesContextPattern(PriceParsingService.depositMarkerPattern, in: text) ? 3 : 0
     }
 
-    static func matchesContextPattern(_ pattern: String, in text: String) -> Bool {
+    func matchesContextPattern(_ pattern: String, in text: String) -> Bool {
         text.range(
             of: pattern,
             options: [.regularExpression, .caseInsensitive]
         ) != nil
     }
 
-    static func shouldIgnoreDirectPriceLine(_ text: String) -> Bool {
+    func shouldIgnoreDirectPriceLine(_ text: String) -> Bool {
         let lowered = text.lowercased()
 
         if lowered.contains("save") {
             return true
         }
-        if containsPhoneNumber(in: lowered) {
+        if PriceParsingService.containsPhoneNumber(in: lowered) {
             return true
         }
-        if looksLikeDateLine(lowered) {
+        if PriceParsingService.looksLikeDateLine(lowered) {
             return true
         }
 
         return false
     }
 
-    static func shouldIgnoreImpliedCurrencyLine(_ text: String) -> Bool {
+    func shouldIgnoreImpliedCurrencyLine(_ text: String) -> Bool {
         let lowered = text.lowercased()
-        return containsPhoneNumber(in: lowered) || looksLikeDateLine(lowered)
+        return PriceParsingService.containsPhoneNumber(in: lowered) || PriceParsingService.looksLikeDateLine(lowered)
     }
 
-    static func hasCompetingTopCandidates(_ candidates: [PriceCandidate]) -> Bool {
+    func hasCompetingTopCandidates(_ candidates: [PriceCandidate]) -> Bool {
         guard candidates.count >= 2 else {
             return false
         }
@@ -359,5 +355,98 @@ extension PriceParsingService {
         }
 
         return top.sourceText != runnerUp.sourceText || top.value != runnerUp.value
+    }
+}
+
+extension PriceParsingService {
+    static func extractPriceCandidates(from observations: [OCRTextObservation]) -> [PriceCandidate] {
+        PriceCandidateScorer().extractPriceCandidates(from: observations)
+    }
+
+    static func scorePriceCandidates(
+        _ candidates: [PriceCandidate],
+        in observations: [OCRTextObservation]
+    ) -> [PriceCandidate] {
+        PriceCandidateScorer().scorePriceCandidates(candidates, in: observations)
+    }
+
+    static func extractInlinePriceCandidates(from observation: OCRTextObservation) -> [PriceCandidate] {
+        PriceCandidateScorer().extractInlinePriceCandidates(from: observation)
+    }
+
+    static func splitCurrencyCandidate(
+        dollarsText: String,
+        centsText: String,
+        sourceText: String,
+        confidence: Float
+    ) -> PriceCandidate? {
+        PriceCandidateScorer().splitCurrencyCandidate(
+            dollarsText: dollarsText,
+            centsText: centsText,
+            sourceText: sourceText,
+            confidence: confidence
+        )
+    }
+
+    static func impliedCurrencyCandidate(
+        from text: String,
+        sourceText: String,
+        confidence: Float
+    ) -> PriceCandidate? {
+        PriceCandidateScorer().impliedCurrencyCandidate(
+            from: text,
+            sourceText: sourceText,
+            confidence: confidence
+        )
+    }
+
+    static func contextualPricePriority(in text: String, basePriority: Int) -> Int {
+        PriceCandidateScorer().contextualPricePriority(in: text, basePriority: basePriority)
+    }
+
+    static func comparePriceCandidates(_ lhs: PriceCandidate, _ rhs: PriceCandidate) -> Bool {
+        PriceCandidateScorer().comparePriceCandidates(lhs, rhs)
+    }
+
+    static func proximityPriorityBoost(
+        sourceLineIndexes: [Int],
+        descriptiveLineIndexes: [Int]
+    ) -> Int {
+        PriceCandidateScorer().proximityPriorityBoost(
+            sourceLineIndexes: sourceLineIndexes,
+            descriptiveLineIndexes: descriptiveLineIndexes
+        )
+    }
+
+    static func promotionalPriorityBoost(for text: String) -> Int {
+        PriceCandidateScorer().promotionalPriorityBoost(for: text)
+    }
+
+    static func unitLabelPriorityBoost(for text: String) -> Int {
+        PriceCandidateScorer().unitLabelPriorityBoost(for: text)
+    }
+
+    static func regularPricePenalty(for text: String) -> Int {
+        PriceCandidateScorer().regularPricePenalty(for: text)
+    }
+
+    static func depositPenalty(for text: String) -> Int {
+        PriceCandidateScorer().depositPenalty(for: text)
+    }
+
+    static func matchesContextPattern(_ pattern: String, in text: String) -> Bool {
+        PriceCandidateScorer().matchesContextPattern(pattern, in: text)
+    }
+
+    static func shouldIgnoreDirectPriceLine(_ text: String) -> Bool {
+        PriceCandidateScorer().shouldIgnoreDirectPriceLine(text)
+    }
+
+    static func shouldIgnoreImpliedCurrencyLine(_ text: String) -> Bool {
+        PriceCandidateScorer().shouldIgnoreImpliedCurrencyLine(text)
+    }
+
+    static func hasCompetingTopCandidates(_ candidates: [PriceCandidate]) -> Bool {
+        PriceCandidateScorer().hasCompetingTopCandidates(candidates)
     }
 }

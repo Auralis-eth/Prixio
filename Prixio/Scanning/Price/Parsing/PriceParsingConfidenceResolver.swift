@@ -5,15 +5,15 @@
 
 import Foundation
 
-extension PriceParsingService {
-    static func analyzeAmbiguity(in snapshot: HeuristicExtractionSnapshot) -> ExtractionAmbiguityReport {
-        var weaknesses: [ExtractionWeakness] = []
+private struct PriceParsingConfidenceResolver {
+    func analyzeAmbiguity(in snapshot: PriceParsingService.HeuristicExtractionSnapshot) -> PriceParsingService.ExtractionAmbiguityReport {
+        var weaknesses: [PriceParsingService.ExtractionWeakness] = []
 
         if snapshot.priceCandidates.isEmpty {
             weaknesses.append(.noPriceCandidates)
         }
 
-        if hasCompetingTopCandidates(snapshot.priceCandidates) {
+        if PriceParsingService.hasCompetingTopCandidates(snapshot.priceCandidates) {
             weaknesses.append(.multipleCompetingPrices)
         }
 
@@ -41,10 +41,10 @@ extension PriceParsingService {
             weaknesses.append(.possibleMultiProductScan)
         }
 
-        return ExtractionAmbiguityReport(weaknesses: weaknesses)
+        return PriceParsingService.ExtractionAmbiguityReport(weaknesses: weaknesses)
     }
 
-    static func makeOCRResult(from snapshot: HeuristicExtractionSnapshot) -> OCRResult {
+    func makeOCRResult(from snapshot: PriceParsingService.HeuristicExtractionSnapshot) -> OCRResult {
         let ambiguity = analyzeAmbiguity(in: snapshot)
         return OCRResult(
             rawText: snapshot.rawText,
@@ -58,11 +58,11 @@ extension PriceParsingService {
         )
     }
 
-    static func looksLikeMultiProductScan(_ snapshot: HeuristicExtractionSnapshot) -> Bool {
+    func looksLikeMultiProductScan(_ snapshot: PriceParsingService.HeuristicExtractionSnapshot) -> Bool {
         let meaningfulSpatialGroups = snapshot.spatialGroups.filter { group in
-            let hasPrice = group.observations.contains { containsPriceSignal(in: $0.string) }
+            let hasPrice = group.observations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
             let hasDescription = group.observations.contains { observation in
-                isDescriptiveObservation(observation)
+                PriceParsingService.isDescriptiveObservation(observation)
             }
             return group.observations.count >= 2 && hasPrice && hasDescription
         }
@@ -77,14 +77,14 @@ extension PriceParsingService {
         return descriptiveLines.count >= 2 && distinctPriceSources.count >= 2
     }
 
-    static func sourceLineIndexes(
+    func sourceLineIndexes(
         for candidate: PriceCandidate,
-        in snapshot: HeuristicExtractionSnapshot
+        in snapshot: PriceParsingService.HeuristicExtractionSnapshot
     ) -> [Int] {
         sourceLineIndexes(for: candidate, in: snapshot.consolidatedObservations)
     }
 
-    static func sourceLineIndexes(
+    func sourceLineIndexes(
         for candidate: PriceCandidate,
         in observations: [OCRTextObservation]
     ) -> [Int] {
@@ -95,9 +95,9 @@ extension PriceParsingService {
         }
     }
 
-    static func assembleHeuristicConfidence(
-        snapshot: HeuristicExtractionSnapshot,
-        ambiguity: ExtractionAmbiguityReport
+    func assembleHeuristicConfidence(
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot,
+        ambiguity: PriceParsingService.ExtractionAmbiguityReport
     ) -> Float {
         var confidence = max(0.15, snapshot.heuristicConfidence)
 
@@ -116,7 +116,7 @@ extension PriceParsingService {
         if snapshot.cleanedObservations.count >= 2 && snapshot.lines.count >= 2 {
             confidence += 0.04
         }
-        if !hasCompetingTopCandidates(snapshot.priceCandidates) {
+        if !PriceParsingService.hasCompetingTopCandidates(snapshot.priceCandidates) {
             confidence += 0.04
         }
         if !looksLikeMultiProductScan(snapshot) {
@@ -130,7 +130,7 @@ extension PriceParsingService {
         return min(0.99, max(0.1, confidence))
     }
 
-    static func confidencePenalty(for weakness: ExtractionWeakness) -> Float {
+    func confidencePenalty(for weakness: PriceParsingService.ExtractionWeakness) -> Float {
         switch weakness {
         case .noPriceCandidates:
             return 0.28
@@ -151,17 +151,67 @@ extension PriceParsingService {
         }
     }
 
-    static func containsPhoneNumber(in text: String) -> Bool {
+    func containsPhoneNumber(in text: String) -> Bool {
         text.range(of: #"\d{10,}"#, options: .regularExpression) != nil
     }
 
-    static func looksLikeDateLine(_ text: String) -> Bool {
-        guard text.range(of: monthNamePattern, options: [.regularExpression, .caseInsensitive]) != nil else {
+    func looksLikeDateLine(_ text: String) -> Bool {
+        guard text.range(of: PriceParsingService.monthNamePattern, options: [.regularExpression, .caseInsensitive]) != nil else {
             return false
         }
 
         let hasDay = text.range(of: #"\b([12]?\d|3[01])\b"#, options: .regularExpression) != nil
         let hasYear = text.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression) != nil
         return hasDay || hasYear
+    }
+}
+
+extension PriceParsingService {
+    static func analyzeAmbiguity(in snapshot: HeuristicExtractionSnapshot) -> ExtractionAmbiguityReport {
+        PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
+    }
+
+    static func makeOCRResult(from snapshot: HeuristicExtractionSnapshot) -> OCRResult {
+        PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
+    }
+
+    static func looksLikeMultiProductScan(_ snapshot: HeuristicExtractionSnapshot) -> Bool {
+        PriceParsingConfidenceResolver().looksLikeMultiProductScan(snapshot)
+    }
+
+    static func sourceLineIndexes(
+        for candidate: PriceCandidate,
+        in snapshot: HeuristicExtractionSnapshot
+    ) -> [Int] {
+        PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: snapshot)
+    }
+
+    static func sourceLineIndexes(
+        for candidate: PriceCandidate,
+        in observations: [OCRTextObservation]
+    ) -> [Int] {
+        PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: observations)
+    }
+
+    static func assembleHeuristicConfidence(
+        snapshot: HeuristicExtractionSnapshot,
+        ambiguity: ExtractionAmbiguityReport
+    ) -> Float {
+        PriceParsingConfidenceResolver().assembleHeuristicConfidence(
+            snapshot: snapshot,
+            ambiguity: ambiguity
+        )
+    }
+
+    static func confidencePenalty(for weakness: ExtractionWeakness) -> Float {
+        PriceParsingConfidenceResolver().confidencePenalty(for: weakness)
+    }
+
+    static func containsPhoneNumber(in text: String) -> Bool {
+        PriceParsingConfidenceResolver().containsPhoneNumber(in: text)
+    }
+
+    static func looksLikeDateLine(_ text: String) -> Bool {
+        PriceParsingConfidenceResolver().looksLikeDateLine(text)
     }
 }

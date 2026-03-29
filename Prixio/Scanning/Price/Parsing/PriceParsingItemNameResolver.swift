@@ -5,8 +5,8 @@
 
 import Foundation
 
-extension PriceParsingService {
-    static func extractItemNameHint(
+private struct PriceParsingItemNameResolver {
+    func extractItemNameHint(
         from observations: [OCRTextObservation],
         priceCandidates: [PriceCandidate]
     ) -> String? {
@@ -27,21 +27,21 @@ extension PriceParsingService {
         }?.line
     }
 
-    static func scoredItemNameCandidate(
+    func scoredItemNameCandidate(
         for line: String,
         lineIndex: Int,
         priceCandidates: [PriceCandidate],
         observations: [OCRTextObservation]
-    ) -> ItemNameCandidate? {
+    ) -> PriceParsingService.ItemNameCandidate? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return nil
         }
-        guard !containsPriceSignal(in: trimmed) else {
+        guard !PriceParsingService.containsPriceSignal(in: trimmed) else {
             return nil
         }
-        let hasExplicitSizeToken = containsExplicitSizeToken(in: trimmed)
-        guard !isLikelyShelfCode(trimmed) else {
+        let hasExplicitSizeToken = PriceParsingService.containsExplicitSizeToken(in: trimmed)
+        guard !PriceParsingService.isLikelyShelfCode(trimmed) else {
             return nil
         }
         guard !looksLikeReceiptFragment(trimmed) else {
@@ -49,7 +49,7 @@ extension PriceParsingService {
         }
 
         let words = trimmed.normalizedWords()
-        guard !(isLikelySKU(trimmed) && !hasExplicitSizeToken && words.count <= 3) else {
+        guard !(PriceParsingService.isLikelySKU(trimmed) && !hasExplicitSizeToken && words.count <= 3) else {
             return nil
         }
         let alphabeticalTokens = words.filter { token in
@@ -60,18 +60,18 @@ extension PriceParsingService {
         }
 
         let descriptiveTokens = alphabeticalTokens.filter { token in
-            !itemNameIgnoredTokens.contains(token) && !isPureUnitToken(token)
+            !PriceParsingService.itemNameIgnoredTokens.contains(token) && !isPureUnitToken(token)
         }
         guard !descriptiveTokens.isEmpty else {
             return nil
         }
 
-        let digitMixPenalty = trimmed.contains(where: \.isNumber) && !containsExplicitSizeToken(in: trimmed) ? 1 : 0
+        let digitMixPenalty = trimmed.contains(where: \.isNumber) && !PriceParsingService.containsExplicitSizeToken(in: trimmed) ? 1 : 0
         let sizePenalty = hasExplicitSizeToken ? 1 : 0
-        let promoPenalty = promotionalPriorityBoost(for: trimmed) > 0 ? 1 : 0
-        let regularPenalty = regularPricePenalty(for: trimmed)
-        let depositPenalty = depositPenalty(for: trimmed)
-        let unitOnlyPenalty = detectUnit(in: trimmed) != nil && descriptiveTokens.count == 1 ? 1 : 0
+        let promoPenalty = PriceParsingService.promotionalPriorityBoost(for: trimmed) > 0 ? 1 : 0
+        let regularPenalty = PriceParsingService.regularPricePenalty(for: trimmed)
+        let depositPenalty = PriceParsingService.depositPenalty(for: trimmed)
+        let unitOnlyPenalty = PriceParsingService.detectUnit(in: trimmed) != nil && descriptiveTokens.count == 1 ? 1 : 0
 
         let proximityBoost = topCandidateProximityBoost(
             lineIndex: lineIndex,
@@ -95,10 +95,10 @@ extension PriceParsingService {
             - depositPenalty
             - unitOnlyPenalty
 
-        return ItemNameCandidate(line: trimmed, score: score, lineIndex: lineIndex)
+        return PriceParsingService.ItemNameCandidate(line: trimmed, score: score, lineIndex: lineIndex)
     }
 
-    static func topCandidateProximityBoost(
+    func topCandidateProximityBoost(
         lineIndex: Int,
         priceCandidates: [PriceCandidate],
         observations: [OCRTextObservation]
@@ -107,7 +107,7 @@ extension PriceParsingService {
             return 0
         }
 
-        let priceLineIndexes = sourceLineIndexes(for: topCandidate, in: observations)
+        let priceLineIndexes = PriceParsingService.sourceLineIndexes(for: topCandidate, in: observations)
         guard let nearestDistance = priceLineIndexes.map({ abs($0 - lineIndex) }).min() else {
             return 0
         }
@@ -124,18 +124,64 @@ extension PriceParsingService {
         }
     }
 
-    static func looksLikeReceiptFragment(_ text: String) -> Bool {
+    func looksLikeReceiptFragment(_ text: String) -> Bool {
         let lowered = text.lowercased()
-        if receiptMarkers.contains(where: lowered.contains) {
+        if PriceParsingService.receiptMarkers.contains(where: lowered.contains) {
             return true
         }
-        if containsPhoneNumber(in: lowered) || looksLikeDateLine(lowered) {
+        if PriceParsingService.containsPhoneNumber(in: lowered) || PriceParsingService.looksLikeDateLine(lowered) {
             return true
         }
         return false
     }
 
-    static func isPureUnitToken(_ token: String) -> Bool {
+    func isPureUnitToken(_ token: String) -> Bool {
         ["ea", "each", "lb", "lbs", "kg", "l", "liter", "litre", "g", "ml"].contains(token)
+    }
+}
+
+extension PriceParsingService {
+    static func extractItemNameHint(
+        from observations: [OCRTextObservation],
+        priceCandidates: [PriceCandidate]
+    ) -> String? {
+        PriceParsingItemNameResolver().extractItemNameHint(
+            from: observations,
+            priceCandidates: priceCandidates
+        )
+    }
+
+    static func scoredItemNameCandidate(
+        for line: String,
+        lineIndex: Int,
+        priceCandidates: [PriceCandidate],
+        observations: [OCRTextObservation]
+    ) -> ItemNameCandidate? {
+        PriceParsingItemNameResolver().scoredItemNameCandidate(
+            for: line,
+            lineIndex: lineIndex,
+            priceCandidates: priceCandidates,
+            observations: observations
+        )
+    }
+
+    static func topCandidateProximityBoost(
+        lineIndex: Int,
+        priceCandidates: [PriceCandidate],
+        observations: [OCRTextObservation]
+    ) -> Int {
+        PriceParsingItemNameResolver().topCandidateProximityBoost(
+            lineIndex: lineIndex,
+            priceCandidates: priceCandidates,
+            observations: observations
+        )
+    }
+
+    static func looksLikeReceiptFragment(_ text: String) -> Bool {
+        PriceParsingItemNameResolver().looksLikeReceiptFragment(text)
+    }
+
+    static func isPureUnitToken(_ token: String) -> Bool {
+        PriceParsingItemNameResolver().isPureUnitToken(token)
     }
 }

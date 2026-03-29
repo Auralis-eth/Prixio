@@ -5,8 +5,8 @@
 
 import Foundation
 
-extension PriceParsingService {
-    static func detectUnit(in text: String) -> UnitType? {
+private struct PriceParsingUnitResolver {
+    func detectUnit(in text: String) -> UnitType? {
         let normalized = normalizedUnitDetectionText(text)
         let directSignals = directUnitSignals(in: normalized)
         if let strongestDirectSignal = strongestUnitSignal(in: directSignals) {
@@ -17,24 +17,35 @@ extension PriceParsingService {
         return strongestUnitSignal(in: packageSignals)?.unit
     }
 
-    static func detectQuantity(in text: String, unit: UnitType?) -> Decimal? {
+    func detectQuantity(in text: String, unit: UnitType?) -> Decimal? {
         guard let unit else {
             return nil
         }
 
         let lowered = normalizedUnitDetectionText(text)
 
-        if unit == .lb {
-            if lowered.contains("/lb") || lowered.contains(" per lb") || lowered.contains(" lbs") || lowered == "lb" || lowered.contains(" lb ") {
+        switch unit {
+        case .lb:
+            if matchesTokenBoundary(#"\b(?:lb|lbs)\b"#, in: lowered) {
                 return Decimal(1)
             }
-        } else if unit == .kg, lowered.contains("/kg") || lowered.contains(" per kg") || lowered == "kg" || lowered.contains(" kg ") {
-            return Decimal(1)
-        } else if unit == .liter, lowered.contains("/l") || lowered.contains(" per l") || lowered.contains(" per liter") || lowered.contains(" per litre") {
-            return Decimal(1)
+        case .kg:
+            if matchesTokenBoundary(#"\bkg\b"#, in: lowered) {
+                return Decimal(1)
+            }
+        case .liter:
+            if matchesTokenBoundary(#"\b(?:l|liter|litre)\b"#, in: lowered) {
+                return Decimal(1)
+            }
+        case .hundredGrams:
+            if matchesTokenBoundary(#"\b100\s*g\b"#, in: lowered) {
+                return Decimal(1)
+            }
+        case .each:
+            break
         }
 
-        if let regex = try? NSRegularExpression(pattern: quantityFractionPattern, options: [.caseInsensitive]) {
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.quantityFractionPattern, options: [.caseInsensitive]) {
             let matches = regex.matches(in: lowered, range: NSRange(lowered.startIndex..., in: lowered))
             for match in matches {
                 guard
@@ -50,7 +61,7 @@ extension PriceParsingService {
             }
         }
 
-        if let regex = try? NSRegularExpression(pattern: quantityDecimalPattern, options: [.caseInsensitive]) {
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.quantityDecimalPattern, options: [.caseInsensitive]) {
             let matches = regex.matches(in: lowered, range: NSRange(lowered.startIndex..., in: lowered))
             for match in matches {
                 guard
@@ -67,7 +78,7 @@ extension PriceParsingService {
         return nil
     }
 
-    static func inferResolvedQuantity(
+    func inferResolvedQuantity(
         from observations: [OCRTextObservation],
         priceCandidates: [PriceCandidate],
         detectedUnit: UnitType?,
@@ -87,15 +98,20 @@ extension PriceParsingService {
             return offerQuantity
         }
 
+        let packContextText = packQuantityContextText(
+            for: priceCandidates.first,
+            observations: observations,
+            fallbackText: fallbackText
+        )
         if detectedUnit == .each || detectedUnit == nil,
-           let packQuantity = inferPackQuantity(in: contextText) {
+           let packQuantity = inferPackQuantity(in: packContextText) {
             return packQuantity
         }
 
         return detectQuantity(in: contextText, unit: detectedUnit)
     }
 
-    static func quantityContextText(
+    func quantityContextText(
         for candidate: PriceCandidate?,
         observations: [OCRTextObservation],
         fallbackText: String
@@ -104,7 +120,7 @@ extension PriceParsingService {
             return fallbackText
         }
 
-        let sourceIndexes = sourceLineIndexes(for: candidate, in: observations)
+        let sourceIndexes = PriceParsingService.sourceLineIndexes(for: candidate, in: observations)
         guard !sourceIndexes.isEmpty else {
             return fallbackText
         }
@@ -119,10 +135,34 @@ extension PriceParsingService {
         return nearbyLines.isEmpty ? fallbackText : nearbyLines.joined(separator: "\n")
     }
 
-    static func inferOfferQuantity(in text: String) -> Decimal? {
+    func packQuantityContextText(
+        for candidate: PriceCandidate?,
+        observations: [OCRTextObservation],
+        fallbackText: String
+    ) -> String {
+        guard let candidate else {
+            return fallbackText
+        }
+
+        let sourceIndexes = PriceParsingService.sourceLineIndexes(for: candidate, in: observations)
+        guard !sourceIndexes.isEmpty else {
+            return fallbackText
+        }
+
+        let nearbyIndexes = Set(sourceIndexes.flatMap { index in
+            [(index - 1), index].filter { observations.indices.contains($0) }
+        })
+        let nearbyLines = observations.enumerated().compactMap { index, observation in
+            nearbyIndexes.contains(index) ? observation.string : nil
+        }
+
+        return nearbyLines.isEmpty ? fallbackText : nearbyLines.joined(separator: "\n")
+    }
+
+    func inferOfferQuantity(in text: String) -> Decimal? {
         let lowered = normalizedUnitDetectionText(text)
 
-        if let regex = try? NSRegularExpression(pattern: multiBuyPattern, options: [.caseInsensitive]),
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.multiBuyPattern, options: [.caseInsensitive]),
            let match = regex.firstMatch(in: lowered, range: NSRange(lowered.startIndex..., in: lowered)),
            let quantityRange = Range(match.range(at: 1), in: lowered),
            let quantity = Decimal(string: String(lowered[quantityRange])),
@@ -134,7 +174,7 @@ extension PriceParsingService {
             return Decimal(2)
         }
 
-        if let regex = try? NSRegularExpression(pattern: buyGetPattern, options: [.caseInsensitive]),
+        if let regex = try? NSRegularExpression(pattern: PriceParsingService.buyGetPattern, options: [.caseInsensitive]),
            let match = regex.firstMatch(in: lowered, range: NSRange(lowered.startIndex..., in: lowered)),
            let buyRange = Range(match.range(at: 1), in: lowered),
            let getRange = Range(match.range(at: 2), in: lowered),
@@ -146,7 +186,7 @@ extension PriceParsingService {
         return nil
     }
 
-    static func inferPackQuantity(in text: String) -> Decimal? {
+    func inferPackQuantity(in text: String) -> Decimal? {
         let lowered = normalizedUnitDetectionText(text)
 
         let patterns = [
@@ -172,7 +212,7 @@ extension PriceParsingService {
         return nil
     }
 
-    static func quantityWordValue(_ token: String) -> Decimal? {
+    func quantityWordValue(_ token: String) -> Decimal? {
         if let numeric = Decimal(string: token), numeric > 0 {
             return numeric
         }
@@ -187,7 +227,7 @@ extension PriceParsingService {
         return wordValues[token]
     }
 
-    static func normalizedUnitDetectionText(_ text: String) -> String {
+    func normalizedUnitDetectionText(_ text: String) -> String {
         text
             .lowercased()
             .replacingOccurrences(of: ",", with: ".")
@@ -195,7 +235,7 @@ extension PriceParsingService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func directUnitSignals(in text: String) -> [UnitDetectionSignal] {
+    func directUnitSignals(in text: String) -> [PriceParsingService.UnitDetectionSignal] {
         let unitPatterns: [(UnitType, Int, [String])] = [
             (
                 .hundredGrams,
@@ -254,7 +294,7 @@ extension PriceParsingService {
         }
     }
 
-    static func packageUnitSignals(in text: String) -> [UnitDetectionSignal] {
+    func packageUnitSignals(in text: String) -> [PriceParsingService.UnitDetectionSignal] {
         var signals = [
             firstUnitSignal(
                 unit: .each,
@@ -276,7 +316,7 @@ extension PriceParsingService {
             )
         ].compactMap { $0 }
 
-        if containsPriceSignal(in: text),
+        if PriceParsingService.containsPriceSignal(in: text),
            let hundredGramSignal = firstUnitSignal(
                 unit: .hundredGrams,
                 pattern: #"\b(?:100\s*g|100g)\b"#,
@@ -289,7 +329,7 @@ extension PriceParsingService {
         return signals
     }
 
-    static func strongestUnitSignal(in signals: [UnitDetectionSignal]) -> UnitDetectionSignal? {
+    func strongestUnitSignal(in signals: [PriceParsingService.UnitDetectionSignal]) -> PriceParsingService.UnitDetectionSignal? {
         signals.max { lhs, rhs in
             if lhs.score != rhs.score {
                 return lhs.score < rhs.score
@@ -298,18 +338,100 @@ extension PriceParsingService {
         }
     }
 
-    static func firstUnitSignal(
+    func firstUnitSignal(
         unit: UnitType,
         pattern: String,
         in text: String,
         score: Int
-    ) -> UnitDetectionSignal? {
+    ) -> PriceParsingService.UnitDetectionSignal? {
         guard
             let range = text.range(of: pattern, options: [.regularExpression, .caseInsensitive])
         else {
             return nil
         }
 
-        return UnitDetectionSignal(unit: unit, score: score, location: range.lowerBound)
+        return PriceParsingService.UnitDetectionSignal(unit: unit, score: score, location: range.lowerBound)
+    }
+
+    func matchesTokenBoundary(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
+
+extension PriceParsingService {
+    static func detectUnit(in text: String) -> UnitType? {
+        PriceParsingUnitResolver().detectUnit(in: text)
+    }
+
+    static func detectQuantity(in text: String, unit: UnitType?) -> Decimal? {
+        PriceParsingUnitResolver().detectQuantity(in: text, unit: unit)
+    }
+
+    static func inferResolvedQuantity(
+        from observations: [OCRTextObservation],
+        priceCandidates: [PriceCandidate],
+        detectedUnit: UnitType?,
+        fallbackText: String
+    ) -> Decimal? {
+        PriceParsingUnitResolver().inferResolvedQuantity(
+            from: observations,
+            priceCandidates: priceCandidates,
+            detectedUnit: detectedUnit,
+            fallbackText: fallbackText
+        )
+    }
+
+    static func quantityContextText(
+        for candidate: PriceCandidate?,
+        observations: [OCRTextObservation],
+        fallbackText: String
+    ) -> String {
+        PriceParsingUnitResolver().quantityContextText(
+            for: candidate,
+            observations: observations,
+            fallbackText: fallbackText
+        )
+    }
+
+    static func inferOfferQuantity(in text: String) -> Decimal? {
+        PriceParsingUnitResolver().inferOfferQuantity(in: text)
+    }
+
+    static func inferPackQuantity(in text: String) -> Decimal? {
+        PriceParsingUnitResolver().inferPackQuantity(in: text)
+    }
+
+    static func quantityWordValue(_ token: String) -> Decimal? {
+        PriceParsingUnitResolver().quantityWordValue(token)
+    }
+
+    static func normalizedUnitDetectionText(_ text: String) -> String {
+        PriceParsingUnitResolver().normalizedUnitDetectionText(text)
+    }
+
+    static func directUnitSignals(in text: String) -> [UnitDetectionSignal] {
+        PriceParsingUnitResolver().directUnitSignals(in: text)
+    }
+
+    static func packageUnitSignals(in text: String) -> [UnitDetectionSignal] {
+        PriceParsingUnitResolver().packageUnitSignals(in: text)
+    }
+
+    static func strongestUnitSignal(in signals: [UnitDetectionSignal]) -> UnitDetectionSignal? {
+        PriceParsingUnitResolver().strongestUnitSignal(in: signals)
+    }
+
+    static func firstUnitSignal(
+        unit: UnitType,
+        pattern: String,
+        in text: String,
+        score: Int
+    ) -> UnitDetectionSignal? {
+        PriceParsingUnitResolver().firstUnitSignal(
+            unit: unit,
+            pattern: pattern,
+            in: text,
+            score: score
+        )
     }
 }
