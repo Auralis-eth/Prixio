@@ -20,7 +20,6 @@ What is done:
 
 What is not done:
 - Clean, repeatable targeted test execution from the assistant/Xcode harness
-- Parser maintainability cleanup after the feature push
 - Broader real-world OCR fixture coverage
 - Downstream scan-flow review for low-confidence and ambiguous parser results
 - A deliberate Foundation Models rollout plan beyond the current second-pass prototype
@@ -114,12 +113,22 @@ Definition of done:
 - The validation story no longer relies on snippet verification as the primary fallback
 
 2. Parser refactor
-Status: Pending
+Status: Complete; build-validated
 
 Scope:
 - Break up `PriceParsingService.swift` without changing parser behavior
 - Separate snapshot prep, candidate scoring, item-name extraction, quantity inference, and confidence assembly into clearer helper seams or types
 - Preserve current test coverage and behavior while reducing file density and coupling
+
+Completed work:
+- Split parser concerns into `Prixio/Scanning/Price/Parsing/`
+- Kept `PriceParsingService.swift` as the orchestration entry point plus shared parser types/constants
+- Moved snapshot construction into `PriceParsingSnapshotBuilder.swift`
+- Moved candidate extraction/ranking into `PriceCandidateScorer.swift`
+- Moved unit/quantity logic into `PriceParsingUnitResolver.swift`
+- Moved item-name extraction into `PriceParsingItemNameResolver.swift`
+- Moved ambiguity/confidence/result assembly into `PriceParsingConfidenceResolver.swift`
+- Moved assisted/Foundation Models flow into `PriceParsingAssistedExtraction.swift`
 
 Definition of done:
 - `PriceParsingService.swift` is materially easier to navigate
@@ -127,7 +136,7 @@ Definition of done:
 - No checklist-era heuristics are lost during extraction
 
 3. Real-world OCR fixture coverage
-Status: Pending
+Status: Next
 
 Scope:
 - Add more fixtures that look like actual shelf tags instead of only narrow synthetic inputs
@@ -379,7 +388,7 @@ Read first:
 - `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
 
 Then focus on:
-- making targeted parser tests reliable before doing broader refactors
+- making targeted parser tests reliable before broader fixture expansion
 - keeping any future Foundation Models expansion constrained to second-pass ambiguity resolution
 
 ## Execution Rule

@@ -134,6 +134,21 @@ The nice part is that the new scores feel sane in human terms:
 
 That is a much better contract for the rest of the app. Confidence is now the parser’s closing argument, not just the loudest witness in the room.
 
+### War Story: The Parser Finally Moved Out of Its Studio Apartment
+After the feature push, `PriceParsingService.swift` had become the kind of file that technically still works but makes everyone nervous. Snapshot prep, ranking, unit logic, quantity logic, item-name logic, confidence logic, and Foundation Models were all living in one place like roommates who swear they have a system while storing forks in the bathroom.
+
+The refactor did not try to make the parser smarter. That would have been reckless. The job was to make the code legible without changing its behavior. The service is now an orchestrator instead of a storage unit. The heavy lifting moved into a dedicated `Scanning/Price/Parsing/` subfolder:
+- snapshot building
+- candidate scoring
+- unit and quantity resolution
+- item-name resolution
+- confidence assembly
+- assisted/Foundation Models flow
+
+This matters more than it sounds. Refactors like this are not about aesthetics. They are about making the next change cheaper and less dangerous. A cleaner snapshot builder means easier prompt construction later. A dedicated Foundation Models file means the second-pass parser can evolve without dragging half the deterministic pipeline into every review. And when a bug shows up in quantity inference, nobody has to step over assisted prompt code and regex soup just to find it.
+
+The encouraging part is that the build stayed green immediately after the split. That is the kind of boring success you want from structural work: less drama, more drawers with labels.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
