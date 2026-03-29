@@ -160,6 +160,8 @@ The fix was precise:
 
 That same pass also cleaned up a structural code smell from the refactor. The extracted parser files were leaning too hard on `static` helper style, which made Swift code read like a JavaScript utility pile wearing a trench coat. The ranking, unit/quantity, item-name, and confidence phases now live behind owned helper structs with thin service-level delegates. The service remains the entry point, but the real work has clearer owners now.
 
+The cleanup did not stop there. Snapshot building and the Foundation Models assist path now follow the same ownership pattern, which means the parser phases finally agree on who owns what instead of mixing orchestration and implementation in every file.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

@@ -6,12 +6,12 @@
 import CoreGraphics
 import Foundation
 
-extension PriceParsingService {
-    static func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
-        let supportedObservations = orderObservationsInReadingOrder(observations.filter {
-            isSupportedOCRLine($0.string)
+private struct PriceParsingSnapshotBuilder {
+    func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> PriceParsingService.HeuristicExtractionSnapshot {
+        let supportedObservations = PriceParsingService.orderObservationsInReadingOrder(observations.filter {
+            PriceParsingService.isSupportedOCRLine($0.string)
         })
-        let spatialGroups = makeSpatialObservationGroups(from: supportedObservations)
+        let spatialGroups = PriceParsingService.makeSpatialObservationGroups(from: supportedObservations)
         let strongestGroupObservations = spatialGroups.first?.observations ?? supportedObservations
         let focusedObservations = strongestGroupObservations
         let cleanedObservations = bestAvailableObservations(
@@ -19,38 +19,38 @@ extension PriceParsingService {
             strongestGroupObservations: strongestGroupObservations,
             supportedObservations: supportedObservations
         )
-        let normalizedObservations = applyContextualNormalization(to: cleanedObservations)
+        let normalizedObservations = PriceParsingService.applyContextualNormalization(to: cleanedObservations)
         let consolidatedObservations = normalizedObservations.consolidateObservations()
         let supportedLines = consolidatedObservations.isEmpty ? normalizedObservations : consolidatedObservations
         let rawText = supportedLines.map(\.string).joined(separator: "\n")
         let normalizedText = rawText.replacingOccurrences(of: ",", with: ".")
         let unitScopeText = supportedLines.map(\.string).joined(separator: "\n")
-        let consolidatedPriceCandidates = extractPriceCandidates(from: consolidatedObservations)
+        let consolidatedPriceCandidates = PriceParsingService.extractPriceCandidates(from: consolidatedObservations)
         let extractedPriceCandidates = consolidatedPriceCandidates.isEmpty
-            ? extractPriceCandidates(from: normalizedObservations)
+            ? PriceParsingService.extractPriceCandidates(from: normalizedObservations)
             : consolidatedPriceCandidates
-        let priceCandidates = scorePriceCandidates(
+        let priceCandidates = PriceParsingService.scorePriceCandidates(
             extractedPriceCandidates,
             in: supportedLines
         )
-        let detectedUnit = detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
+        let detectedUnit = PriceParsingService.detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
         let lines = (unitScopeText.isEmpty ? normalizedText : unitScopeText)
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let itemNameHint = extractItemNameHint(
+        let itemNameHint = PriceParsingService.extractItemNameHint(
             from: supportedLines,
             priceCandidates: priceCandidates
         )
-        let resolvedQuantity = inferResolvedQuantity(
+        let resolvedQuantity = PriceParsingService.inferResolvedQuantity(
             from: supportedLines,
             priceCandidates: priceCandidates,
             detectedUnit: detectedUnit,
             fallbackText: unitScopeText.isEmpty ? normalizedText : unitScopeText
         )
-        let heuristicConfidence = priceCandidates.first?.confidence ?? averageConfidence(in: consolidatedObservations) ?? 0.1
+        let heuristicConfidence = priceCandidates.first?.confidence ?? PriceParsingService.averageConfidence(in: consolidatedObservations) ?? 0.1
 
-        return HeuristicExtractionSnapshot(
+        return PriceParsingService.HeuristicExtractionSnapshot(
             supportedObservations: supportedObservations,
             spatialGroups: spatialGroups,
             cleanedObservations: cleanedObservations,
@@ -67,7 +67,7 @@ extension PriceParsingService {
         )
     }
 
-    static func shouldFallbackFromFocusedObservations(
+    func shouldFallbackFromFocusedObservations(
         sourceObservations: [OCRTextObservation],
         cleanedObservations: [OCRTextObservation]
     ) -> Bool {
@@ -79,14 +79,14 @@ extension PriceParsingService {
             return true
         }
 
-        let sourceHasPriceSignal = sourceObservations.contains { containsPriceSignal(in: $0.string) }
-        let cleanedHasPriceSignal = cleanedObservations.contains { containsPriceSignal(in: $0.string) }
+        let sourceHasPriceSignal = sourceObservations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
+        let cleanedHasPriceSignal = cleanedObservations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
         if sourceHasPriceSignal && !cleanedHasPriceSignal {
             return true
         }
 
-        let sourceHasDescription = sourceObservations.contains { isDescriptiveObservation($0) }
-        let cleanedHasDescription = cleanedObservations.contains { isDescriptiveObservation($0) }
+        let sourceHasDescription = sourceObservations.contains { PriceParsingService.isDescriptiveObservation($0) }
+        let cleanedHasDescription = cleanedObservations.contains { PriceParsingService.isDescriptiveObservation($0) }
         if sourceHasDescription && !cleanedHasDescription {
             return true
         }
@@ -98,7 +98,7 @@ extension PriceParsingService {
         return false
     }
 
-    static func makeFallbackObservationSet(
+    func makeFallbackObservationSet(
         focusedObservations: [OCRTextObservation],
         strongestGroupObservations: [OCRTextObservation],
         supportedObservations: [OCRTextObservation]
@@ -106,24 +106,24 @@ extension PriceParsingService {
         [
             (
                 source: focusedObservations,
-                cleaned: removeObviousNoise(from: focusedObservations)
+                cleaned: PriceParsingService.removeObviousNoise(from: focusedObservations)
             ),
             (
                 source: strongestGroupObservations,
-                cleaned: removeObviousNoise(from: strongestGroupObservations)
+                cleaned: PriceParsingService.removeObviousNoise(from: strongestGroupObservations)
             ),
             (
                 source: supportedObservations,
-                cleaned: removeObviousNoise(from: supportedObservations)
+                cleaned: PriceParsingService.removeObviousNoise(from: supportedObservations)
             ),
             (
-                source: minimallySanitizedObservations(from: supportedObservations),
-                cleaned: minimallySanitizedObservations(from: supportedObservations)
+                source: PriceParsingService.minimallySanitizedObservations(from: supportedObservations),
+                cleaned: PriceParsingService.minimallySanitizedObservations(from: supportedObservations)
             )
         ]
     }
 
-    static func bestAvailableObservations(
+    func bestAvailableObservations(
         focusedObservations: [OCRTextObservation],
         strongestGroupObservations: [OCRTextObservation],
         supportedObservations: [OCRTextObservation]
@@ -144,6 +144,46 @@ extension PriceParsingService {
         }
 
         return fallbackSets.last?.cleaned ?? []
+    }
+}
+
+extension PriceParsingService {
+    static func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
+        PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
+    }
+
+    static func shouldFallbackFromFocusedObservations(
+        sourceObservations: [OCRTextObservation],
+        cleanedObservations: [OCRTextObservation]
+    ) -> Bool {
+        PriceParsingSnapshotBuilder().shouldFallbackFromFocusedObservations(
+            sourceObservations: sourceObservations,
+            cleanedObservations: cleanedObservations
+        )
+    }
+
+    static func makeFallbackObservationSet(
+        focusedObservations: [OCRTextObservation],
+        strongestGroupObservations: [OCRTextObservation],
+        supportedObservations: [OCRTextObservation]
+    ) -> [(source: [OCRTextObservation], cleaned: [OCRTextObservation])] {
+        PriceParsingSnapshotBuilder().makeFallbackObservationSet(
+            focusedObservations: focusedObservations,
+            strongestGroupObservations: strongestGroupObservations,
+            supportedObservations: supportedObservations
+        )
+    }
+
+    static func bestAvailableObservations(
+        focusedObservations: [OCRTextObservation],
+        strongestGroupObservations: [OCRTextObservation],
+        supportedObservations: [OCRTextObservation]
+    ) -> [OCRTextObservation] {
+        PriceParsingSnapshotBuilder().bestAvailableObservations(
+            focusedObservations: focusedObservations,
+            strongestGroupObservations: strongestGroupObservations,
+            supportedObservations: supportedObservations
+        )
     }
 
     static func isSupportedOCRLine(_ line: String) -> Bool {
