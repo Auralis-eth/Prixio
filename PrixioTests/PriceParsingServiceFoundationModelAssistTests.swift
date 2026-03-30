@@ -121,4 +121,53 @@ struct PriceParsingServiceFoundationModelAssistTests {
         #expect(result.price == testCase.expectedPrice, Comment(rawValue: testCase.name))
         #expect(result.itemNameHint == testCase.expectedItemName, Comment(rawValue: testCase.name))
     }
+
+    @Test(.tags(.ocr, .product))
+    func normalizesAssistedResponseIntoConstrainedResult() async throws {
+        let response = PriceParsingService.AssistedExtractionResponse(
+            targetLineIndexes: [3, 1, 3, 99, -1],
+            selectedPriceCandidateIndex: 42,
+            selectedPriceKind: .sale,
+            canonicalItemName: "  Fresh Bananas  ",
+            ambiguityNotes: [" first ", "", "second", "third", "fourth"],
+            confidenceBucket: .medium
+        )
+
+        let result = PriceParsingService._test_makeAssistedExtractionResult(
+            from: response,
+            lineCount: 4,
+            candidateCount: 2
+        )
+
+        #expect(result.targetLineIndexes == [1, 3])
+        #expect(result.selectedPriceCandidateIndex == nil)
+        #expect(result.selectedPriceKind == .unknown)
+        #expect(result.canonicalItemName == "Fresh Bananas")
+        #expect(result.ambiguityNotes == ["first", "second", "third"])
+        #expect(result.confidenceBucket == .medium)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func assistedPromptStatesResponseContractExplicitly() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Fresh Bananas", confidence: 0.94),
+            OCRTextObservation(string: "$3.99", confidence: 0.93),
+            OCRTextObservation(string: "$2.99", confidence: 0.93)
+        ])
+        let ambiguity = PriceParsingService._test_analyzeAmbiguity([
+            OCRTextObservation(string: "Fresh Bananas", confidence: 0.94),
+            OCRTextObservation(string: "$3.99", confidence: 0.93),
+            OCRTextObservation(string: "$2.99", confidence: 0.93)
+        ])
+
+        let prompt = PriceParsingService.buildAssistedExtractionPrompt(
+            snapshot: snapshot,
+            ambiguity: ambiguity
+        )
+
+        #expect(prompt.contains("Response contract:"))
+        #expect(prompt.contains("`selectedPriceCandidateIndex` must be an existing candidate index or `nil`"))
+        #expect(prompt.contains("`targetLineIndexes` must be existing OCR line indexes only"))
+        #expect(prompt.contains("Never invent missing values."))
+    }
 }

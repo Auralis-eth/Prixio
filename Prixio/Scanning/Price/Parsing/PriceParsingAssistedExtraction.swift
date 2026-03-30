@@ -8,11 +8,10 @@ import FoundationModels
 
 private struct PriceParsingAssistedExtractor {
     let instructions = """
-    You are helping parse OCR text from grocery shelf labels into structured product pricing data.
-    Pick the OCR lines most likely to describe one target product.
-    Choose only from the provided price candidates.
-    Prefer product-level prices over deposits, fees, or unrelated numbers.
-    Do not invent prices, line indexes, or product names that are not supported by the OCR evidence.
+    Help with ambiguous grocery shelf-tag OCR.
+    Select only from the provided OCR lines and provided price candidates.
+    Prefer one target product, not the whole frame.
+    Never invent prices, line indexes, quantities, or product names.
     """
 
     func resolveWithFoundationModel(
@@ -26,13 +25,10 @@ private struct PriceParsingAssistedExtractor {
         let session = LanguageModelSession(instructions: instructions)
         let prompt = buildAssistedExtractionPrompt(snapshot: snapshot, ambiguity: ambiguity)
         let response = try await session.respond(to: prompt, generating: PriceParsingService.AssistedExtractionResponse.self)
-        return PriceParsingService.AssistedExtractionResult(
-            targetLineIndexes: response.content.targetLineIndexes,
-            selectedPriceCandidateIndex: response.content.selectedPriceCandidateIndex,
-            selectedPriceKind: PriceParsingService.AssistedPriceKind(rawValue: response.content.selectedPriceKind) ?? .unknown,
-            canonicalItemName: response.content.canonicalItemName,
-            ambiguityNotes: response.content.ambiguityNotes,
-            confidenceBucket: PriceParsingService.AssistedConfidenceBucket(rawValue: response.content.confidenceBucket) ?? .low
+        return makeAssistedExtractionResult(
+            from: response.content,
+            lineCount: snapshot.consolidatedObservations.count,
+            candidateCount: snapshot.priceCandidates.count
         )
     }
 
@@ -73,10 +69,13 @@ private struct PriceParsingAssistedExtractor {
         Current heuristic confidence: \(snapshot.heuristicConfidence)
         Ambiguity reasons: \(weaknessList.isEmpty ? "none" : weaknessList)
 
-        Select the OCR lines most likely to describe the target grocery product. Choose at most one existing price candidate index.
-        Classify the chosen price candidate as sale, regular, unitPrice, deposit, noise, or unknown.
-        Return a canonical item name only if the OCR evidence supports it.
-        Do not invent new prices, new lines, or missing values. If the data is unclear, leave fields empty and explain ambiguity in ambiguityNotes.
+        Response contract:
+        - `targetLineIndexes` must be existing OCR line indexes only, sorted ascending, and limited to lines for one product.
+        - `selectedPriceCandidateIndex` must be an existing candidate index or `nil`.
+        - `selectedPriceKind` must classify the selected candidate. Use `unknown` when no candidate should be selected.
+        - `canonicalItemName` must be `nil` unless the chosen lines support a clear product name.
+        - `ambiguityNotes` should be short phrases, not prose.
+        - Never invent missing values.
         """
     }
 
@@ -133,6 +132,32 @@ private struct PriceParsingAssistedExtractor {
         return string
     }
 
+    func makeAssistedExtractionResult(
+        from response: PriceParsingService.AssistedExtractionResponse,
+        lineCount: Int,
+        candidateCount: Int
+    ) -> PriceParsingService.AssistedExtractionResult {
+        let selectedPriceCandidateIndex = normalizedSelectedCandidateIndex(
+            response.selectedPriceCandidateIndex,
+            candidateCount: candidateCount
+        )
+        let selectedPriceKind: PriceParsingService.AssistedPriceKind = {
+            guard selectedPriceCandidateIndex != nil else {
+                return .unknown
+            }
+            return response.selectedPriceKind
+        }()
+
+        return PriceParsingService.AssistedExtractionResult(
+            targetLineIndexes: normalizedLineIndexes(response.targetLineIndexes, lineCount: lineCount),
+            selectedPriceCandidateIndex: selectedPriceCandidateIndex,
+            selectedPriceKind: selectedPriceKind,
+            canonicalItemName: normalizedCanonicalItemName(response.canonicalItemName),
+            ambiguityNotes: normalizedAmbiguityNotes(response.ambiguityNotes),
+            confidenceBucket: response.confidenceBucket
+        )
+    }
+
     func normalizedCanonicalItemName(
         from assisted: PriceParsingService.AssistedExtractionResult,
         snapshot: PriceParsingService.HeuristicExtractionSnapshot
@@ -178,9 +203,33 @@ private struct PriceParsingAssistedExtractor {
         let replacementAdjustment: Float = replacedPrice ? 0.02 : 0
         return min(1, max(0.1, heuristicConfidence + modelAdjustment + replacementAdjustment))
     }
+
+    func normalizedLineIndexes(_ indexes: [Int], lineCount: Int) -> [Int] {
+        Array(Set(indexes.filter { (0..<lineCount).contains($0) })).sorted()
+    }
+
+    func normalizedSelectedCandidateIndex(_ index: Int?, candidateCount: Int) -> Int? {
+        guard let index, (0..<candidateCount).contains(index) else {
+            return nil
+        }
+        return index
+    }
+
+    func normalizedCanonicalItemName(_ name: String?) -> String? {
+        guard let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    func normalizedAmbiguityNotes(_ notes: [String]) -> [String] {
+        let trimmed = notes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return Array(trimmed.prefix(3))
+    }
 }
 
 extension PriceParsingService {
+    @Generable(description: "How the chosen price candidate should be interpreted")
     enum AssistedPriceKind: String, Codable, Sendable {
         case sale
         case regular
@@ -190,6 +239,7 @@ extension PriceParsingService {
         case unknown
     }
 
+    @Generable(description: "How strongly the model believes the constrained answer is supported by the OCR evidence")
     enum AssistedConfidenceBucket: String, Codable, Sendable {
         case low
         case medium
@@ -213,14 +263,25 @@ extension PriceParsingService {
         let sourceLineIndexes: [Int]
     }
 
-    @Generable
+    @Generable(description: "Constrained assisted extraction result for one ambiguous grocery shelf tag")
     struct AssistedExtractionResponse: Sendable {
+        @Guide(description: "Existing OCR line indexes that belong to one target product")
         let targetLineIndexes: [Int]
+
+        @Guide(description: "Existing price candidate index to trust, or nil if none should be selected")
         let selectedPriceCandidateIndex: Int?
-        let selectedPriceKind: String
+
+        @Guide(description: "How to interpret the selected price candidate")
+        let selectedPriceKind: AssistedPriceKind
+
+        @Guide(description: "Canonical product name only when supported by the selected OCR lines")
         let canonicalItemName: String?
+
+        @Guide(description: "Up to three short ambiguity notes")
         let ambiguityNotes: [String]
-        let confidenceBucket: String
+
+        @Guide(description: "How confident the model is in this constrained extraction")
+        let confidenceBucket: AssistedConfidenceBucket
     }
 
     struct AssistedExtractionResult: Sendable {
@@ -295,6 +356,18 @@ extension PriceParsingService {
             heuristicConfidence: heuristicConfidence,
             assistedConfidence: assistedConfidence,
             replacedPrice: replacedPrice
+        )
+    }
+
+    static func _test_makeAssistedExtractionResult(
+        from response: AssistedExtractionResponse,
+        lineCount: Int,
+        candidateCount: Int
+    ) -> AssistedExtractionResult {
+        PriceParsingAssistedExtractor().makeAssistedExtractionResult(
+            from: response,
+            lineCount: lineCount,
+            candidateCount: candidateCount
         )
     }
 }

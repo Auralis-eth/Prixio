@@ -97,7 +97,7 @@ Status: Complete
 This section replaces the old sequential parser TODO list. The parser feature push is done. The next work should happen in this order.
 
 1. Validation hardening
-Status: Next
+Status: Environment-dependent follow-up
 
 Scope:
 - Make targeted parser tests run cleanly and repeatably from the current Xcode/tooling environment
@@ -160,7 +160,7 @@ Definition of done:
 - Ambiguous parses do not silently look “done” in the UI
 
 5. Foundation Models rollout
-Status: Pending
+Status: Next
 
 Scope:
 - Keep Foundation Models as a constrained second-pass parser, not the primary parser
@@ -182,6 +182,13 @@ Phase 1: Stabilize current assisted extraction
   - assisted candidate classification
   - assisted item-name normalization
   - confidence changes when assisted output agrees or disagrees with heuristics
+
+Current progress:
+- Next-session handoff now starts here instead of `Validation hardening`
+- Tightened the assisted prompt contract so it explicitly requires existing OCR line indexes, existing candidate indexes or `nil`, typed candidate classification, and non-invented values
+- Tightened the guided-generation schema by making `selectedPriceKind` and `confidenceBucket` typed `@Generable` enums instead of raw strings
+- Added deterministic response normalization so invalid line indexes, invalid candidate indexes, empty canonical names, and noisy ambiguity notes are sanitized before merge
+- Added regression coverage for prompt contract wording and response normalization
 
 Phase 2: Tighten prompt/schema design
 - Keep `LanguageModelSession` single-turn for this parser flow unless there is a proven benefit to multi-turn context
@@ -379,17 +386,18 @@ Completed work:
 
 ## Next Session Handoff
 
-If a new session picks this up, start with `Validation hardening`.
+If a new session picks this up, start with `Foundation Models rollout`, Phase 1.
 
 Read first:
+- `Prixio/Scanning/Price/Parsing/PriceParsingAssistedExtraction.swift`
+- `PrixioTests/PriceParsingServiceFoundationModelAssistTests.swift`
+- `Prixio/Scanning/Price/Parsing/PriceParsingConfidenceResolver.swift`
 - `Prixio/Scanning/Price/PriceParsingService.swift`
-- `PrixioTests/PriceParsingServiceDataSanitation.swift`
-- `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
-- `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
 
 Then focus on:
-- making targeted parser tests reliable before broader fixture expansion
+- improving assisted candidate selection, price-kind classification, and canonical item-name repair for ambiguous scans
 - keeping any future Foundation Models expansion constrained to second-pass ambiguity resolution
+- using real OCR fixtures to decide where the assisted path should grow next
 
 ## Execution Rule
 

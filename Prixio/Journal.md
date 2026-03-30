@@ -162,6 +162,13 @@ That same pass also cleaned up a structural code smell from the refactor. The ex
 
 The cleanup did not stop there. Snapshot building and the Foundation Models assist path now follow the same ownership pattern, which means the parser phases finally agree on who owns what instead of mixing orchestration and implementation in every file.
 
+### War Story: A Typed Model Contract Beats Hoping for Good Manners
+Once the assisted Foundation Models path had its own file, the next weak spot was obvious: the model response contract was still a little too trusting. Raw strings for price kind and confidence bucket meant the parser was relying on polite behavior from the model instead of enforcing a proper boundary.
+
+The fix was to tighten both sides of the deal. The prompt now states the response contract explicitly: use existing OCR line indexes, use an existing candidate index or `nil`, classify only the selected candidate, and never invent missing values. The guided-generation schema also got stricter by switching `selectedPriceKind` and `confidenceBucket` to typed `@Generable` enums instead of free-form strings.
+
+Then came the adult-supervision layer: deterministic normalization before merge. Invalid line indexes get filtered out. Invalid candidate indexes become `nil`. Empty canonical names disappear instead of pretending to be meaningful. Ambiguity notes get trimmed and capped. In other words, the model can suggest, but the parser still checks its homework before writing anything in pen.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
