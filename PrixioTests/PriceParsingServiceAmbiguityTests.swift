@@ -66,6 +66,16 @@ struct PriceParsingServiceAmbiguityTests {
                 ],
                 expectedWeaknesses: [.multipleCompetingPrices, .missingUnit, .possibleMultiProductScan],
                 shouldEscalate: true
+            ),
+            AmbiguityCase(
+                name: "stable packaged good without unit stays heuristic",
+                observations: [
+                    OCRTextObservation(string: "Sparkling Water", confidence: 0.94),
+                    OCRTextObservation(string: "$5.99", confidence: 0.91),
+                    OCRTextObservation(string: "$0.10 deposit", confidence: 0.91)
+                ],
+                expectedWeaknesses: [.missingUnit, .missingQuantity],
+                shouldEscalate: false
             )
         ]
     )

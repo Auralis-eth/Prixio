@@ -89,21 +89,32 @@ private struct PriceParsingAssistedExtractor {
         }
         let shouldTrustModelCandidate = assisted.confidenceBucket != .low
             && selectedCandidate != nil
-            && assisted.selectedPriceKind != .noise
+            && isTrustedPriceKind(assisted.selectedPriceKind)
+        let shouldTrustModelName = assisted.confidenceBucket != .low
 
         let finalPrice = shouldTrustModelCandidate ? selectedCandidate?.value : heuristicResult.price
         let finalQuantity = shouldTrustModelCandidate
             ? (selectedCandidate?.quantity ?? snapshot.resolvedQuantity)
             : heuristicResult.quantity
-        let finalItemName = normalizedCanonicalItemName(
-            from: assisted,
-            snapshot: snapshot
-        ) ?? heuristicResult.itemNameHint
+        let finalItemName = shouldTrustModelName
+            ? (normalizedCanonicalItemName(
+                from: assisted,
+                snapshot: snapshot
+            ) ?? heuristicResult.itemNameHint)
+            : heuristicResult.itemNameHint
         let finalLines = supportingLines(from: assisted.targetLineIndexes, snapshot: snapshot)
-        let finalConfidence = mergedConfidence(
-            heuristicConfidence: snapshot.heuristicConfidence,
-            assistedConfidence: assisted.confidenceBucket,
+        let agreementAdjustment = agreementConfidenceAdjustment(
+            heuristicResult: heuristicResult,
+            selectedCandidate: selectedCandidate,
+            finalItemName: finalItemName,
+            finalLines: finalLines,
             replacedPrice: shouldTrustModelCandidate
+        )
+        let finalConfidence = mergedConfidence(
+            heuristicConfidence: heuristicResult.confidence ?? snapshot.heuristicConfidence,
+            assistedConfidence: assisted.confidenceBucket,
+            replacedPrice: shouldTrustModelCandidate,
+            agreementAdjustment: agreementAdjustment
         )
 
         return OCRResult(
@@ -188,7 +199,8 @@ private struct PriceParsingAssistedExtractor {
     func mergedConfidence(
         heuristicConfidence: Float,
         assistedConfidence: PriceParsingService.AssistedConfidenceBucket,
-        replacedPrice: Bool
+        replacedPrice: Bool,
+        agreementAdjustment: Float
     ) -> Float {
         let modelAdjustment: Float
         switch assistedConfidence {
@@ -201,7 +213,7 @@ private struct PriceParsingAssistedExtractor {
         }
 
         let replacementAdjustment: Float = replacedPrice ? 0.02 : 0
-        return min(1, max(0.1, heuristicConfidence + modelAdjustment + replacementAdjustment))
+        return min(1, max(0.1, heuristicConfidence + modelAdjustment + replacementAdjustment + agreementAdjustment))
     }
 
     func normalizedLineIndexes(_ indexes: [Int], lineCount: Int) -> [Int] {
@@ -225,6 +237,60 @@ private struct PriceParsingAssistedExtractor {
     func normalizedAmbiguityNotes(_ notes: [String]) -> [String] {
         let trimmed = notes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         return Array(trimmed.prefix(3))
+    }
+
+    func isTrustedPriceKind(_ kind: PriceParsingService.AssistedPriceKind) -> Bool {
+        switch kind {
+        case .sale, .regular, .unitPrice:
+            return true
+        case .deposit, .noise, .unknown:
+            return false
+        }
+    }
+
+    func agreementConfidenceAdjustment(
+        heuristicResult: OCRResult,
+        selectedCandidate: PriceCandidate?,
+        finalItemName: String?,
+        finalLines: [String],
+        replacedPrice: Bool
+    ) -> Float {
+        var adjustment: Float = 0
+
+        if let selectedCandidate {
+            if selectedCandidate.value == heuristicResult.price {
+                adjustment += 0.03
+            } else {
+                adjustment -= replacedPrice ? 0.04 : 0.08
+            }
+        }
+
+        if normalizedComparisonText(finalItemName) == normalizedComparisonText(heuristicResult.itemNameHint) {
+            adjustment += 0.02
+        } else if finalItemName != nil, heuristicResult.itemNameHint != nil {
+            adjustment -= 0.02
+        }
+
+        if finalLines == heuristicResult.supportingLines {
+            adjustment += 0.01
+        } else if !finalLines.isEmpty {
+            adjustment -= 0.01
+        }
+
+        return adjustment
+    }
+
+    func normalizedComparisonText(_ text: String?) -> String? {
+        guard let text else {
+            return nil
+        }
+
+        let lowered = text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return lowered.isEmpty ? nil : lowered
     }
 }
 
@@ -350,12 +416,15 @@ extension PriceParsingService {
     static func mergedConfidence(
         heuristicConfidence: Float,
         assistedConfidence: AssistedConfidenceBucket,
-        replacedPrice: Bool
+        replacedPrice: Bool,
+        agreementAdjustment: Float = 0
     ) -> Float {
         PriceParsingAssistedExtractor().mergedConfidence(
             heuristicConfidence: heuristicConfidence,
             assistedConfidence: assistedConfidence,
             replacedPrice: replacedPrice
+            ,
+            agreementAdjustment: agreementAdjustment
         )
     }
 

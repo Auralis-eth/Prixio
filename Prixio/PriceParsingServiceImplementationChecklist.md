@@ -94,52 +94,52 @@ Status: Complete
 
 ## Next Phase
 
-This section replaces the old sequential parser TODO list. The parser feature push is done. The next work should happen in this order.
+This section is now the single source of truth for what happens next. Ignore the old sequential implementation notes below unless you are researching completed parser work.
 
-1. Validation hardening
-Status: Environment-dependent follow-up
+### Active Work Order
 
-Scope:
-- Make targeted parser tests run cleanly and repeatably from the current Xcode/tooling environment
-- Diagnose whether the remaining failures are `TestingMacros`, result-bundle corruption, timeouts, or test-plan/configuration issues
-- End this phase with reliable targeted runs for:
-  - `PriceParsingServiceSpatialGroupingTests`
-  - `PriceParsingServiceAmbiguityTests`
-  - `PriceParsingServiceDataSanitation`
+1. Foundation Models rollout, Phase 1
+Status: Complete
+
+Why this is first:
+- The parser refactor is complete
+- The assisted path now has a dedicated seam
+- The next product-level gain is improving ambiguous-scan handling, not more parser restructuring
+
+Current progress:
+- Tightened the assisted prompt contract so it explicitly requires existing OCR line indexes, existing candidate indexes or `nil`, typed candidate classification, and non-invented values
+- Tightened the guided-generation schema by making `selectedPriceKind` and `confidenceBucket` typed `@Generable` enums instead of raw strings
+- Added deterministic response normalization so invalid line indexes, invalid candidate indexes, empty canonical names, and noisy ambiguity notes are sanitized before merge
+- Expanded assisted merge coverage for multi-product selection, sale vs regular vs deposit classification, canonical item-name repair, and low-confidence no-override behavior
+- Tightened merge policy so `deposit`, `noise`, and low-confidence assisted output do not override deterministic price selection
+- Reviewed the ambiguity threshold so stable packaged tags without unit/quantity stay heuristic while unresolved competing-price tags still escalate
+- Added agreement-aware merge confidence so helpful assisted output beats noisy or weak assist output, while multi-product selections stay appropriately lower-confidence
+- Added more realistic ambiguous OCR fixtures covering member-vs-regular pricing and noisy branded-name repair
+- `BuildProject` succeeds and `PriceParsingServiceFoundationModelAssistTests` now pass with the expanded Phase 1 coverage
+
+Phase 1 completed outcomes:
+- Assisted candidate selection, classification, and merge behavior are constrained and test-covered
+- Canonical item-name repair is covered for weak heuristic names and noisy branded OCR
+- Heuristic-vs-assisted agreement is validated directly in the assisted test suite
+- Low-confidence, deposit, and noise-classified assist output remain non-authoritative
+
+Guardrails:
+- Keep Foundation Models as a constrained second-pass parser, not the primary parser
+- Keep `LanguageModelSession` single-turn unless there is a proven reason not to
+- Keep prompts short and typed with `@Generable`
+- Never let the model invent prices, units, quantities, or line indexes
+- Treat low-confidence model output as advisory, not authoritative
 
 Definition of done:
-- Targeted parser tests run without `No result`, incomplete result bundles, or repeated harness timeouts
-- Full project build still succeeds
-- The validation story no longer relies on snippet verification as the primary fallback
+- Assisted extraction improves real ambiguous scans without regressing clean heuristic-only scans
+- Prompt/schema design stays lean and testable
+- Merge behavior is covered by tests or deterministic in-project verification
 
-2. Parser refactor
-Status: Complete; build-validated
-
-Scope:
-- Break up `PriceParsingService.swift` without changing parser behavior
-- Separate snapshot prep, candidate scoring, item-name extraction, quantity inference, and confidence assembly into clearer helper seams or types
-- Preserve current test coverage and behavior while reducing file density and coupling
-
-Completed work:
-- Split parser concerns into `Prixio/Scanning/Price/Parsing/`
-- Kept `PriceParsingService.swift` as the orchestration entry point plus shared parser types/constants
-- Moved snapshot construction into `PriceParsingSnapshotBuilder.swift`
-- Moved candidate extraction/ranking into `PriceCandidateScorer.swift`
-- Moved unit/quantity logic into `PriceParsingUnitResolver.swift`
-- Moved item-name extraction into `PriceParsingItemNameResolver.swift`
-- Moved ambiguity/confidence/result assembly into `PriceParsingConfidenceResolver.swift`
-- Moved assisted/Foundation Models flow into `PriceParsingAssistedExtraction.swift`
-
-Definition of done:
-- `PriceParsingService.swift` is materially easier to navigate
-- Existing parser behavior remains stable
-- No checklist-era heuristics are lost during extraction
-
-3. Real-world OCR fixture coverage
-Status: Next
+2. Real-world OCR fixture coverage
+Status: Active now
 
 Scope:
-- Add more fixtures that look like actual shelf tags instead of only narrow synthetic inputs
+- Add fixtures that look like actual shelf tags instead of only narrow synthetic inputs
 - Cover sale tags, deposit-heavy beverage tags, side-by-side products, weird pack notation, and noisy flyer/receipt edge cases
 - Prefer regression-style fixtures that preserve bugs we already learned from
 
@@ -147,7 +147,7 @@ Definition of done:
 - Parser coverage better reflects real shelf-tag failure modes
 - At least a few new regression fixtures come from real captured OCR patterns
 
-4. Scan-flow integration review
+3. Scan-flow integration review
 Status: Pending
 
 Scope:
@@ -159,73 +159,16 @@ Definition of done:
 - Parser confidence meaning is reflected coherently in the scan flow
 - Ambiguous parses do not silently look “done” in the UI
 
-5. Foundation Models rollout
-Status: Next
+4. Validation hardening
+Status: Environment-dependent follow-up
 
 Scope:
-- Keep Foundation Models as a constrained second-pass parser, not the primary parser
-- Expand the current assisted extraction path deliberately instead of letting it grow ad hoc
-- Use guided generation with typed `@Generable` responses and keep prompts/session state small
-
-Implementation order:
-1. Stabilize the current assisted extraction path
-2. Improve prompt/schema quality before expanding responsibilities
-3. Expand model responsibilities only where heuristics remain structurally weak
-4. Add explicit validation for heuristic-vs-assisted agreement
-
-Phase 1: Stabilize current assisted extraction
-- Keep the current trigger boundary: only escalate when `analyzeAmbiguity(in:)` says the heuristic parse is weak or ambiguous
-- Audit `AssistedExtractionResponse`, `AssistedExtractionResult`, `buildAssistedExtractionPrompt(...)`, and `mergeAssistedExtraction(...)`
-- Make sure the model is only selecting among existing OCR lines and existing price candidates
-- Add regression coverage for:
-  - assisted line selection
-  - assisted candidate classification
-  - assisted item-name normalization
-  - confidence changes when assisted output agrees or disagrees with heuristics
-
-Current progress:
-- Next-session handoff now starts here instead of `Validation hardening`
-- Tightened the assisted prompt contract so it explicitly requires existing OCR line indexes, existing candidate indexes or `nil`, typed candidate classification, and non-invented values
-- Tightened the guided-generation schema by making `selectedPriceKind` and `confidenceBucket` typed `@Generable` enums instead of raw strings
-- Added deterministic response normalization so invalid line indexes, invalid candidate indexes, empty canonical names, and noisy ambiguity notes are sanitized before merge
-- Added regression coverage for prompt contract wording and response normalization
-
-Phase 2: Tighten prompt/schema design
-- Keep `LanguageModelSession` single-turn for this parser flow unless there is a proven benefit to multi-turn context
-- Keep instructions short to reduce token/context pressure
-- Continue using guided generation with `@Generable` output instead of raw string parsing
-- Prefer explicit field semantics over long narrative prompts
-- If needed, split one large assisted task into smaller single-purpose model calls rather than growing one oversized prompt
-
-Phase 3: Expand only the right model responsibilities
-- Good next uses:
-  - classify existing price candidates as sale, regular, unit price, deposit, noise, or unknown
-  - select which OCR lines belong to the target product when nearby tags compete
-  - normalize a final canonical item name from messy OCR evidence
-  - interpret promo semantics when deterministic quantity rules remain insufficient
-- Lower-priority uses:
-  - line-by-line OCR repair, only if real fixtures prove deterministic normalization has hit a ceiling
-- Avoid:
-  - inventing new prices, units, quantities, or line indexes
-  - replacing deterministic parsing for clean single-tag scans
-  - turning model output into the sole confidence source
-
-Phase 4: Confidence and merge policy
-- Keep final confidence derived from agreement between heuristic parsing and assisted parsing
-- Reward assisted output when it agrees with strong heuristic signals
-- Penalize or ignore assisted output when it conflicts with strong deterministic evidence
-- Treat low-confidence model output as advisory, not authoritative
-
-Tool-calling rule:
-- Do not add Foundation Models tool calling by default
-- If tool calling is introduced later, limit it to deterministic helpers such as known-brand lookup, normalization helpers, or catalog-backed disambiguation
-- Do not use tools for side effects in the parser path
+- Make targeted parser tests run cleanly and repeatably from the current Xcode/tooling environment when the environment itself is the blocker
+- Diagnose whether any remaining failures are `TestingMacros`, result-bundle corruption, timeouts, or test-plan/configuration issues
 
 Definition of done:
-- The assisted path is explicitly scoped and documented
-- Prompt/schema design is lean and testable
-- Assisted extraction improves real ambiguous scans without regressing clean heuristic-only scans
-- Confidence and merge behavior are covered by tests or deterministic in-project verification
+- Targeted parser tests run without `No result`, incomplete result bundles, or repeated harness timeouts when the environment is otherwise idle
+- Full project build still succeeds
 
 ## Sequential Plan
 
@@ -395,9 +338,9 @@ Read first:
 - `Prixio/Scanning/Price/PriceParsingService.swift`
 
 Then focus on:
-- improving assisted candidate selection, price-kind classification, and canonical item-name repair for ambiguous scans
+- improving assisted candidate selection and canonical item-name repair for ambiguous real-world scans
 - keeping any future Foundation Models expansion constrained to second-pass ambiguity resolution
-- using real OCR fixtures to decide where the assisted path should grow next
+- adding real OCR fixtures as the evidence source for what the assisted path should learn next
 
 ## Execution Rule
 

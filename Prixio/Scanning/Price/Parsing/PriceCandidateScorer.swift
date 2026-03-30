@@ -345,7 +345,12 @@ private struct PriceCandidateScorer {
 
         let top = candidates[0]
         let runnerUp = candidates[1]
-        if top.priority != runnerUp.priority {
+        if matchesContextPattern(PriceParsingService.depositMarkerPattern, in: runnerUp.sourceText) {
+            return false
+        }
+
+        let priorityGap = abs(top.priority - runnerUp.priority)
+        if priorityGap > 1 {
             return false
         }
 

@@ -71,10 +71,17 @@ enum PriceParsingService {
                 return true
             }
 
-            let moderateWeaknesses = weaknesses.filter { weakness in
-                !severeWeaknesses.contains(weakness)
+            let weaknessSet = Set(weaknesses)
+
+            if weaknessSet.contains(.sparseOCR) || weaknessSet.contains(.lowConfidence) {
+                return weaknessSet.count >= 2
             }
-            return moderateWeaknesses.count >= 2
+
+            if weaknessSet.contains(.missingItemName) && weaknessSet.contains(.missingUnit) {
+                return true
+            }
+
+            return weaknessSet.count >= 3
         }
     }
 

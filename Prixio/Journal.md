@@ -169,6 +169,19 @@ The fix was to tighten both sides of the deal. The prompt now states the respons
 
 Then came the adult-supervision layer: deterministic normalization before merge. Invalid line indexes get filtered out. Invalid candidate indexes become `nil`. Empty canonical names disappear instead of pretending to be meaningful. Ambiguity notes get trimmed and capped. In other words, the model can suggest, but the parser still checks its homework before writing anything in pen.
 
+That cleanup exposed a second issue hiding next door: the ambiguity gate was still a bit too eager in one direction and not eager enough in another. A stable packaged tag with a deposit sidecar was escalating simply because unit and quantity were missing, while a plain two-price tag could slip through without escalation after ranking nudged one candidate just ahead of the other.
+
+The fix was to make the gate care about the *kind* of ambiguity instead of just counting bruises. Stable packaged goods can now stay on the heuristic path when the only weakness is “no unit, no quantity,” but unresolved near-top competing prices still escalate. The new FM assist tests also cover the cases that actually matter for rollout: multi-product selection, regular-vs-sale overrides, deposit classification, canonical item-name repair, and low-confidence no-override behavior.
+
+The last Phase 1 wrinkle was confidence. Assisted parsing had learned to behave, but its confidence math was still too eager to celebrate. The merge path was anchoring off raw snapshot candidate confidence instead of the assembled heuristic result confidence, which is how you end up with absurdly cheerful scores for messy multi-product frames. That got fixed by basing assisted merge confidence on the heuristic result’s real confidence and then adjusting it based on agreement: helpful assist beats noisy assist, noisy assist beats weak assist, and multi-product selections stay visibly less certain than clean single-product wins.
+
+That let the Foundation Models Phase 1 story finally close with something better than “it seems plausible.” The assisted path now has:
+- a typed response contract
+- deterministic normalization before merge
+- explicit non-authoritative handling for low-confidence, deposit, and noise-classified output
+- agreement-aware confidence behavior
+- realistic ambiguous OCR fixtures instead of only toy examples
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
