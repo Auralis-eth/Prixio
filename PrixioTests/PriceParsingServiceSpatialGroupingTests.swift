@@ -85,6 +85,21 @@ struct PriceParsingServiceSpatialGroupingTests {
         #expect(snapshot.priceCandidates.first?.value == Decimal(string: "1.29"))
     }
 
+    @Test(.tags(.ocr, .product))
+    func sideBySideMemberTagsStillReadAsCompetingProducts() async throws {
+        let report = PriceParsingService._test_analyzeAmbiguity([
+            observation("MBR PRICE", confidence: 0.80, x: 0.05, y: 0.82, width: 0.16, height: 0.06),
+            observation("Coke Zero 12 PK", confidence: 0.93, x: 0.05, y: 0.74, width: 0.26, height: 0.08),
+            observation("2/$11", confidence: 0.89, x: 0.06, y: 0.64, width: 0.14, height: 0.08),
+            observation("MBR PRICE", confidence: 0.79, x: 0.58, y: 0.82, width: 0.16, height: 0.06),
+            observation("Pepsi Zero 12 PK", confidence: 0.92, x: 0.58, y: 0.74, width: 0.24, height: 0.08),
+            observation("2/$12", confidence: 0.88, x: 0.60, y: 0.64, width: 0.14, height: 0.08)
+        ])
+
+        #expect(report.weaknesses.contains(.possibleMultiProductScan))
+        #expect(report.shouldUseFoundationModel)
+    }
+
     private func observation(
         _ string: String,
         confidence: Float,

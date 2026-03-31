@@ -76,6 +76,30 @@ struct PriceParsingServiceAmbiguityTests {
                 ],
                 expectedWeaknesses: [.missingUnit, .missingQuantity],
                 shouldEscalate: false
+            ),
+            AmbiguityCase(
+                name: "member promo with regular fallback stays heuristic when winner is clear",
+                observations: [
+                    OCRTextObservation(string: "MBR PRICE", confidence: 0.79),
+                    OCRTextObservation(string: "Dr Pepper Zero 12 PK", confidence: 0.88),
+                    OCRTextObservation(string: "2/$11", confidence: 0.86),
+                    OCRTextObservation(string: "Regular 6.49", confidence: 0.82),
+                    OCRTextObservation(string: "plus dep", confidence: 0.75)
+                ],
+                expectedWeaknesses: [],
+                shouldEscalate: false
+            ),
+            AmbiguityCase(
+                name: "flyer style promo noise does not force escalation by itself",
+                observations: [
+                    OCRTextObservation(string: "WEEKLY SPECIAL", confidence: 0.73),
+                    OCRTextObservation(string: "Organic Raspberries", confidence: 0.92),
+                    OCRTextObservation(string: "$3.99 ea", confidence: 0.90),
+                    OCRTextObservation(string: "SAVE 2.00", confidence: 0.78),
+                    OCRTextObservation(string: "Valid Fri Sat Sun", confidence: 0.76)
+                ],
+                expectedWeaknesses: [],
+                shouldEscalate: false
             )
         ]
     )

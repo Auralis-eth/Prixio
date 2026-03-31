@@ -136,19 +136,27 @@ Definition of done:
 - Merge behavior is covered by tests or deterministic in-project verification
 
 2. Real-world OCR fixture coverage
-Status: Active now
+Status: Complete
 
 Scope:
 - Add fixtures that look like actual shelf tags instead of only narrow synthetic inputs
 - Cover sale tags, deposit-heavy beverage tags, side-by-side products, weird pack notation, and noisy flyer/receipt edge cases
 - Prefer regression-style fixtures that preserve bugs we already learned from
 
+Completed in this pass:
+- Added real-world style regression fixtures for member promo tags, deposit-heavy beverage tags, noisy branded OCR, and flyer-style promo noise
+- Added a noisier stacked sale-tag fixture with `save` banner noise and a regular fallback price
+- Added a more realistic side-by-side member-tag spatial fixture for competing products in one frame
+- Tightened item-name extraction so promo banners and validity lines do not displace product text
+- Relaxed noise filtering for OCR digit-as-letter brand lines like `C0KE ZER0 SGR`
+- Tightened ambiguity analysis so regular-price fallbacks and deposit sidecars do not force FM escalation by themselves
+
 Definition of done:
 - Parser coverage better reflects real shelf-tag failure modes
 - At least a few new regression fixtures come from real captured OCR patterns
 
 3. Scan-flow integration review
-Status: Pending
+Status: Active now
 
 Scope:
 - Review how `ScanViewModel` and the scanner UI consume low-confidence, ambiguous, or assisted parser results

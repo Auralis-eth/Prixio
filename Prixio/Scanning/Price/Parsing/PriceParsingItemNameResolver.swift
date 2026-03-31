@@ -47,9 +47,13 @@ private struct PriceParsingItemNameResolver {
         guard !looksLikeReceiptFragment(trimmed) else {
             return nil
         }
+        guard !looksLikePromoBanner(trimmed) else {
+            return nil
+        }
 
         let words = trimmed.normalizedWords()
-        guard !(PriceParsingService.isLikelySKU(trimmed) && !hasExplicitSizeToken && words.count <= 3) else {
+        let hasOCRVariantEvidence = trimmed.digitsAsLettersCount() >= 2
+        guard !(PriceParsingService.isLikelySKU(trimmed) && !hasExplicitSizeToken && words.count <= 3 && !hasOCRVariantEvidence) else {
             return nil
         }
         let alphabeticalTokens = words.filter { token in
@@ -66,12 +70,13 @@ private struct PriceParsingItemNameResolver {
             return nil
         }
 
-        let digitMixPenalty = trimmed.contains(where: \.isNumber) && !PriceParsingService.containsExplicitSizeToken(in: trimmed) ? 1 : 0
+        let digitMixPenalty = trimmed.contains(where: \.isNumber) && !PriceParsingService.containsExplicitSizeToken(in: trimmed) && !hasOCRVariantEvidence ? 1 : 0
         let sizePenalty = hasExplicitSizeToken ? 1 : 0
-        let promoPenalty = PriceParsingService.promotionalPriorityBoost(for: trimmed) > 0 ? 1 : 0
+        let promoPenalty = PriceParsingService.promotionalPriorityBoost(for: trimmed) > 0 ? 2 : 0
         let regularPenalty = PriceParsingService.regularPricePenalty(for: trimmed)
         let depositPenalty = PriceParsingService.depositPenalty(for: trimmed)
         let unitOnlyPenalty = PriceParsingService.detectUnit(in: trimmed) != nil && descriptiveTokens.count == 1 ? 1 : 0
+        let ocrVariantBoost = hasOCRVariantEvidence && descriptiveTokens.count >= 2 ? 2 : 0
 
         let proximityBoost = topCandidateProximityBoost(
             lineIndex: lineIndex,
@@ -88,6 +93,7 @@ private struct PriceParsingItemNameResolver {
             + proximityBoost
             + confidenceBoost
             + uppercaseBrandBoost
+            + ocrVariantBoost
             - digitMixPenalty
             - sizePenalty
             - promoPenalty
@@ -132,6 +138,31 @@ private struct PriceParsingItemNameResolver {
         if PriceParsingService.containsPhoneNumber(in: lowered) || PriceParsingService.looksLikeDateLine(lowered) {
             return true
         }
+        if looksLikePromoBanner(lowered) {
+            return true
+        }
+        return false
+    }
+
+    func looksLikePromoBanner(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        let words = lowered.normalizedWords()
+        guard !words.isEmpty else {
+            return true
+        }
+
+        let ignoredTokens = PriceParsingService.itemNameIgnoredTokens
+            .union(["mbr", "save", "valid", "weekly", "fri", "sat", "sun", "mon", "tue", "wed", "thu"])
+
+        let allTokensIgnored = words.allSatisfy { ignoredTokens.contains($0) }
+        if allTokensIgnored {
+            return true
+        }
+
+        if lowered.contains("weekly special") || lowered.contains("valid ") || lowered.hasPrefix("save ") {
+            return true
+        }
+
         return false
     }
 
@@ -179,6 +210,10 @@ extension PriceParsingService {
 
     static func looksLikeReceiptFragment(_ text: String) -> Bool {
         PriceParsingItemNameResolver().looksLikeReceiptFragment(text)
+    }
+
+    static func looksLikePromoBanner(_ text: String) -> Bool {
+        PriceParsingItemNameResolver().looksLikePromoBanner(text)
     }
 
     static func isPureUnitToken(_ token: String) -> Bool {

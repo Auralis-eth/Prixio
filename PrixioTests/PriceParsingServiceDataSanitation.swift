@@ -173,4 +173,80 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.detectedUnit == .each)
         #expect(snapshot.resolvedQuantity == Decimal(6))
     }
+
+    @Test(.tags(.ocr, .product))
+    func memberPromoTagPreservesMultiBuyPriceAndCanonicalProductLine() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "MBR PRICE", confidence: 0.79),
+            OCRTextObservation(string: "Dr Pepper Zero 12 PK", confidence: 0.88),
+            OCRTextObservation(string: "2/$11", confidence: 0.86),
+            OCRTextObservation(string: "Regular 6.49", confidence: 0.82),
+            OCRTextObservation(string: "plus dep", confidence: 0.75)
+        ])
+
+        #expect(snapshot.itemNameHint == "Dr Pepper Zero 12 PK")
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "11"))
+        #expect(snapshot.priceCandidates.first?.quantity == Decimal(2))
+        #expect(snapshot.resolvedQuantity == Decimal(2))
+        #expect(snapshot.detectedUnit == .each)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func depositHeavyBeverageTagKeepsPrimaryShelfPrice() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Sparkling Water 12 PK", confidence: 0.93),
+            OCRTextObservation(string: "$5.99", confidence: 0.91),
+            OCRTextObservation(string: "$1.20 dep", confidence: 0.84),
+            OCRTextObservation(string: "12 x 355 mL", confidence: 0.88)
+        ])
+
+        #expect(snapshot.itemNameHint == "Sparkling Water 12 PK")
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "5.99"))
+        #expect(snapshot.detectedUnit == .each)
+        #expect(snapshot.resolvedQuantity == Decimal(12))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func noisyBrandedShelfTagRepairsProductNameWithoutDroppingPrice() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "C0KE ZER0 SGR", confidence: 0.74),
+            OCRTextObservation(string: "2 L", confidence: 0.79),
+            OCRTextObservation(string: "$2.79 ea", confidence: 0.90)
+        ])
+
+        #expect(snapshot.itemNameHint == "C0KE ZER0 SGR")
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "2.79"))
+        #expect(snapshot.detectedUnit == .each)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func flyerStyleNoiseDoesNotDisplaceActualShelfTagEvidence() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "WEEKLY SPECIAL", confidence: 0.73),
+            OCRTextObservation(string: "Organic Raspberries", confidence: 0.92),
+            OCRTextObservation(string: "$3.99 ea", confidence: 0.90),
+            OCRTextObservation(string: "SAVE 2.00", confidence: 0.78),
+            OCRTextObservation(string: "Valid Fri Sat Sun", confidence: 0.76)
+        ])
+
+        #expect(snapshot.itemNameHint == "Organic Raspberries")
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "3.99"))
+        #expect(snapshot.detectedUnit == .each)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func stackedSaleTagKeepsWinningSalePriceOverFallbackAndSaveBanner() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "BUY 2 SAVE 1.00", confidence: 0.76),
+            OCRTextObservation(string: "Honeycrisp Apples", confidence: 0.93),
+            OCRTextObservation(string: "Sale $1.99 /lb", confidence: 0.91),
+            OCRTextObservation(string: "Regular $2.49 /lb", confidence: 0.88),
+            OCRTextObservation(string: "Valid thru Tuesday", confidence: 0.74)
+        ])
+
+        #expect(snapshot.itemNameHint == "Honeycrisp Apples")
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "1.99"))
+        #expect(snapshot.detectedUnit == .lb)
+        #expect(snapshot.resolvedQuantity == Decimal(1))
+    }
 }

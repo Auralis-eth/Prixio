@@ -375,8 +375,9 @@ extension PriceParsingService {
         let hasLetters = trimmed.unicodeScalars.contains { CharacterSet.letters.contains($0) }
         let hasPriceSignal = containsPriceSignal(in: trimmed)
         let hasUnitSignal = detectUnit(in: trimmed) != nil || containsExplicitSizeToken(in: trimmed)
+        let hasOCRVariantEvidence = trimmed.digitsAsLettersCount() >= 2
 
-        if (isLikelyShelfCode(trimmed) || isLikelySKU(trimmed)) && !hasUnitSignal {
+        if (isLikelyShelfCode(trimmed) || (isLikelySKU(trimmed) && !hasOCRVariantEvidence)) && !hasUnitSignal {
             return true
         }
 

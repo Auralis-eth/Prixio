@@ -182,6 +182,32 @@ That let the Foundation Models Phase 1 story finally close with something better
 - agreement-aware confidence behavior
 - realistic ambiguous OCR fixtures instead of only toy examples
 
+### War Story: Real Shelf Tags Do Not Care About Your Beautiful Synthetic Tests
+Once the parser and Foundation Models Phase 1 work were in decent shape, the next honest question was brutal and fair: “How much of this survives contact with a shelf tag that was actually photographed in the wild?”
+
+That is where the shiny synthetic fixtures started getting humbled. Four realistic OCR patterns immediately found the soft spots:
+- a member promo tag with a clean `2/$11` winner, a regular fallback, and a `plus dep` sidecar
+- a beverage tag where the deposit line looked just price-like enough to start an argument
+- a noisy branded OCR line like `C0KE ZER0 SGR`
+- a flyer-ish tag with lines like `WEEKLY SPECIAL`, `SAVE 2.00`, and `Valid Fri Sat Sun`
+
+Each one exposed a different kind of parser snobbery.
+
+The item-name resolver was too willing to entertain flyer banner text as a product. `Valid Fri Sat Sun` is useful to a store, but it is not a raspberry. The snapshot cleanup path was also over-policing mixed letter-digit text and throwing away a perfectly salvageable brand line because it smelled a little too much like a SKU. And the ambiguity gate was still acting like a member promo plus a regular fallback plus `dep` meant “multiple products,” which is a great way to ask Foundation Models to solve a problem the heuristics already had the answer to.
+
+The fixes were pleasantly specific:
+- treat promo-banner and validity lines as non-product text
+- keep OCR digit-as-letter brand lines in the evidence set instead of binning them as fake SKUs
+- ignore regular fallback and deposit context when deciding whether a scan looks like multiple products
+
+That was enough to make the first batch of real-world fixtures credible, but not enough to declare the checklist item done. Two more patterns rounded it out:
+- a stacked sale tag with a `BUY 2 SAVE 1.00` banner, a clean sale line, a regular fallback line, and a validity line
+- a side-by-side member-price frame with two real products competing in different columns
+
+Those two matter because they pull the parser in opposite directions. The stacked sale tag is a “do not get distracted” test. The side-by-side member frame is a “please do get suspicious” test. Once both were green, the OCR coverage story finally felt complete instead of merely improved.
+
+That is the kind of parser progress that feels boring in code review and excellent in production. The sanitation suite now passes with real-world style fixtures, the ambiguity suite agrees that obvious winner tags should stay heuristic, and the spatial grouping suite still throws the flag when two products show up in the same photo like uninvited roommates.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

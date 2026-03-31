@@ -348,6 +348,9 @@ private struct PriceCandidateScorer {
         if matchesContextPattern(PriceParsingService.depositMarkerPattern, in: runnerUp.sourceText) {
             return false
         }
+        if matchesContextPattern(PriceParsingService.regularPriceMarkerPattern, in: runnerUp.sourceText) {
+            return false
+        }
 
         let priorityGap = abs(top.priority - runnerUp.priority)
         if priorityGap > 1 {

@@ -62,7 +62,7 @@ private struct PriceParsingConfidenceResolver {
         let meaningfulSpatialGroups = snapshot.spatialGroups.filter { group in
             let hasPrice = group.observations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
             let hasDescription = group.observations.contains { observation in
-                PriceParsingService.isDescriptiveObservation(observation)
+                isProductDescriptor(observation.string)
             }
             return group.observations.count >= 2 && hasPrice && hasDescription
         }
@@ -71,7 +71,7 @@ private struct PriceParsingConfidenceResolver {
         }
 
         let descriptiveLines = snapshot.lines.filter { line in
-            !line.contains(where: \.isNumber) && !line.contains("$")
+            isProductDescriptor(line)
         }
         let distinctPriceSources = Set(snapshot.priceCandidates.map(\.sourceText))
         return descriptiveLines.count >= 2 && distinctPriceSources.count >= 2
@@ -164,6 +164,37 @@ private struct PriceParsingConfidenceResolver {
         let hasYear = text.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression) != nil
         return hasDay || hasYear
     }
+
+    func isProductDescriptor(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+        guard !PriceParsingService.containsPriceSignal(in: trimmed) else {
+            return false
+        }
+        guard !PriceParsingService.looksLikeReceiptFragment(trimmed) else {
+            return false
+        }
+        guard !PriceParsingService.looksLikePromoBanner(trimmed) else {
+            return false
+        }
+        guard trimmed.range(of: PriceParsingService.depositMarkerPattern, options: [.regularExpression, .caseInsensitive]) == nil else {
+            return false
+        }
+        guard trimmed.range(of: PriceParsingService.regularPriceMarkerPattern, options: [.regularExpression, .caseInsensitive]) == nil else {
+            return false
+        }
+
+        let words = trimmed.normalizedWords()
+        let descriptiveTokens = words.filter { token in
+            token.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+                && !PriceParsingService.itemNameIgnoredTokens.contains(token)
+                && !PriceParsingService.isPureUnitToken(token)
+        }
+
+        return descriptiveTokens.count >= 1
+    }
 }
 
 extension PriceParsingService {
@@ -213,5 +244,9 @@ extension PriceParsingService {
 
     static func looksLikeDateLine(_ text: String) -> Bool {
         PriceParsingConfidenceResolver().looksLikeDateLine(text)
+    }
+
+    static func isProductDescriptor(_ line: String) -> Bool {
+        PriceParsingConfidenceResolver().isProductDescriptor(line)
     }
 }
