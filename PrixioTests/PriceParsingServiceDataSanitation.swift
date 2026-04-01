@@ -12,6 +12,9 @@ import Testing
 extension Tag {
     @Tag static var ocr: Self
     @Tag static var product: Self
+    @Tag static var shipGate: Self
+    @Tag static var evaluation: Self
+    @Tag static var realWorldOCR: Self
 }
 
 @MainActor
@@ -175,7 +178,7 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.resolvedQuantity == Decimal(6))
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate, .evaluation, .realWorldOCR))
     func memberPromoTagPreservesMultiBuyPriceAndCanonicalProductLine() async throws {
         let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
             OCRTextObservation(string: "MBR PRICE", confidence: 0.79),
@@ -192,7 +195,7 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.detectedUnit == .each)
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate, .evaluation, .realWorldOCR))
     func depositHeavyBeverageTagKeepsPrimaryShelfPrice() async throws {
         let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
             OCRTextObservation(string: "Sparkling Water 12 PK", confidence: 0.93),
@@ -207,7 +210,7 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.resolvedQuantity == Decimal(12))
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))
     func noisyBrandedShelfTagRepairsProductNameWithoutDroppingPrice() async throws {
         let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
             OCRTextObservation(string: "C0KE ZER0 SGR", confidence: 0.74),
@@ -220,7 +223,7 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.detectedUnit == .each)
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate, .evaluation, .realWorldOCR))
     func flyerStyleNoiseDoesNotDisplaceActualShelfTagEvidence() async throws {
         let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
             OCRTextObservation(string: "WEEKLY SPECIAL", confidence: 0.73),
@@ -235,7 +238,7 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.detectedUnit == .each)
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate, .evaluation, .realWorldOCR))
     func stackedSaleTagKeepsWinningSalePriceOverFallbackAndSaveBanner() async throws {
         let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
             OCRTextObservation(string: "BUY 2 SAVE 1.00", confidence: 0.76),

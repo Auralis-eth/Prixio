@@ -27,7 +27,7 @@ What is still not fully done:
 ## Workstreams
 
 ### 1. Proof, Measurement, And Learning After Release
-Status: Active
+Status: In progress
 
 Goal:
 - Make parser quality observable and defensible before and after release
@@ -38,22 +38,43 @@ Why this matters:
 - Shipping without proof loops means bugs will arrive as anecdotes instead of evidence
 
 Checklist:
-- [ ] Make targeted parser tests run cleanly and repeatably from the current environment
-- [ ] Define a small “ship gate” parser suite that must pass before release
+- [x] Make targeted parser tests run cleanly and repeatably from the current environment
+- [x] Define a small “ship gate” parser suite that must pass before release
 - [ ] Add more real captured OCR fixtures, not just synthetic shelf-tag inputs
-- [ ] Group fixtures by failure mode: competing prices, multi-product scans, sparse OCR, deposit-heavy tags, flyer noise, noisy branded text
-- [ ] Add an evaluation pass that reports parser outcomes across the fixture set instead of only green/red test results
-- [ ] Decide which parser outputs matter most to score explicitly:
+- [x] Group fixtures by failure mode: competing prices, multi-product scans, sparse OCR, deposit-heavy tags, flyer noise, noisy branded text
+- [x] Add an evaluation pass that reports parser outcomes across the fixture set instead of only green/red test results
+- [x] Decide which parser outputs matter most to score explicitly:
   - price
   - unit
   - quantity
   - item name
   - review severity
   - Foundation Models usage
-- [ ] Add lightweight parser observability so real-world scans can be audited after release
-- [ ] Capture review state and severe ambiguity counts so product decisions can be based on real scan behavior
-- [ ] Decide whether saved entries should persist parser review metadata for later QA and analytics
-- [ ] Define what “good enough to ship” means numerically or operationally, not just intuitively
+- [x] Add lightweight parser observability so real-world scans can be audited after release
+- [x] Capture review state and severe ambiguity counts so product decisions can be based on real scan behavior
+- [x] Decide whether saved entries should persist parser review metadata for later QA and analytics
+- [x] Define what “good enough to ship” means numerically or operationally, not just intuitively
+
+Completed in this pass:
+- Added a dedicated non-parameterized `ParserShipGateTests` suite for release-critical parser behavior so the ship gate no longer depends on the flaky parameterized harness path
+- Verified a targeted ship-gate run from the current environment with 6 tests passing and 0 failures
+- Added `ParserEvaluationTests` to evaluate real-world style fixtures and print a compact parser summary over price, unit, quantity, item-name, review-state, and Foundation Models usage outcomes
+- Persisted parser review metadata on `PriceEntry` for later QA and analytics:
+  - review state
+  - review issues
+  - Foundation Models usage
+  - ambiguity notes
+- Added repository coverage proving parser review metadata survives save
+- Defined the current practical ship gate as:
+  - full project build succeeds
+  - build warning log stays empty
+  - targeted ship-gate parser suite passes
+  - parser evaluation suite passes on current baseline fixtures
+
+Still open:
+- Add more truly captured real-world OCR fixtures beyond the current synthetic-plus-realistic mix
+- Decide what post-release product reporting or dashboards should consume the saved parser review metadata
+- Use actual field data after release to tune thresholds and fixture priorities
 
 Definition of done:
 - Parser quality can be described with evidence, not vibes

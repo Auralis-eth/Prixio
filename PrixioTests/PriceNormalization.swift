@@ -6,13 +6,14 @@
 //
 
 import Foundation
+import SwiftData
 import Testing
 @testable import Prixio
 
 @MainActor
 struct PriceNormalization {
 
-    @Test func normalizesPoundsToKilograms() async throws {
+    @Test(.tags(.shipGate)) func normalizesPoundsToKilograms() async throws {
         let normalized = PriceParsingService.normalize(
             price: Decimal(string: "3.99")!,
             unit: .lb,
@@ -30,7 +31,7 @@ struct PriceNormalization {
         #expect(result == Decimal(string: "8.7964"))
     }
 
-    @Test func draftRequiresExplicitStoreSelection() async throws {
+    @Test(.tags(.shipGate)) func draftRequiresExplicitStoreSelection() async throws {
         var draft = PriceEntryDraft()
         draft.itemName = "Milk"
         draft.priceText = "4.99"
@@ -43,7 +44,7 @@ struct PriceNormalization {
         #expect(draft.canSave == true)
     }
 
-    @Test func detectsReceiptLikeText() async throws {
+    @Test(.tags(.shipGate)) func detectsReceiptLikeText() async throws {
         let text = """
         Calgary Co-op
         Subtotal 12.99
@@ -106,6 +107,39 @@ struct PriceNormalization {
         draft.storeChainName = nil
         draft.storeChainExplicitlySelected = false
         #expect(draft.canSave == false)
+    }
+
+    @Test(.tags(.shipGate))
+    func repositoryPersistsParserReviewMetadata() async throws {
+        let container = try ModelContainer(
+            for: PriceEntry.self,
+                StoreChain.self,
+                StoreLocation.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let repository = PriceEntryRepository(context: context)
+
+        var draft = PriceEntryDraft()
+        draft.itemName = "Milk"
+        draft.priceText = "4.99"
+        draft.selectedUnit = .each
+        draft.storeChainName = "Walmart"
+        draft.storeChainExplicitlySelected = true
+        draft.review = OCRReview(
+            issues: [.multipleCompetingPrices, .possibleMultiProductScan],
+            ambiguityNotes: ["two nearby products"],
+            usedFoundationModel: true
+        )
+
+        try repository.saveEntry(from: draft)
+        let entries = try context.fetch(FetchDescriptor<PriceEntry>())
+        let savedEntry = try #require(entries.first)
+
+        #expect(savedEntry.parserReviewStateRaw == OCRReviewState.reviewRequired.rawValue)
+        #expect(savedEntry.parserReviewIssuesRaw == "multipleCompetingPrices,possibleMultiProductScan")
+        #expect(savedEntry.parserUsedFoundationModel == true)
+        #expect(savedEntry.parserAmbiguityNotesRaw == "two nearby products")
     }
     
 }

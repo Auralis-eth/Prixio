@@ -19,7 +19,7 @@ struct PriceParsingServiceAmbiguityTests {
     }
 
     @Test(
-        .tags(.ocr, .product),
+        .tags(.ocr, .product, .shipGate),
         arguments: [
             AmbiguityCase(
                 name: "clean single product tag stays heuristic",
@@ -154,7 +154,7 @@ struct PriceParsingServiceAmbiguityTests {
         #expect(report.weaknesses.contains(.multipleCompetingPrices) == false)
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate))
     func cleanScanProducesHighConfidenceResult() async throws {
         let result = PriceParsingService._test_makeOCRResult([
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),
@@ -164,7 +164,7 @@ struct PriceParsingServiceAmbiguityTests {
         #expect((result.confidence ?? 0) >= 0.85)
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate))
     func weakSingleLineScanProducesLowConfidenceResult() async throws {
         let result = PriceParsingService._test_makeOCRResult([
             OCRTextObservation(string: "$3.99", confidence: 0.66)

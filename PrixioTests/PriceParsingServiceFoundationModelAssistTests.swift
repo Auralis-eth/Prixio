@@ -21,7 +21,7 @@ struct PriceParsingServiceFoundationModelAssistTests {
     }
 
     @Test(
-        .tags(.ocr, .product),
+        .tags(.ocr, .product, .shipGate),
         arguments: [
             AssistedMergeCase(
                 name: "valid selected candidate overrides heuristic choice",
@@ -279,7 +279,7 @@ struct PriceParsingServiceFoundationModelAssistTests {
         #expect(prompt.contains("Never invent missing values."))
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate))
     func agreementAwareConfidenceRewardsHelpfulAssistAndPenalizesWeakOrNoisyAssist() async throws {
         let observations = [
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.94),

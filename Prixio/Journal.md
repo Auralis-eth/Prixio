@@ -251,6 +251,15 @@ That final pass removed one unused review helper, cleaned up redundant actor ann
 
 The nice outcome is that the cleanup checklist can now be called complete without crossing fingers. The parser-related shipping work no longer reads like an unfinished migration, the build stays green, the warning log stays empty, and the remaining polish work is the kind you schedule because you care, not because release would otherwise be irresponsible.
 
+### War Story: The Difference Between “We Have Tests” and “We Have a Ship Gate”
+The proof-and-measurement pass finally got over an annoying but important hump: the parser test suite existed, but the harness was still flaky enough that “run a few parser tests” could mean timeout, `No result`, or actual signal depending on the day. That is not a ship gate. That is a weather report.
+
+The fix was not to pretend the flaky path was fine. The fix was to carve out a smaller, boring, non-parameterized release-critical suite and make *that* the gate. `ParserShipGateTests` now covers the things you would be embarrassed to ship broken: clean single-product parsing, a real-world member promo tag, a multi-product scan that must surface review-required state, and an assisted-merge confidence sanity check. Then the repository got one more important proof point: parser review metadata now survives save instead of evaporating at the moment it would become useful for QA.
+
+That same pass also added a lightweight evaluation suite over realistic fixtures. Not an academic benchmark, not a dashboard, just a compact “tell me how this parser behaves on the shelf-tag shapes we actually care about” loop. The summary now covers price, unit, quantity, item name, review state, and Foundation Models usage. In other words, we finally promoted the parser from “tested” to “measurable.”
+
+The satisfying part is the result: the targeted ship-gate run passed cleanly in the current harness, six tests passed, zero failed, and the build stayed green. That does not mean the parser is done learning. It means release quality now has a smaller, sharper definition than “it seems pretty good on my machine,” which is how adults avoid shipping folklore.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

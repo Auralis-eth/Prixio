@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 struct OCRReviewStateTests {
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate))
     func cleanHeuristicParseProducesCleanReviewState() async throws {
         let observations = [
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),
@@ -18,7 +18,7 @@ struct OCRReviewStateTests {
         #expect(result.review.issues.isEmpty)
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate))
     func multiProductScanProducesRequiredReviewState() async throws {
         let observations = [
             OCRTextObservation(string: "Coke Zero", confidence: 0.93),
@@ -33,7 +33,7 @@ struct OCRReviewStateTests {
         #expect(result.review.issues.contains(.possibleMultiProductScan))
     }
 
-    @Test(.tags(.ocr, .product))
+    @Test(.tags(.ocr, .product, .shipGate))
     func assistedMergeMarksResultAsFoundationModelReview() async throws {
         let observations = [
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.94),

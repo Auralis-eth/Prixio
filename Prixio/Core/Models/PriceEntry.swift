@@ -23,6 +23,10 @@ final class PriceEntry {
     var photoAssetId: String
     var ocrText: String?
     var confidence: Float?
+    var parserReviewStateRaw: String?
+    var parserReviewIssuesRaw: String?
+    var parserUsedFoundationModel: Bool
+    var parserAmbiguityNotesRaw: String?
 
     init(
         id: UUID = UUID(),
@@ -44,7 +48,11 @@ final class PriceEntry {
         storeCoordinateLon: Double? = nil,
         photoAssetId: String,
         ocrText: String? = nil,
-        confidence: Float? = nil
+        confidence: Float? = nil,
+        parserReviewStateRaw: String? = nil,
+        parserReviewIssuesRaw: String? = nil,
+        parserUsedFoundationModel: Bool = false,
+        parserAmbiguityNotesRaw: String? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -66,5 +74,9 @@ final class PriceEntry {
         self.photoAssetId = photoAssetId
         self.ocrText = ocrText
         self.confidence = confidence
+        self.parserReviewStateRaw = parserReviewStateRaw
+        self.parserReviewIssuesRaw = parserReviewIssuesRaw
+        self.parserUsedFoundationModel = parserUsedFoundationModel
+        self.parserAmbiguityNotesRaw = parserAmbiguityNotesRaw
     }
 }

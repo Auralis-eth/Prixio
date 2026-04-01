@@ -55,7 +55,11 @@ struct PriceEntryRepository {
             storeCoordinateLon: draft.storeCoordinate?.longitude,
             photoAssetId: photoPath,
             ocrText: draft.ocrText.isEmpty ? nil : draft.ocrText,
-            confidence: draft.confidence
+            confidence: draft.confidence,
+            parserReviewStateRaw: draft.review.state.rawValue,
+            parserReviewIssuesRaw: draft.review.issues.isEmpty ? nil : draft.review.issues.map(\.rawValue).joined(separator: ","),
+            parserUsedFoundationModel: draft.review.usedFoundationModel,
+            parserAmbiguityNotesRaw: draft.review.ambiguityNotes.isEmpty ? nil : draft.review.ambiguityNotes.joined(separator: " | ")
         )
 
         context.insert(entry)
