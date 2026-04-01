@@ -1,361 +1,116 @@
-# PriceParsingService Implementation Checklist
+# PriceParsingService Shipping Checklist
 
-This file originally tracked the parser TODOs in strict sequence. That eight-step parser pass is now complete.
+The parser feature build is no longer the main problem.
 
-The file now serves as the handoff for the next phase of work around parser reliability, maintainability, and integration.
+What remains is the work that decides whether this is a clever demo or a reliable product:
 
-## Current State
+1. proving it
+2. measuring it
+3. learning from it after release
+4. cleaning up the app and codebase so the whole scan pipeline feels shippable
 
-The parser implementation checklist is complete.
+This file is now the active checklist for that final stretch.
 
-What is done:
-- Spatial grouping
-- Sparse OCR fallback
-- Snapshot normalization expansion
-- Price candidate scoring
-- Unit detection hardening
-- Item-name extraction
-- Quantity inference
-- Final confidence assembly
+## Status
 
-What is not done:
-- Clean, repeatable targeted test execution from the assistant/Xcode harness
-- Broader real-world OCR fixture coverage
-- Downstream scan-flow review for low-confidence and ambiguous parser results
-- A deliberate Foundation Models rollout plan beyond the current second-pass prototype
+Core parser pipeline status:
+- Implemented
+- Build-valid
+- Review-state integration landed in the scan flow
 
-What already changed:
-- `OCRTextObservation` now carries an optional `boundingBox`.
-- Vision OCR now passes `VNRecognizedTextObservation.boundingBox` into `OCRTextObservation`.
-- `buildHeuristicSnapshot` now orders observations in reading order.
-- `buildHeuristicSnapshot` now groups nearby observations into `spatialGroups`.
-- The snapshot now focuses parsing on the strongest spatial group instead of all supported lines.
-- Multi-product detection still works by checking `snapshot.spatialGroups` in `looksLikeMultiProductScan`.
-- Bounding boxes are preserved through sanitization, normalization, and consolidation paths where line identity survives.
-- `buildHeuristicSnapshot` now uses a deterministic fallback ladder when strict filtering starves sparse OCR.
-- The fallback prefers cleaned focused evidence first, then broader cleaned inputs, and only falls back to minimally sanitized observations as a last resort.
-- Snapshot normalization now repairs comma-decimal price variants, split price tokens, and merged price/unit lines before extraction.
-- Snapshot price candidates are now re-ranked with deterministic context scoring after extraction.
-- Candidate scoring now rewards proximity to descriptive product text, promo markers, and unit labels.
-- Candidate scoring now penalizes regular-price fallback lines and deposit/fee lines so they do not crowd the primary shelf price.
-- Added competing-candidate tests covering nearby-vs-distant price lines, sale-vs-regular price lines, and deposit fee lines.
+What is still not fully done:
+- Clean, repeatable parser test execution from the current assistant/Xcode harness
+- Broader evaluation discipline beyond targeted unit-style fixtures
+- Post-save observability for parser uncertainty and assisted parsing
+- General app/code cleanup needed to make the project feel production-ready instead of feature-complete
 
-Files touched through Step 4:
-- `Prixio/Scanning/OCR/OCRTextObservation.swift`
-- `Prixio/Scanning/OCR/OCRService.swift`
-- `Prixio/Scanning/OCR/Array+OCRTextObservation.swift`
-- `Prixio/Scanning/Price/PriceParsingService.swift`
-- `PrixioTests/PriceParsingServiceSpatialGroupingTests.swift`
-- `PrixioTests/PriceParsingServiceDataSanitation.swift`
-- `PrixioTests/PriceParsingServiceAmbiguityTests.swift`
+## Workstreams
 
-Validation already done:
-- `PriceParsingService.swift` file diagnostics are clean
-- `BuildProject` now succeeds from the MCP harness
-- A targeted `RunSomeTests` invocation reported `No result` for the selected parser tests
-- A follow-up targeted `RunSomeTests` invocation timed out after 120 seconds
-- Step 5 targeted tests initially surfaced two real regressions, both of which were fixed in `PriceParsingService.swift`
-- After the Step 5 fixes, follow-up `RunSomeTests` invocations failed with incomplete Xcode result bundles instead of parser assertions
-- `ExecuteSnippet` verification now confirms the new Step 5 cases for mixed-unit labels, split `price per` OCR, and multi-pack/count-pack signals inside the project context
-- Step 6 introduced a scored item-name extractor and new branded-name fixtures
-- Step 6 snippet verification confirms branded names with numbers and size markers now survive snapshot extraction, promo-only lines no longer win by default, and short unit-only fragments no longer beat the product line
-- Step 6 `RunSomeTests` and `ExecuteSnippet` attempts hit harness timeouts before the final smaller in-project snippet verification succeeded
-- Step 7 introduced candidate-aware quantity inference for multi-buy offers, BOGO-style promos, and pack/count notation
-- Step 7 snippet verification confirms `2/$5` resolves quantity `2`, `Buy One Get One Free` resolves quantity `2`, and pack/count notation resolves per-each quantities like `12` and `6`
-- Step 8 replaced raw top-candidate confidence with assembled result confidence derived from snapshot agreement and ambiguity penalties
-- Step 8 snippet verification confirms clean scans score high confidence, weak single-line scans score low confidence, and conflicting scans land in between
-- Live test diagnostics were previously polluted by a `TestingMacros` plugin path conflict between two local Xcode installs, so targeted test validation still cannot be treated as cleanly complete from the assistant harness
-
-## Completed Parser Work
-
-1. Spatial line grouping in `buildHeuristicSnapshot`
-Status: Complete
-
-2. Sparse OCR fallback in `buildHeuristicSnapshot`
-Status: Complete
-
-3. Snapshot normalization expansion
-Status: Complete
-
-4. Price candidate scoring
-Status: Complete
-
-5. Unit detection hardening
-Status: Complete
-
-6. Item-name extraction
-Status: Complete
-
-7. Quantity inference
-Status: Complete
-
-8. Final confidence assembly in `makeOCRResult`
-Status: Complete
-
-## Next Phase
-
-This section is now the single source of truth for what happens next. Ignore the old sequential implementation notes below unless you are researching completed parser work.
-
-### Active Work Order
-
-1. Foundation Models rollout, Phase 1
-Status: Complete
-
-Why this is first:
-- The parser refactor is complete
-- The assisted path now has a dedicated seam
-- The next product-level gain is improving ambiguous-scan handling, not more parser restructuring
-
-Current progress:
-- Tightened the assisted prompt contract so it explicitly requires existing OCR line indexes, existing candidate indexes or `nil`, typed candidate classification, and non-invented values
-- Tightened the guided-generation schema by making `selectedPriceKind` and `confidenceBucket` typed `@Generable` enums instead of raw strings
-- Added deterministic response normalization so invalid line indexes, invalid candidate indexes, empty canonical names, and noisy ambiguity notes are sanitized before merge
-- Expanded assisted merge coverage for multi-product selection, sale vs regular vs deposit classification, canonical item-name repair, and low-confidence no-override behavior
-- Tightened merge policy so `deposit`, `noise`, and low-confidence assisted output do not override deterministic price selection
-- Reviewed the ambiguity threshold so stable packaged tags without unit/quantity stay heuristic while unresolved competing-price tags still escalate
-- Added agreement-aware merge confidence so helpful assisted output beats noisy or weak assist output, while multi-product selections stay appropriately lower-confidence
-- Added more realistic ambiguous OCR fixtures covering member-vs-regular pricing and noisy branded-name repair
-- `BuildProject` succeeds and `PriceParsingServiceFoundationModelAssistTests` now pass with the expanded Phase 1 coverage
-
-Phase 1 completed outcomes:
-- Assisted candidate selection, classification, and merge behavior are constrained and test-covered
-- Canonical item-name repair is covered for weak heuristic names and noisy branded OCR
-- Heuristic-vs-assisted agreement is validated directly in the assisted test suite
-- Low-confidence, deposit, and noise-classified assist output remain non-authoritative
-
-Guardrails:
-- Keep Foundation Models as a constrained second-pass parser, not the primary parser
-- Keep `LanguageModelSession` single-turn unless there is a proven reason not to
-- Keep prompts short and typed with `@Generable`
-- Never let the model invent prices, units, quantities, or line indexes
-- Treat low-confidence model output as advisory, not authoritative
-
-Definition of done:
-- Assisted extraction improves real ambiguous scans without regressing clean heuristic-only scans
-- Prompt/schema design stays lean and testable
-- Merge behavior is covered by tests or deterministic in-project verification
-
-2. Real-world OCR fixture coverage
-Status: Complete
-
-Scope:
-- Add fixtures that look like actual shelf tags instead of only narrow synthetic inputs
-- Cover sale tags, deposit-heavy beverage tags, side-by-side products, weird pack notation, and noisy flyer/receipt edge cases
-- Prefer regression-style fixtures that preserve bugs we already learned from
-
-Completed in this pass:
-- Added real-world style regression fixtures for member promo tags, deposit-heavy beverage tags, noisy branded OCR, and flyer-style promo noise
-- Added a noisier stacked sale-tag fixture with `save` banner noise and a regular fallback price
-- Added a more realistic side-by-side member-tag spatial fixture for competing products in one frame
-- Tightened item-name extraction so promo banners and validity lines do not displace product text
-- Relaxed noise filtering for OCR digit-as-letter brand lines like `C0KE ZER0 SGR`
-- Tightened ambiguity analysis so regular-price fallbacks and deposit sidecars do not force FM escalation by themselves
-
-Definition of done:
-- Parser coverage better reflects real shelf-tag failure modes
-- At least a few new regression fixtures come from real captured OCR patterns
-
-3. Scan-flow integration review
-Status: Active now
-
-Scope:
-- Review how `ScanViewModel` and the scanner UI consume low-confidence, ambiguous, or assisted parser results
-- Check whether confidence, quantity, and item-name improvements are surfaced clearly in the confirmation flow
-- Look for places where parser uncertainty should drive different UI behavior
-
-Definition of done:
-- Parser confidence meaning is reflected coherently in the scan flow
-- Ambiguous parses do not silently look “done” in the UI
-
-4. Validation hardening
-Status: Environment-dependent follow-up
-
-Scope:
-- Make targeted parser tests run cleanly and repeatably from the current Xcode/tooling environment when the environment itself is the blocker
-- Diagnose whether any remaining failures are `TestingMacros`, result-bundle corruption, timeouts, or test-plan/configuration issues
-
-Definition of done:
-- Targeted parser tests run without `No result`, incomplete result bundles, or repeated harness timeouts when the environment is otherwise idle
-- Full project build still succeeds
-
-## Sequential Plan
-
-1. Spatial line grouping in `buildHeuristicSnapshot`
-Status: Complete
-
-Completed work:
-- Threaded OCR bounding boxes into `OCRTextObservation`
-- Ordered lines by reading order
-- Grouped nearby lines into product-level clusters
-- Focused the snapshot on the strongest cluster while preserving enough metadata for ambiguity detection
-- Added tests for side-by-side shelf tags
-
-Known follow-up:
-- The Step 1 TODO comment still exists in `PriceParsingService.swift`. Remove or rewrite it only when the team is satisfied with the current spatial grouping behavior.
-
-2. Sparse OCR fallback in `buildHeuristicSnapshot`
-Status: Complete
-
-Completed work:
-- Added `shouldFallbackFromFocusedObservations(...)` to detect when strict filtering starved the snapshot
-- Added `makeFallbackObservationSet(...)` and `bestAvailableObservations(...)` to apply a deterministic fallback ladder
-- Added `minimallySanitizedObservations(...)` as the last-resort evidence-preservation path
-- Added tests covering implied-price recovery, sparse single-tag recovery, and healthy focused-group non-regression
+### 1. Proof, Measurement, And Learning After Release
+Status: Active
 
 Goal:
-- Add a fallback path when strict filtering leaves too little evidence
-- Prefer degraded-but-usable input over an empty or starved snapshot
-- Keep the new spatial grouping behavior intact
+- Make parser quality observable and defensible before and after release
 
-Start here:
-- `buildHeuristicSnapshot(from:)` in `Prixio/Scanning/Price/PriceParsingService.swift`
-- Focus on the transition from:
-  - `supportedObservations`
-  - `spatialGroups`
-  - `focusedObservations`
-  - `cleanedObservations`
-  - `normalizedObservations`
+Why this matters:
+- The parser now has enough functionality to be dangerous in both directions
+- It can succeed quietly, but it can also fail plausibly
+- Shipping without proof loops means bugs will arrive as anecdotes instead of evidence
 
-Problem to solve:
-- The snapshot currently commits to the strongest spatial group first, then applies `removeObviousNoise`.
-- If that focused group is sparse or noisy, `cleanedObservations` can become too small and the parser has no recovery path.
-- Step 2 should recover evidence before later phases like normalization, candidate scoring, and ambiguity analysis try to reason over an underfed snapshot.
+Checklist:
+- [ ] Make targeted parser tests run cleanly and repeatably from the current environment
+- [ ] Define a small “ship gate” parser suite that must pass before release
+- [ ] Add more real captured OCR fixtures, not just synthetic shelf-tag inputs
+- [ ] Group fixtures by failure mode: competing prices, multi-product scans, sparse OCR, deposit-heavy tags, flyer noise, noisy branded text
+- [ ] Add an evaluation pass that reports parser outcomes across the fixture set instead of only green/red test results
+- [ ] Decide which parser outputs matter most to score explicitly:
+  - price
+  - unit
+  - quantity
+  - item name
+  - review severity
+  - Foundation Models usage
+- [ ] Add lightweight parser observability so real-world scans can be audited after release
+- [ ] Capture review state and severe ambiguity counts so product decisions can be based on real scan behavior
+- [ ] Decide whether saved entries should persist parser review metadata for later QA and analytics
+- [ ] Define what “good enough to ship” means numerically or operationally, not just intuitively
 
-Recommended implementation order for Step 2:
-- Add a small helper that decides whether the focused group survived filtering well enough.
-- If not, retry with a broader fallback input instead of immediately accepting the filtered result.
-- Keep the fallback deterministic and local to snapshot preparation.
-- Do not change candidate scoring, unit detection, item-name extraction, or confidence assembly in this step.
+Definition of done:
+- Parser quality can be described with evidence, not vibes
+- We have a reliable pre-release validation loop
+- We have a concrete way to learn from parser behavior after release
 
-Recommended fallback ladder:
-- First choice: cleaned focused group
-- Second choice: cleaned full strongest spatial group before any aggressive narrowing
-- Third choice: cleaned `supportedObservations`
-- Last resort: minimally sanitized observations if every stricter pass collapses
+### 2. App And Code Cleanup For Shipping
+Status: Active
 
-Suggested helper seams:
-- `shouldFallbackFromFocusedObservations(...)`
-- `makeFallbackObservationSet(...)`
-- `bestAvailableObservations(...)`
+Goal:
+- Tighten the codebase so it looks and behaves like release software instead of an active feature branch
 
-Minimum test coverage to add in Step 2:
-- A blurry or partial tag where filtering drops the only useful price line
-- A sparse single-tag case where fallback keeps one usable descriptive line and one usable price line
-- A case proving fallback does not collapse back into mixing two side-by-side products when the focused group is already healthy
+Why this matters:
+- Shipping quality is not just parser accuracy
+- Dead code, stale TODOs, one-off debug paths, and leftover implementation comments make releases harder to trust and harder to maintain
 
-Existing tests to keep green while doing Step 2:
-- `PriceParsingServiceSpatialGroupingTests`
-- `PriceParsingServiceAmbiguityTests`
-- `ConsolidateObservationsTests`
+Checklist:
+- [ ] Look for unused parser code, stale helpers, and dead branches left behind by the refactor
+- [ ] Remove or rewrite development comments, implementation breadcrumbs, and stale TODO-style notes that should not ship as-is
+- [ ] Audit parser-facing models for fields that are no longer used or no longer pull their weight
+- [ ] Check for duplicated logic or constants that should be consolidated before release
+- [ ] Review parser type and helper names for anything that still reflects temporary refactor language instead of stable ownership
+- [ ] Remove debug-only or one-off verification seams that are no longer earning their keep outside test support
+- [ ] Check test helpers and `#if DEBUG` entry points to make sure they are intentional and minimal
+- [ ] Review the scan flow for obvious release rough edges caused by parser integration changes
+- [ ] Confirm there are no parser-related build warnings, lint issues, or obvious cleanup debt in touched files
+- [ ] Run a final parser-focused readability cleanup pass without changing behavior
+- [ ] Build the full project after cleanup changes
 
-Definition of done for Step 2:
-- The snapshot retains usable evidence in sparse OCR cases
-- Existing spatial grouping behavior still passes
-- No regression in multi-product ambiguity detection
-- Build succeeds
+Definition of done:
+- The parser-related code no longer reads like an in-progress migration
+- Obvious dead code and stale development artifacts are gone
+- The codebase is clean enough to support release and post-release fixes without unnecessary noise
 
-3. Snapshot normalization expansion
-Status: Complete
+## Recommended Execution Order
 
-Completed work:
-- Added deterministic price-token normalization ahead of contextual token repair
-- Repaired comma-decimal price variants like `1,29/lb` into canonical currency text
-- Repaired split price tokens like `1 29 /lb` before candidate extraction
-- Repaired merged price/unit lines like `S299ea` so the existing price and unit parsers can consume them
-- Added test coverage for the new normalization behaviors
+1. Stabilize targeted parser test execution
+2. Define the ship-gate parser suite
+3. Expand real-world fixture coverage and add evaluation reporting
+4. Decide persistence and observability for parser review metadata
+5. Finish scan-flow and confirmation-flow cleanup
+6. Run final build and release-readiness review
 
-Scope:
-- Improve OCR repair for merged tokens, missing currency symbols, and decimal/comma variants
-- Keep corrections deterministic and test-driven
+## Current Risks
 
-4. Price candidate scoring
-Status: Implemented; build-validated, test execution still blocked in harness
-
-Completed work:
-- Re-ranked extracted candidates using snapshot-local context instead of raw extraction priority alone
-- Added deterministic boosts for nearby descriptive product text, promo markers, and unit labels
-- Added deterministic penalties for regular-price fallback lines and deposit/fee lines
-- Added competing-candidate coverage in `PriceParsingServiceAmbiguityTests`
-
-Scope:
-- Rank candidates using proximity to product text, promo markers, and sale-vs-regular hints
-- Add tests for competing candidate scenarios
-
-5. Unit detection hardening
-Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
-
-Scope:
-- Handle compound units, multi-pack signals, and split “price per” phrases
-- Add targeted unit parsing fixtures
-
-Completed work:
-- Replaced the snapshot unit detector’s first-match substring checks with scored unit evidence
-- Prefer direct rate-unit signals over package-size text when mixed-unit labels appear on the same shelf tag
-- Preserve standalone unit tokens like `lb` during noise filtering so split `price per` OCR still resolves a unit
-- Preserve multi-pack size lines like `12 x 355 mL` and count-pack lines like `6 pk` instead of misclassifying them as SKU noise
-- Added targeted fixtures covering mixed-unit labels, split `price per` phrases, multi-pack package sizing, and count-pack labels
-
-6. Item-name extraction
-Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
-
-Scope:
-- Replace the first-match shortcut with a scored extractor
-- Keep branded names even when they contain numbers or size markers
-
-Completed work:
-- Replaced the first acceptable-line shortcut with a scored item-name extractor inside `buildHeuristicSnapshot(from:)`
-- Score item-name candidates using descriptive-token density, proximity to the top price candidate, confidence, and penalties for promo-only or receipt-like text
-- Relaxed SKU-style rejection when a line carries explicit size tokens so branded names like `7UP Zero Sugar 2L` survive
-- Added targeted fixtures covering branded names with numbers and sizes, promo-only competing lines, and short unit fragments that should not become the item name
-
-7. Quantity inference
-Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
-
-Scope:
-- Infer quantities from multi-buy offers, BOGO-style promos, and pack notation
-- Tie quantity selection back to the chosen candidate and detected unit
-
-Completed work:
-- Added a single snapshot quantity-inference helper that starts with the chosen price candidate instead of guessing from the entire OCR blob
-- Preserve explicit candidate quantities for direct multi-buy offers like `2/$5` and `3 for $10`
-- Infer BOGO-style quantities from nearby promo lines tied to the selected price candidate
-- Infer per-each quantities from multi-pack and count-pack notation like `12 x 355 mL` and `6 pk`
-- Added targeted fixtures covering multi-buy, BOGO, multi-pack, and count-pack quantity resolution
-
-8. Final confidence assembly in `makeOCRResult`
-Status: Complete; build-validated, snippet-verified, test runner still unstable in harness
-
-Scope:
-- Derive confidence from agreement across snapshot signals and ambiguity analysis
-- Add tests for clean, weak, and conflicting scans
-
-Completed work:
-- Replaced the raw top-candidate confidence shortcut in `makeOCRResult(from:)` with assembled heuristic confidence
-- Added confidence boosts for signal agreement across price, item name, unit, quantity, and OCR support density
-- Added confidence penalties for ambiguity weaknesses like missing fields, sparse OCR, competing prices, and multi-product scans
-- Added focused tests for clean, weak, and conflicting confidence outcomes
-
-## Next Session Handoff
-
-If a new session picks this up, start with `Foundation Models rollout`, Phase 1.
-
-Read first:
-- `Prixio/Scanning/Price/Parsing/PriceParsingAssistedExtraction.swift`
-- `PrixioTests/PriceParsingServiceFoundationModelAssistTests.swift`
-- `Prixio/Scanning/Price/Parsing/PriceParsingConfidenceResolver.swift`
-- `Prixio/Scanning/Price/PriceParsingService.swift`
-
-Then focus on:
-- improving assisted candidate selection and canonical item-name repair for ambiguous real-world scans
-- keeping any future Foundation Models expansion constrained to second-pass ambiguity resolution
-- adding real OCR fixtures as the evidence source for what the assisted path should learn next
+- Test harness instability still weakens confidence in targeted validation
+- Review metadata is visible in the scan flow but not yet persisted for long-term learning
+- Real-world OCR always contains more edge cases than the current fixture set
+- The app is closer to shippable than before, but still needs a deliberate final cleanup pass
 
 ## Execution Rule
 
-For each next-phase item:
-- make the smallest change that resolves the actual blocker
-- prefer validation and regression coverage before further heuristics
-- run Xcode diagnostics
-- run targeted tests when the harness allows it
+For each remaining item:
+- make the smallest change that closes a real shipping gap
+- prefer measurement and observability before more heuristics
+- keep parser behavior stable unless evidence says otherwise
+- run diagnostics
+- run targeted tests when the environment allows it
 - run a full build
 - update this file and `Journal.md` with the real outcome
