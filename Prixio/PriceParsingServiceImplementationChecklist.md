@@ -11,23 +11,10 @@ What remains is the work that decides whether this is a clever demo or a reliabl
 
 This file is now the active checklist for that final stretch.
 
-## Status
-
-Core parser pipeline status:
-- Implemented
-- Build-valid
-- Review-state integration landed in the scan flow
-
-What is still not fully done:
-- Clean, repeatable parser test execution from the current assistant/Xcode harness
-- Broader evaluation discipline beyond targeted unit-style fixtures
-- Post-save observability for parser uncertainty and assisted parsing
-- General app/code cleanup needed to make the project feel production-ready instead of feature-complete
-
 ## Workstreams
 
 ### 1. Proof, Measurement, And Learning After Release
-Status: In progress
+Status: Future follow-up
 
 Goal:
 - Make parser quality observable and defensible before and after release
@@ -37,52 +24,22 @@ Why this matters:
 - It can succeed quietly, but it can also fail plausibly
 - Shipping without proof loops means bugs will arrive as anecdotes instead of evidence
 
-Checklist:
-- [x] Make targeted parser tests run cleanly and repeatably from the current environment
-- [x] Define a small “ship gate” parser suite that must pass before release
-- [ ] Add more real captured OCR fixtures, not just synthetic shelf-tag inputs
-- [x] Group fixtures by failure mode: competing prices, multi-product scans, sparse OCR, deposit-heavy tags, flyer noise, noisy branded text
-- [x] Add an evaluation pass that reports parser outcomes across the fixture set instead of only green/red test results
-- [x] Decide which parser outputs matter most to score explicitly:
-  - price
-  - unit
-  - quantity
-  - item name
-  - review severity
-  - Foundation Models usage
-- [x] Add lightweight parser observability so real-world scans can be audited after release
-- [x] Capture review state and severe ambiguity counts so product decisions can be based on real scan behavior
-- [x] Decide whether saved entries should persist parser review metadata for later QA and analytics
-- [x] Define what “good enough to ship” means numerically or operationally, not just intuitively
+Future to-do list:
+- Add more truly captured real-world OCR fixtures beyond the current realistic synthetic set
+- Expand the evaluation corpus as new failure patterns appear in actual usage
+- Revisit parser thresholds and review-state behavior using real saved scan metadata after release
+- Decide what product reporting or dashboarding should consume persisted parser review metadata
+- Use post-release evidence to decide whether additional Foundation Models coverage is justified
+- Promote the current ship-gate suite if future regressions show it is too small
+- Periodically refresh the “good enough” release bar based on real parser error patterns instead of pre-release assumptions
 
-Completed in this pass:
-- Added a dedicated non-parameterized `ParserShipGateTests` suite for release-critical parser behavior so the ship gate no longer depends on the flaky parameterized harness path
-- Verified a targeted ship-gate run from the current environment with 6 tests passing and 0 failures
-- Added `ParserEvaluationTests` to evaluate real-world style fixtures and print a compact parser summary over price, unit, quantity, item-name, review-state, and Foundation Models usage outcomes
-- Persisted parser review metadata on `PriceEntry` for later QA and analytics:
-  - review state
-  - review issues
-  - Foundation Models usage
-  - ambiguity notes
-- Added repository coverage proving parser review metadata survives save
-- Defined the current practical ship gate as:
-  - full project build succeeds
-  - build warning log stays empty
-  - targeted ship-gate parser suite passes
-  - parser evaluation suite passes on current baseline fixtures
-
-Still open:
-- Add more truly captured real-world OCR fixtures beyond the current synthetic-plus-realistic mix
-- Decide what post-release product reporting or dashboards should consume the saved parser review metadata
-- Use actual field data after release to tune thresholds and fixture priorities
-
-Definition of done:
-- Parser quality can be described with evidence, not vibes
-- We have a reliable pre-release validation loop
-- We have a concrete way to learn from parser behavior after release
+How to use this later:
+- Treat this section as a future-learning backlog, not active feature work
+- Only reopen parser implementation if field evidence, QA review, or new captured fixtures show a real gap
+- Prefer evidence-driven changes over speculative heuristic growth
 
 ### 2. App And Code Cleanup For Shipping
-Status: Complete
+Status: Wrapped for now
 
 Goal:
 - Tighten the codebase so it looks and behaves like release software instead of an active feature branch
@@ -91,53 +48,22 @@ Why this matters:
 - Shipping quality is not just parser accuracy
 - Dead code, stale TODOs, one-off debug paths, and leftover implementation comments make releases harder to trust and harder to maintain
 
-Checklist:
-- [x] Look for unused parser code, stale helpers, and dead branches left behind by the refactor
-- [x] Remove or rewrite development comments, implementation breadcrumbs, and stale TODO-style notes that should not ship as-is
-- [x] Audit parser-facing models for fields that are no longer used or no longer pull their weight
-- [x] Check for duplicated logic or constants that should be consolidated before release
-- [x] Review parser type and helper names for anything that still reflects temporary refactor language instead of stable ownership
-- [x] Remove debug-only or one-off verification seams that are no longer earning their keep outside test support
-- [x] Check test helpers and `#if DEBUG` entry points to make sure they are intentional and minimal
-- [x] Review the scan flow for obvious release rough edges caused by parser integration changes
-- [x] Confirm there are no parser-related build warnings, lint issues, or obvious cleanup debt in touched files
-- [x] Run a final parser-focused readability cleanup pass without changing behavior
-- [x] Build the full project after cleanup changes
-
-Completed in this pass:
-- Audited the parser-adjacent app layer for obvious dead imports and stale cleanup debt
-- Kept the intentional `#if DEBUG` parser test seams in place, since they are still actively used by the parser test suite and are earning their keep
-- Removed an actually unused `MapKit` import from `ScanViewModel`
-- Standardized parser-related test files onto a consistent `@MainActor` context to stop Swift 6 actor-isolation warnings from polluting release validation
-- Updated `StoreDetectionService` off deprecated `placemark.location` usage and made store-candidate id fallback deterministic when MapKit does not supply an identifier
-- Tightened the new review-metadata mapping so it no longer emits actor-isolation warnings during build
-- `BuildProject` succeeds after the cleanup pass
-- Current build log warning count is now zero
-
-Result:
-- This workstream is complete for shipping purposes
-- Remaining cleanup from here is optional refinement, not open ship-state debt
-
-Definition of done:
-- The parser-related code no longer reads like an in-progress migration
-- Obvious dead code and stale development artifacts are gone
-- The codebase is clean enough to support release and post-release fixes without unnecessary noise
+Future to-do list:
+- Revisit parser-facing cleanup only if new shipping debt appears during later features
+- Keep an eye on parser-related warnings, dead helper seams, and temporary release scaffolding as the app grows
+- Reopen this area only if future changes make the parser path noisy or hard to maintain again
 
 ## Recommended Execution Order
 
-1. Stabilize targeted parser test execution
-2. Define the ship-gate parser suite
-3. Expand real-world fixture coverage and add evaluation reporting
-4. Decide persistence and observability for parser review metadata
-5. Finish scan-flow and confirmation-flow cleanup
-6. Run final build and release-readiness review
+1. Add more captured OCR fixtures when real scans expose new parser gaps
+2. Review persisted parser metadata after real usage starts accumulating
+3. Revisit thresholds, review-state behavior, and FM escalation only with evidence
+4. Reopen cleanup work only if new code growth creates real maintenance debt
 
 ## Current Risks
 
-- Test harness instability still weakens confidence in targeted validation
-- Review metadata is visible in the scan flow but not yet persisted for long-term learning
 - Real-world OCR always contains more edge cases than the current fixture set
-- The app is closer to shippable than before, but still needs a deliberate final cleanup pass
+- Future parser changes could reintroduce noise if they are not kept evidence-driven
 
 ## Execution Rule
 
