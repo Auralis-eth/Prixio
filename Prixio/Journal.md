@@ -208,6 +208,31 @@ Those two matter because they pull the parser in opposite directions. The stacke
 
 That is the kind of parser progress that feels boring in code review and excellent in production. The sanitation suite now passes with real-world style fixtures, the ambiguity suite agrees that obvious winner tags should stay heuristic, and the spatial grouping suite still throws the flag when two products show up in the same photo like uninvited roommates.
 
+### War Story: The Parser Whispered, but the Confirmation Sheet Smiled and Nodded
+The scan-flow integration review turned up a classic product bug wearing a quiet face: the parser had grown much better at describing uncertainty, but the UI was still treating almost every parse like a polite autofill suggestion that happened to arrive from the sky.
+
+Internally, the parser can now explain *why* a scan is shaky. It knows the difference between “I only saw one blurry line,” “there are two competing prices,” and “this looks like two shelf tags trying to share one photo.” But by the time that result reaches `ScanViewModel`, most of that meaning has been flattened into a small bundle of editable fields plus one float confidence score. That is like a doctor writing a full chart and the front desk reducing it to “vaguely fine, probably.”
+
+The confirmation sheet exposes only a sliver of that nuance today. Missing unit gets an orange outline. Store detection asks for explicit confirmation before saving. Everything else mostly looks the same whether the parser felt rock-solid or mildly alarmed. Two price-candidate buttons might appear, but they do not explain whether the parser found a normal sale-vs-regular situation or a genuinely ambiguous multi-product frame.
+
+That is the engineering lesson worth keeping: uncertainty is only useful if it survives long enough to change behavior. A parser confidence score without its reasons is a weather forecast that forgot to mention the tornado. The next scan-flow pass should carry structured review metadata into the draft and let the confirmation UI react differently when the parser is telling us, as clearly as it can, “this scan needs adult supervision.”
+
+### War Story: A Confidence Float Is Not a Product Decision
+The implementation pass for the scan-flow review was a good reminder that data contracts age just like UI. `OCRResult` had become too skinny for the job. It could tell the rest of the app “here is a price, here is a unit, here is a confidence number,” but it could not say the part a human actually cares about: *why* this scan might still be sketchy.
+
+So the parser got a second suitcase. The scan flow now carries structured `OCRReview` metadata alongside the usual parsed fields: review issues, derived review severity, ambiguity notes, and whether Foundation Models had to step in as the adult in the room. That review state gets copied into `PriceEntryDraft`, which means the confirmation sheet finally has enough context to behave like a reviewer instead of a blind form.
+
+The UI change itself is intentionally plainspoken. While OCR is still running, the sheet now says so. Once parsing finishes, the sheet shows a review card that can say one of three honest things:
+- this scan looks solid
+- this scan needs a careful look
+- this scan should not be saved casually
+
+That sounds obvious, which is exactly why it matters. Good product behavior often comes from making the machine say the quiet part out loud.
+
+The last piece was save behavior. Before this pass, a severe multi-product or competing-price scan could eventually look “ready” if the required fields were filled in. Now the confirmation flow puts a speed bump in front of those cases with an explicit save-anyway alert. Not a prison, just a gate that says: yes, you *can* save this, but you do not get to pretend the parser never raised its hand.
+
+One more familiar war-story footnote: the build is green, but the targeted test run for the new review-state coverage timed out in the harness again. So the feature is implemented and compiled, the tests exist, and the environment is still auditioning for the role of unreliable narrator.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

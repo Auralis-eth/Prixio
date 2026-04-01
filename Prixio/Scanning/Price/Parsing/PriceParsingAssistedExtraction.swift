@@ -84,6 +84,7 @@ private struct PriceParsingAssistedExtractor {
         assisted: PriceParsingService.AssistedExtractionResult
     ) -> OCRResult {
         let heuristicResult = PriceParsingService.makeOCRResult(from: snapshot)
+        let ambiguity = PriceParsingService.analyzeAmbiguity(in: snapshot)
         let selectedCandidate = assisted.selectedPriceCandidateIndex.flatMap { index in
             snapshot.priceCandidates.indices.contains(index) ? snapshot.priceCandidates[index] : nil
         }
@@ -125,6 +126,11 @@ private struct PriceParsingAssistedExtractor {
             quantity: finalQuantity,
             confidence: finalConfidence,
             priceCandidates: snapshot.priceCandidates,
+            review: OCRReview(
+                ambiguity: ambiguity,
+                usedFoundationModel: true,
+                ambiguityNotes: assisted.ambiguityNotes
+            ),
             supportingLines: finalLines
         )
     }

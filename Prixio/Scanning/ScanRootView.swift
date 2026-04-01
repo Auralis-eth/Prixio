@@ -78,6 +78,7 @@ struct ScanRootView: View {
         .sheet(isPresented: $viewModel.isShowingConfirmationSheet) {
             ConfirmationSheet(
                 draft: $viewModel.draft,
+                isProcessingOCR: viewModel.isProcessingOCR,
                 capturedImage: viewModel.capturedImage,
                 recentItems: viewModel.recentItems,
                 onPriceCandidateTap: viewModel.applyPriceCandidate,

@@ -54,6 +54,7 @@ private struct PriceParsingConfidenceResolver {
             quantity: snapshot.resolvedQuantity,
             confidence: assembleHeuristicConfidence(snapshot: snapshot, ambiguity: ambiguity),
             priceCandidates: snapshot.priceCandidates,
+            review: OCRReview(ambiguity: ambiguity, usedFoundationModel: false),
             supportingLines: snapshot.consolidatedObservations.map(\.string)
         )
     }

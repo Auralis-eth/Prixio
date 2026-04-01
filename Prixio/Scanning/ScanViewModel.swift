@@ -146,6 +146,7 @@ final class ScanViewModel: ObservableObject {
         draft.quantity = result.quantity
         draft.priceCandidates = Array(result.priceCandidates.prefix(2))
         draft.itemName = result.itemNameHint ?? ""
+        draft.review = result.review
 
         if sessionStore.nearbyCandidates.isEmpty {
             let stores = await storeService.fetchNearbyStores(location: currentLocation)

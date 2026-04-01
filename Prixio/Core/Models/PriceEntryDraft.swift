@@ -24,6 +24,7 @@ struct PriceEntryDraft {
     var confidence: Float?
     var quantity: Decimal?
     var priceCandidates: [PriceCandidate] = []
+    var review: OCRReview = .clean
 
     var parsedPrice: Decimal? {
         Decimal(string: priceText.replacingOccurrences(of: ",", with: "."))
