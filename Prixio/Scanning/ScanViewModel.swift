@@ -11,8 +11,6 @@ import SwiftUI
 import UIKit
 
 import Combine
-import MapKit
-
 @MainActor
 final class ScanViewModel: ObservableObject {
     @Published var draft = PriceEntryDraft()

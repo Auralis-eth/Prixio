@@ -14,6 +14,7 @@ extension Tag {
     @Tag static var product: Self
 }
 
+@MainActor
 struct PriceParsingServiceDataSanitation {
     @Test(.tags(.ocr, .product))
     func normalizesCommaDecimalPriceLineIntoCanonicalCurrency() async throws {

@@ -61,7 +61,7 @@ Definition of done:
 - We have a concrete way to learn from parser behavior after release
 
 ### 2. App And Code Cleanup For Shipping
-Status: Active
+Status: Complete
 
 Goal:
 - Tighten the codebase so it looks and behaves like release software instead of an active feature branch
@@ -71,17 +71,31 @@ Why this matters:
 - Dead code, stale TODOs, one-off debug paths, and leftover implementation comments make releases harder to trust and harder to maintain
 
 Checklist:
-- [ ] Look for unused parser code, stale helpers, and dead branches left behind by the refactor
-- [ ] Remove or rewrite development comments, implementation breadcrumbs, and stale TODO-style notes that should not ship as-is
-- [ ] Audit parser-facing models for fields that are no longer used or no longer pull their weight
-- [ ] Check for duplicated logic or constants that should be consolidated before release
-- [ ] Review parser type and helper names for anything that still reflects temporary refactor language instead of stable ownership
-- [ ] Remove debug-only or one-off verification seams that are no longer earning their keep outside test support
-- [ ] Check test helpers and `#if DEBUG` entry points to make sure they are intentional and minimal
-- [ ] Review the scan flow for obvious release rough edges caused by parser integration changes
-- [ ] Confirm there are no parser-related build warnings, lint issues, or obvious cleanup debt in touched files
-- [ ] Run a final parser-focused readability cleanup pass without changing behavior
-- [ ] Build the full project after cleanup changes
+- [x] Look for unused parser code, stale helpers, and dead branches left behind by the refactor
+- [x] Remove or rewrite development comments, implementation breadcrumbs, and stale TODO-style notes that should not ship as-is
+- [x] Audit parser-facing models for fields that are no longer used or no longer pull their weight
+- [x] Check for duplicated logic or constants that should be consolidated before release
+- [x] Review parser type and helper names for anything that still reflects temporary refactor language instead of stable ownership
+- [x] Remove debug-only or one-off verification seams that are no longer earning their keep outside test support
+- [x] Check test helpers and `#if DEBUG` entry points to make sure they are intentional and minimal
+- [x] Review the scan flow for obvious release rough edges caused by parser integration changes
+- [x] Confirm there are no parser-related build warnings, lint issues, or obvious cleanup debt in touched files
+- [x] Run a final parser-focused readability cleanup pass without changing behavior
+- [x] Build the full project after cleanup changes
+
+Completed in this pass:
+- Audited the parser-adjacent app layer for obvious dead imports and stale cleanup debt
+- Kept the intentional `#if DEBUG` parser test seams in place, since they are still actively used by the parser test suite and are earning their keep
+- Removed an actually unused `MapKit` import from `ScanViewModel`
+- Standardized parser-related test files onto a consistent `@MainActor` context to stop Swift 6 actor-isolation warnings from polluting release validation
+- Updated `StoreDetectionService` off deprecated `placemark.location` usage and made store-candidate id fallback deterministic when MapKit does not supply an identifier
+- Tightened the new review-metadata mapping so it no longer emits actor-isolation warnings during build
+- `BuildProject` succeeds after the cleanup pass
+- Current build log warning count is now zero
+
+Result:
+- This workstream is complete for shipping purposes
+- Remaining cleanup from here is optional refinement, not open ship-state debt
 
 Definition of done:
 - The parser-related code no longer reads like an in-progress migration

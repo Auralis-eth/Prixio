@@ -9,6 +9,7 @@ import Foundation
 import Testing
 @testable import Prixio
 
+@MainActor
 struct PriceParsingServiceAmbiguityTests {
     struct AmbiguityCase {
         let name: String
@@ -103,7 +104,6 @@ struct PriceParsingServiceAmbiguityTests {
             )
         ]
     )
-    @MainActor
     func analyzesAmbiguity(case testCase: AmbiguityCase) async throws {
         let report = PriceParsingService._test_analyzeAmbiguity(testCase.observations)
 
@@ -112,7 +112,6 @@ struct PriceParsingServiceAmbiguityTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func proximityScoringKeepsCloserShelfPriceAsTopCandidate() async throws {
         let observations = [
             OCRTextObservation(string: "Organic Mango", confidence: 0.95),
@@ -128,7 +127,6 @@ struct PriceParsingServiceAmbiguityTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func saleMarkersOutrankRegularPriceFallback() async throws {
         let observations = [
             OCRTextObservation(string: "Fresh Blueberries", confidence: 0.95),
@@ -143,7 +141,6 @@ struct PriceParsingServiceAmbiguityTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func depositFeeLineDoesNotCompeteWithPrimaryShelfPrice() async throws {
         let observations = [
             OCRTextObservation(string: "Sparkling Water", confidence: 0.94),
@@ -158,7 +155,6 @@ struct PriceParsingServiceAmbiguityTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func cleanScanProducesHighConfidenceResult() async throws {
         let result = PriceParsingService._test_makeOCRResult([
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),
@@ -169,7 +165,6 @@ struct PriceParsingServiceAmbiguityTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func weakSingleLineScanProducesLowConfidenceResult() async throws {
         let result = PriceParsingService._test_makeOCRResult([
             OCRTextObservation(string: "$3.99", confidence: 0.66)
@@ -179,7 +174,6 @@ struct PriceParsingServiceAmbiguityTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func conflictingScanProducesLowerConfidenceThanCleanScan() async throws {
         let cleanResult = PriceParsingService._test_makeOCRResult([
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),

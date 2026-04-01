@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import Prixio
 
+@MainActor
 struct OCRReviewStateTests {
     @Test(.tags(.ocr, .product))
-    @MainActor
     func cleanHeuristicParseProducesCleanReviewState() async throws {
         let observations = [
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),
@@ -19,7 +19,6 @@ struct OCRReviewStateTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func multiProductScanProducesRequiredReviewState() async throws {
         let observations = [
             OCRTextObservation(string: "Coke Zero", confidence: 0.93),
@@ -35,7 +34,6 @@ struct OCRReviewStateTests {
     }
 
     @Test(.tags(.ocr, .product))
-    @MainActor
     func assistedMergeMarksResultAsFoundationModelReview() async throws {
         let observations = [
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.94),

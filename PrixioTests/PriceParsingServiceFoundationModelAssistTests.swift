@@ -9,6 +9,7 @@ import Foundation
 import Testing
 @testable import Prixio
 
+@MainActor
 struct PriceParsingServiceFoundationModelAssistTests {
     struct AssistedMergeCase {
         let name: String

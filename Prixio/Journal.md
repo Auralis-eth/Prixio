@@ -233,6 +233,24 @@ The last piece was save behavior. Before this pass, a severe multi-product or co
 
 One more familiar war-story footnote: the build is green, but the targeted test run for the new review-state coverage timed out in the harness again. So the feature is implemented and compiled, the tests exist, and the environment is still auditioning for the role of unreliable narrator.
 
+### War Story: Shipping Cleanup Is Mostly About Removing Embarrassing Noise
+The “app and code cleanup” pass turned out to be less glamorous than parser work and more useful than it sounds. This was not a hunt for one dramatic bug. It was a hunt for the kind of release noise that makes a codebase feel unfinished even when the feature technically works.
+
+The first fake lead was `Combine`. At a glance, a few files looked like they were carrying stale imports. They were not. In this project, `ObservableObject` and `@Published` still need that import, so ripping it out just turned “cleanup” into “compiler complaint generator.” That is a good reminder that dead-code cleanup should be verified, not aesthetic.
+
+The real cleanup win was the warning surface. Swift 6 actor-isolation warnings were polluting the parser test target badly enough that build output no longer felt trustworthy at a glance. The fix was not to silence them with hand-waving. The fix was to make the test files honest about their execution context by standardizing the parser-focused suites onto `@MainActor`, which matches the parser test seams they already rely on.
+
+There was also one small but worthwhile modernization in store detection. `StoreDetectionService` was still leaning on deprecated `placemark.location` access. Swapping that out for the current `MKMapItem.location` path cleaned up a real warning, and adding a deterministic fallback id when MapKit does not supply one made the candidate pipeline a little less fragile at the same time.
+
+The result is exactly the kind of boring success you want near release: the full project build is green, the warning log is empty, and the remaining cleanup work is now mostly optional refinement instead of loud compiler-shaped clutter. That is a very senior-engineer kind of progress. Not flashy, but suddenly the room is quiet enough to hear the real problems.
+
+### War Story: “Complete” Usually Means the Last 5 Percent Was Real Work
+Finishing the shipping-cleanup checklist was mostly about refusing to confuse “probably fine” with “done.” The obvious big wins had already happened earlier. What remained was the irritating edge of release engineering: prove that the leftover helper seams are intentional, trim the code that is not pulling its weight, and make sure the build output is quiet enough that a *new* warning will actually mean something.
+
+That final pass removed one unused review helper, cleaned up redundant actor annotations left behind after the Swift 6 test cleanup, and left the intentional parser test seams in place because they are still serving the test suite instead of freeloading in the binary. That distinction matters. A senior cleanup pass is not about deleting the most lines. It is about deleting the right lines and defending the ones that still earn rent.
+
+The nice outcome is that the cleanup checklist can now be called complete without crossing fingers. The parser-related shipping work no longer reads like an unfinished migration, the build stays green, the warning log stays empty, and the remaining polish work is the kind you schedule because you care, not because release would otherwise be irresponsible.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

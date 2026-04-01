@@ -151,6 +151,7 @@ struct OCRResult {
 }
 
 extension OCRReviewIssue {
+    @MainActor
     init?(weakness: PriceParsingService.ExtractionWeakness) {
         switch weakness {
         case .noPriceCandidates:
@@ -174,6 +175,7 @@ extension OCRReviewIssue {
 }
 
 extension OCRReview {
+    @MainActor
     init(
         ambiguity: PriceParsingService.ExtractionAmbiguityReport,
         usedFoundationModel: Bool,

@@ -10,6 +10,7 @@ import Foundation
 import Testing
 @testable import Prixio
 
+@MainActor
 struct PriceParsingServiceSpatialGroupingTests {
     @Test(.tags(.ocr, .product))
     func snapshotFocusesOnStrongestSpatialGroup() async throws {

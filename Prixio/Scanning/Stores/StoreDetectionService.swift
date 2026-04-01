@@ -81,21 +81,19 @@ final class StoreDetectionService {
     ) async -> [StoreCandidate] {
         do {
             let response = try await MKLocalSearch(request: request).start()
-            return response.mapItems.compactMap { item in
-                guard let identifier = item.identifier else {
-                    return nil
-                }
-                let placemarkLocation = item.placemark.location
+            return response.mapItems.map { item in
+                let mapItemLocation = item.location
                 return StoreCandidate(
-                    id: identifier.rawValue,
+                    id: item.identifier?.rawValue
+                        ?? (item.name ?? "Unknown Store").mapItemIdentifier(coordinate: mapItemLocation.coordinate),
                     chainName: StoreCatalog.inferredChain(from: item.name ?? ""),
                     locationName: item.name ?? "Unknown Store",
                     address: item.address?.shortAddress,
-                    coordinate: placemarkLocation?.coordinate,
+                    coordinate: mapItemLocation.coordinate,
                     distanceMeters: location.flatMap { origin in
-                        placemarkLocation?.distance(from: origin)
+                        mapItemLocation.distance(from: origin)
                     },
-                    mapKitPlaceId: (item.name ?? "Unknown Store").mapItemIdentifier(coordinate: placemarkLocation?.coordinate )
+                    mapKitPlaceId: (item.name ?? "Unknown Store").mapItemIdentifier(coordinate: mapItemLocation.coordinate)
                 )
             }
         } catch let error as MKError {
