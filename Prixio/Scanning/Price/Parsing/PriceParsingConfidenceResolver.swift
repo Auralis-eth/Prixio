@@ -5,7 +5,7 @@
 
 import Foundation
 
-private struct PriceParsingConfidenceResolver {
+struct PriceParsingConfidenceResolver {
     func analyzeAmbiguity(in snapshot: PriceParsingService.HeuristicExtractionSnapshot) -> PriceParsingService.ExtractionAmbiguityReport {
         var weaknesses: [PriceParsingService.ExtractionWeakness] = []
 
@@ -13,7 +13,7 @@ private struct PriceParsingConfidenceResolver {
             weaknesses.append(.noPriceCandidates)
         }
 
-        if PriceParsingService.hasCompetingTopCandidates(snapshot.priceCandidates) {
+        if PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) {
             weaknesses.append(.multipleCompetingPrices)
         }
 
@@ -117,7 +117,7 @@ private struct PriceParsingConfidenceResolver {
         if snapshot.cleanedObservations.count >= 2 && snapshot.lines.count >= 2 {
             confidence += 0.04
         }
-        if !PriceParsingService.hasCompetingTopCandidates(snapshot.priceCandidates) {
+        if !PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) {
             confidence += 0.04
         }
         if !looksLikeMultiProductScan(snapshot) {
@@ -174,10 +174,10 @@ private struct PriceParsingConfidenceResolver {
         guard !PriceParsingService.containsPriceSignal(in: trimmed) else {
             return false
         }
-        guard !PriceParsingService.looksLikeReceiptFragment(trimmed) else {
+        guard !PriceParsingItemNameResolver().looksLikeReceiptFragment(trimmed) else {
             return false
         }
-        guard !PriceParsingService.looksLikePromoBanner(trimmed) else {
+        guard !PriceParsingItemNameResolver().looksLikePromoBanner(trimmed) else {
             return false
         }
         guard trimmed.range(of: PriceParsingService.depositMarkerPattern, options: [.regularExpression, .caseInsensitive]) == nil else {
@@ -191,63 +191,9 @@ private struct PriceParsingConfidenceResolver {
         let descriptiveTokens = words.filter { token in
             token.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
                 && !PriceParsingService.itemNameIgnoredTokens.contains(token)
-                && !PriceParsingService.isPureUnitToken(token)
+                && !PriceParsingItemNameResolver().isPureUnitToken(token)
         }
 
         return descriptiveTokens.count >= 1
-    }
-}
-
-extension PriceParsingService {
-    static func analyzeAmbiguity(in snapshot: HeuristicExtractionSnapshot) -> ExtractionAmbiguityReport {
-        PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
-    }
-
-    static func makeOCRResult(from snapshot: HeuristicExtractionSnapshot) -> OCRResult {
-        PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
-    }
-
-    static func looksLikeMultiProductScan(_ snapshot: HeuristicExtractionSnapshot) -> Bool {
-        PriceParsingConfidenceResolver().looksLikeMultiProductScan(snapshot)
-    }
-
-    static func sourceLineIndexes(
-        for candidate: PriceCandidate,
-        in snapshot: HeuristicExtractionSnapshot
-    ) -> [Int] {
-        PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: snapshot)
-    }
-
-    static func sourceLineIndexes(
-        for candidate: PriceCandidate,
-        in observations: [OCRTextObservation]
-    ) -> [Int] {
-        PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: observations)
-    }
-
-    static func assembleHeuristicConfidence(
-        snapshot: HeuristicExtractionSnapshot,
-        ambiguity: ExtractionAmbiguityReport
-    ) -> Float {
-        PriceParsingConfidenceResolver().assembleHeuristicConfidence(
-            snapshot: snapshot,
-            ambiguity: ambiguity
-        )
-    }
-
-    static func confidencePenalty(for weakness: ExtractionWeakness) -> Float {
-        PriceParsingConfidenceResolver().confidencePenalty(for: weakness)
-    }
-
-    static func containsPhoneNumber(in text: String) -> Bool {
-        PriceParsingConfidenceResolver().containsPhoneNumber(in: text)
-    }
-
-    static func looksLikeDateLine(_ text: String) -> Bool {
-        PriceParsingConfidenceResolver().looksLikeDateLine(text)
-    }
-
-    static func isProductDescriptor(_ line: String) -> Bool {
-        PriceParsingConfidenceResolver().isProductDescriptor(line)
     }
 }

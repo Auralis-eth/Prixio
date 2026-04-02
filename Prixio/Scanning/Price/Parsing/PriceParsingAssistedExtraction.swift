@@ -6,7 +6,7 @@
 import Foundation
 import FoundationModels
 
-private struct PriceParsingAssistedExtractor {
+struct PriceParsingAssistedExtractor {
     let instructions = """
     Help with ambiguous grocery shelf-tag OCR.
     Select only from the provided OCR lines and provided price candidates.
@@ -48,7 +48,7 @@ private struct PriceParsingAssistedExtractor {
                 priority: candidate.priority,
                 label: candidate.label,
                 sourceText: candidate.sourceText,
-                sourceLineIndexes: PriceParsingService.sourceLineIndexes(for: candidate, in: snapshot)
+                sourceLineIndexes: PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: snapshot)
             )
         }
 
@@ -83,8 +83,8 @@ private struct PriceParsingAssistedExtractor {
         snapshot: PriceParsingService.HeuristicExtractionSnapshot,
         assisted: PriceParsingService.AssistedExtractionResult
     ) -> OCRResult {
-        let heuristicResult = PriceParsingService.makeOCRResult(from: snapshot)
-        let ambiguity = PriceParsingService.analyzeAmbiguity(in: snapshot)
+        let heuristicResult = PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
+        let ambiguity = PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
         let selectedCandidate = assisted.selectedPriceCandidateIndex.flatMap { index in
             snapshot.priceCandidates.indices.contains(index) ? snapshot.priceCandidates[index] : nil
         }
@@ -363,75 +363,6 @@ extension PriceParsingService {
         let canonicalItemName: String?
         let ambiguityNotes: [String]
         let confidenceBucket: AssistedConfidenceBucket
-    }
-
-    static func resolveWithFoundationModel(
-        snapshot: HeuristicExtractionSnapshot,
-        ambiguity: ExtractionAmbiguityReport
-    ) async throws -> AssistedExtractionResult? {
-        try await PriceParsingAssistedExtractor().resolveWithFoundationModel(
-            snapshot: snapshot,
-            ambiguity: ambiguity
-        )
-    }
-
-    static func buildAssistedExtractionPrompt(
-        snapshot: HeuristicExtractionSnapshot,
-        ambiguity: ExtractionAmbiguityReport
-    ) -> String {
-        PriceParsingAssistedExtractor().buildAssistedExtractionPrompt(
-            snapshot: snapshot,
-            ambiguity: ambiguity
-        )
-    }
-
-    static func mergeAssistedExtraction(
-        snapshot: HeuristicExtractionSnapshot,
-        assisted: AssistedExtractionResult
-    ) -> OCRResult {
-        PriceParsingAssistedExtractor().mergeAssistedExtraction(
-            snapshot: snapshot,
-            assisted: assisted
-        )
-    }
-
-    static func encodeForPrompt<T: Encodable>(_ value: T) -> String {
-        PriceParsingAssistedExtractor().encodeForPrompt(value)
-    }
-
-    static func normalizedCanonicalItemName(
-        from assisted: AssistedExtractionResult,
-        snapshot: HeuristicExtractionSnapshot
-    ) -> String? {
-        PriceParsingAssistedExtractor().normalizedCanonicalItemName(
-            from: assisted,
-            snapshot: snapshot
-        )
-    }
-
-    static func supportingLines(
-        from targetLineIndexes: [Int],
-        snapshot: HeuristicExtractionSnapshot
-    ) -> [String] {
-        PriceParsingAssistedExtractor().supportingLines(
-            from: targetLineIndexes,
-            snapshot: snapshot
-        )
-    }
-
-    static func mergedConfidence(
-        heuristicConfidence: Float,
-        assistedConfidence: AssistedConfidenceBucket,
-        replacedPrice: Bool,
-        agreementAdjustment: Float = 0
-    ) -> Float {
-        PriceParsingAssistedExtractor().mergedConfidence(
-            heuristicConfidence: heuristicConfidence,
-            assistedConfidence: assistedConfidence,
-            replacedPrice: replacedPrice
-            ,
-            agreementAdjustment: agreementAdjustment
-        )
     }
 
     static func _test_makeAssistedExtractionResult(

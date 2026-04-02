@@ -164,19 +164,22 @@ enum PriceParsingService {
     /// - Returns: A normalized `OCRResult` containing the most likely price metadata
     ///   inferred from those observations.
     static func extract(from observations: [OCRTextObservation]) async -> OCRResult {
-        let snapshot = buildHeuristicSnapshot(from: observations)
-        let ambiguity = analyzeAmbiguity(in: snapshot)
-        let heuristicResult = makeOCRResult(from: snapshot)
+        let snapshot = PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
+        let ambiguity = PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
+        let heuristicResult = PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
 
         guard ambiguity.shouldUseFoundationModel else {
             return heuristicResult
         }
 
-        guard let assisted = try? await resolveWithFoundationModel(snapshot: snapshot, ambiguity: ambiguity) else {
+        guard let assisted = try? await PriceParsingAssistedExtractor().resolveWithFoundationModel(
+            snapshot: snapshot,
+            ambiguity: ambiguity
+        ) else {
             return heuristicResult
         }
 
-        return mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
+        return PriceParsingAssistedExtractor().mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
     }
 
     static func normalize(price: Decimal, unit: UnitType, quantity: Decimal?) -> (Decimal, UnitType)? {
@@ -215,15 +218,17 @@ enum PriceParsingService {
 
 #if DEBUG
     static func _test_buildHeuristicSnapshot(_ observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
-        buildHeuristicSnapshot(from: observations)
+        PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
     }
 
     static func _test_makeOCRResult(_ observations: [OCRTextObservation]) -> OCRResult {
-        makeOCRResult(from: buildHeuristicSnapshot(from: observations))
+        let snapshot = PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
+        return PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
     }
 
     static func _test_analyzeAmbiguity(_ observations: [OCRTextObservation]) -> ExtractionAmbiguityReport {
-        analyzeAmbiguity(in: buildHeuristicSnapshot(from: observations))
+        let snapshot = PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
+        return PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
     }
 
     static func _test_assistedExtractionResult(
@@ -248,8 +253,8 @@ enum PriceParsingService {
         observations: [OCRTextObservation],
         assisted: AssistedExtractionResult
     ) -> OCRResult {
-        let snapshot = buildHeuristicSnapshot(from: observations)
-        return mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
+        let snapshot = PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
+        return PriceParsingAssistedExtractor().mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
     }
 
     static func _test_consolidateObservations(_ observations: [OCRTextObservation]) -> [OCRTextObservation] {

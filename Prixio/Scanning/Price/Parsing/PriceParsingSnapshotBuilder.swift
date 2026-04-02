@@ -6,7 +6,7 @@
 import CoreGraphics
 import Foundation
 
-private struct PriceParsingSnapshotBuilder {
+struct PriceParsingSnapshotBuilder {
     func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> PriceParsingService.HeuristicExtractionSnapshot {
         let supportedObservations = PriceParsingService.orderObservationsInReadingOrder(observations.filter {
             PriceParsingService.isSupportedOCRLine($0.string)
@@ -25,24 +25,27 @@ private struct PriceParsingSnapshotBuilder {
         let rawText = supportedLines.map(\.string).joined(separator: "\n")
         let normalizedText = rawText.replacingOccurrences(of: ",", with: ".")
         let unitScopeText = supportedLines.map(\.string).joined(separator: "\n")
-        let consolidatedPriceCandidates = PriceParsingService.extractPriceCandidates(from: consolidatedObservations)
+        let candidateScorer = PriceCandidateScorer()
+        let unitResolver = PriceParsingUnitResolver()
+        let itemNameResolver = PriceParsingItemNameResolver()
+        let consolidatedPriceCandidates = candidateScorer.extractPriceCandidates(from: consolidatedObservations)
         let extractedPriceCandidates = consolidatedPriceCandidates.isEmpty
-            ? PriceParsingService.extractPriceCandidates(from: normalizedObservations)
+            ? candidateScorer.extractPriceCandidates(from: normalizedObservations)
             : consolidatedPriceCandidates
-        let priceCandidates = PriceParsingService.scorePriceCandidates(
+        let priceCandidates = candidateScorer.scorePriceCandidates(
             extractedPriceCandidates,
             in: supportedLines
         )
-        let detectedUnit = PriceParsingService.detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
+        let detectedUnit = unitResolver.detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
         let lines = (unitScopeText.isEmpty ? normalizedText : unitScopeText)
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let itemNameHint = PriceParsingService.extractItemNameHint(
+        let itemNameHint = itemNameResolver.extractItemNameHint(
             from: supportedLines,
             priceCandidates: priceCandidates
         )
-        let resolvedQuantity = PriceParsingService.inferResolvedQuantity(
+        let resolvedQuantity = unitResolver.inferResolvedQuantity(
             from: supportedLines,
             priceCandidates: priceCandidates,
             detectedUnit: detectedUnit,
@@ -148,44 +151,6 @@ private struct PriceParsingSnapshotBuilder {
 }
 
 extension PriceParsingService {
-    static func buildHeuristicSnapshot(from observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
-        PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
-    }
-
-    static func shouldFallbackFromFocusedObservations(
-        sourceObservations: [OCRTextObservation],
-        cleanedObservations: [OCRTextObservation]
-    ) -> Bool {
-        PriceParsingSnapshotBuilder().shouldFallbackFromFocusedObservations(
-            sourceObservations: sourceObservations,
-            cleanedObservations: cleanedObservations
-        )
-    }
-
-    static func makeFallbackObservationSet(
-        focusedObservations: [OCRTextObservation],
-        strongestGroupObservations: [OCRTextObservation],
-        supportedObservations: [OCRTextObservation]
-    ) -> [(source: [OCRTextObservation], cleaned: [OCRTextObservation])] {
-        PriceParsingSnapshotBuilder().makeFallbackObservationSet(
-            focusedObservations: focusedObservations,
-            strongestGroupObservations: strongestGroupObservations,
-            supportedObservations: supportedObservations
-        )
-    }
-
-    static func bestAvailableObservations(
-        focusedObservations: [OCRTextObservation],
-        strongestGroupObservations: [OCRTextObservation],
-        supportedObservations: [OCRTextObservation]
-    ) -> [OCRTextObservation] {
-        PriceParsingSnapshotBuilder().bestAvailableObservations(
-            focusedObservations: focusedObservations,
-            strongestGroupObservations: strongestGroupObservations,
-            supportedObservations: supportedObservations
-        )
-    }
-
     static func isSupportedOCRLine(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -374,7 +339,8 @@ extension PriceParsingService {
         let hasDigits = trimmed.contains(where: \.isNumber)
         let hasLetters = trimmed.unicodeScalars.contains { CharacterSet.letters.contains($0) }
         let hasPriceSignal = containsPriceSignal(in: trimmed)
-        let hasUnitSignal = detectUnit(in: trimmed) != nil || containsExplicitSizeToken(in: trimmed)
+        let hasUnitSignal = PriceParsingUnitResolver().detectUnit(in: trimmed) != nil
+            || containsExplicitSizeToken(in: trimmed)
         let hasOCRVariantEvidence = trimmed.digitsAsLettersCount() >= 2
 
         if (isLikelyShelfCode(trimmed) || (isLikelySKU(trimmed) && !hasOCRVariantEvidence)) && !hasUnitSignal {

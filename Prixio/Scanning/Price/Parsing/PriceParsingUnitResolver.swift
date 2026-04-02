@@ -5,7 +5,7 @@
 
 import Foundation
 
-private struct PriceParsingUnitResolver {
+struct PriceParsingUnitResolver {
     func detectUnit(in text: String) -> UnitType? {
         let normalized = normalizedUnitDetectionText(text)
         let directSignals = directUnitSignals(in: normalized)
@@ -120,7 +120,7 @@ private struct PriceParsingUnitResolver {
             return fallbackText
         }
 
-        let sourceIndexes = PriceParsingService.sourceLineIndexes(for: candidate, in: observations)
+        let sourceIndexes = PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: observations)
         guard !sourceIndexes.isEmpty else {
             return fallbackText
         }
@@ -144,7 +144,7 @@ private struct PriceParsingUnitResolver {
             return fallbackText
         }
 
-        let sourceIndexes = PriceParsingService.sourceLineIndexes(for: candidate, in: observations)
+        let sourceIndexes = PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: observations)
         guard !sourceIndexes.isEmpty else {
             return fallbackText
         }
@@ -355,83 +355,5 @@ private struct PriceParsingUnitResolver {
 
     func matchesTokenBoundary(_ pattern: String, in text: String) -> Bool {
         text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
-    }
-}
-
-extension PriceParsingService {
-    static func detectUnit(in text: String) -> UnitType? {
-        PriceParsingUnitResolver().detectUnit(in: text)
-    }
-
-    static func detectQuantity(in text: String, unit: UnitType?) -> Decimal? {
-        PriceParsingUnitResolver().detectQuantity(in: text, unit: unit)
-    }
-
-    static func inferResolvedQuantity(
-        from observations: [OCRTextObservation],
-        priceCandidates: [PriceCandidate],
-        detectedUnit: UnitType?,
-        fallbackText: String
-    ) -> Decimal? {
-        PriceParsingUnitResolver().inferResolvedQuantity(
-            from: observations,
-            priceCandidates: priceCandidates,
-            detectedUnit: detectedUnit,
-            fallbackText: fallbackText
-        )
-    }
-
-    static func quantityContextText(
-        for candidate: PriceCandidate?,
-        observations: [OCRTextObservation],
-        fallbackText: String
-    ) -> String {
-        PriceParsingUnitResolver().quantityContextText(
-            for: candidate,
-            observations: observations,
-            fallbackText: fallbackText
-        )
-    }
-
-    static func inferOfferQuantity(in text: String) -> Decimal? {
-        PriceParsingUnitResolver().inferOfferQuantity(in: text)
-    }
-
-    static func inferPackQuantity(in text: String) -> Decimal? {
-        PriceParsingUnitResolver().inferPackQuantity(in: text)
-    }
-
-    static func quantityWordValue(_ token: String) -> Decimal? {
-        PriceParsingUnitResolver().quantityWordValue(token)
-    }
-
-    static func normalizedUnitDetectionText(_ text: String) -> String {
-        PriceParsingUnitResolver().normalizedUnitDetectionText(text)
-    }
-
-    static func directUnitSignals(in text: String) -> [UnitDetectionSignal] {
-        PriceParsingUnitResolver().directUnitSignals(in: text)
-    }
-
-    static func packageUnitSignals(in text: String) -> [UnitDetectionSignal] {
-        PriceParsingUnitResolver().packageUnitSignals(in: text)
-    }
-
-    static func strongestUnitSignal(in signals: [UnitDetectionSignal]) -> UnitDetectionSignal? {
-        PriceParsingUnitResolver().strongestUnitSignal(in: signals)
-    }
-
-    static func firstUnitSignal(
-        unit: UnitType,
-        pattern: String,
-        in text: String,
-        score: Int
-    ) -> UnitDetectionSignal? {
-        PriceParsingUnitResolver().firstUnitSignal(
-            unit: unit,
-            pattern: pattern,
-            in: text,
-            score: score
-        )
     }
 }
