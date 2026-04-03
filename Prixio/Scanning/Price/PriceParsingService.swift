@@ -168,6 +168,16 @@ enum PriceParsingService {
         let ambiguity = PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
         let heuristicResult = PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
 
+#if DEBUG
+        debugLogPipeline(
+            observations: observations,
+            snapshot: snapshot,
+            ambiguity: ambiguity,
+            result: heuristicResult,
+            stage: "heuristic"
+        )
+#endif
+
         guard ambiguity.shouldUseFoundationModel else {
             return heuristicResult
         }
@@ -179,7 +189,19 @@ enum PriceParsingService {
             return heuristicResult
         }
 
-        return PriceParsingAssistedExtractor().mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
+        let mergedResult = PriceParsingAssistedExtractor().mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
+
+#if DEBUG
+        debugLogPipeline(
+            observations: observations,
+            snapshot: snapshot,
+            ambiguity: ambiguity,
+            result: mergedResult,
+            stage: "assisted"
+        )
+#endif
+
+        return mergedResult
     }
 
     static func normalize(price: Decimal, unit: UnitType, quantity: Decimal?) -> (Decimal, UnitType)? {
@@ -217,6 +239,65 @@ enum PriceParsingService {
     }
 
 #if DEBUG
+    static func debugLogPipeline(
+        observations: [OCRTextObservation],
+        snapshot: HeuristicExtractionSnapshot,
+        ambiguity: ExtractionAmbiguityReport,
+        result: OCRResult,
+        stage: String
+    ) {
+        print("========== PARSER DEBUG (\(stage.uppercased())) ==========")
+        print("raw observations (\(observations.count)):")
+        for (index, observation) in observations.enumerated() {
+            print("  [\(index)] \(debugDescription(for: observation))")
+        }
+
+        print("spatial groups (\(snapshot.spatialGroups.count)):")
+        for (index, group) in snapshot.spatialGroups.enumerated() {
+            let lines = group.observations.map(\.string).joined(separator: " | ")
+            print("  [\(index)] score=\(String(format: "%.3f", group.score)) lines=\(lines)")
+        }
+
+        print("cleaned observations: \(snapshot.cleanedObservations.map(\.string))")
+        print("normalized observations: \(snapshot.normalizedObservations.map(\.string))")
+        print("consolidated observations: \(snapshot.consolidatedObservations.map(\.string))")
+        print("price candidates (\(snapshot.priceCandidates.count)):")
+        for (index, candidate) in snapshot.priceCandidates.enumerated() {
+            print(
+                """
+                  [\(index)] value=\(candidate.value) priority=\(candidate.priority) confidence=\(candidate.confidence) source=\(candidate.sourceText) quantity=\(candidate.quantity.map { "\($0)" } ?? "nil")
+                """
+            )
+        }
+
+        print("item name hint: \(snapshot.itemNameHint ?? "nil")")
+        print("detected unit: \(snapshot.detectedUnit?.rawValue ?? "nil")")
+        print("resolved quantity: \(snapshot.resolvedQuantity.map { "\($0)" } ?? "nil")")
+        print("ambiguity weaknesses: \(ambiguity.weaknesses.map(\.rawValue))")
+        print("result item: \(result.itemNameHint ?? "nil")")
+        print("result price: \(result.price.map { "\($0)" } ?? "nil")")
+        print("result review: \(result.review.issues.map(\.rawValue)) usedFM=\(result.review.usedFoundationModel)")
+        print("supporting lines: \(result.supportingLines)")
+        print("============================================")
+    }
+
+    static func debugDescription(for observation: OCRTextObservation) -> String {
+        let boxDescription: String
+        if let box = observation.boundingBox {
+            boxDescription = String(
+                format: "box=(x:%.3f y:%.3f w:%.3f h:%.3f)",
+                box.origin.x,
+                box.origin.y,
+                box.size.width,
+                box.size.height
+            )
+        } else {
+            boxDescription = "box=nil"
+        }
+
+        return "\"\(observation.string)\" conf=\(observation.confidence) \(boxDescription)"
+    }
+
     static func _test_buildHeuristicSnapshot(_ observations: [OCRTextObservation]) -> HeuristicExtractionSnapshot {
         PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
     }

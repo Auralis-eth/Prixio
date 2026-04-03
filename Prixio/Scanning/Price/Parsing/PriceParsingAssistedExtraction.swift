@@ -85,24 +85,34 @@ struct PriceParsingAssistedExtractor {
     ) -> OCRResult {
         let heuristicResult = PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
         let ambiguity = PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
+        let topHeuristicCandidate = snapshot.priceCandidates.first
         let selectedCandidate = assisted.selectedPriceCandidateIndex.flatMap { index in
             snapshot.priceCandidates.indices.contains(index) ? snapshot.priceCandidates[index] : nil
         }
         let shouldTrustModelCandidate = assisted.confidenceBucket != .low
             && selectedCandidate != nil
             && isTrustedPriceKind(assisted.selectedPriceKind)
+            && shouldPreferModelCandidate(
+                selectedCandidate: selectedCandidate,
+                heuristicCandidate: topHeuristicCandidate,
+                snapshot: snapshot
+            )
         let shouldTrustModelName = assisted.confidenceBucket != .low
 
         let finalPrice = shouldTrustModelCandidate ? selectedCandidate?.value : heuristicResult.price
         let finalQuantity = shouldTrustModelCandidate
             ? (selectedCandidate?.quantity ?? snapshot.resolvedQuantity)
             : heuristicResult.quantity
-        let finalItemName = shouldTrustModelName
+        let modelItemName = shouldTrustModelName
             ? (normalizedCanonicalItemName(
                 from: assisted,
                 snapshot: snapshot
             ) ?? heuristicResult.itemNameHint)
             : heuristicResult.itemNameHint
+        let finalItemName = preferredItemName(
+            heuristicItemName: heuristicResult.itemNameHint,
+            modelItemName: modelItemName
+        )
         let finalLines = supportingLines(from: assisted.targetLineIndexes, snapshot: snapshot)
         let agreementAdjustment = agreementConfidenceAdjustment(
             heuristicResult: heuristicResult,
@@ -184,9 +194,10 @@ struct PriceParsingAssistedExtractor {
         }
 
         let selectedLines = supportingLines(from: assisted.targetLineIndexes, snapshot: snapshot)
-        return selectedLines.first { line in
-            !line.contains("$") && !line.contains(where: \.isNumber)
-        }
+        return mergedSupportedItemName(from: selectedLines)
+            ?? selectedLines.first { line in
+                !line.contains("$") && !line.contains(where: \.isNumber)
+            }
     }
 
     func supportingLines(
@@ -254,6 +265,44 @@ struct PriceParsingAssistedExtractor {
         }
     }
 
+    func shouldPreferModelCandidate(
+        selectedCandidate: PriceCandidate?,
+        heuristicCandidate: PriceCandidate?,
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot
+    ) -> Bool {
+        guard let selectedCandidate else {
+            return false
+        }
+        guard let heuristicCandidate else {
+            return true
+        }
+        guard selectedCandidate != heuristicCandidate else {
+            return true
+        }
+
+        let scorer = PriceCandidateScorer()
+        let selectedIndexes = PriceParsingConfidenceResolver().sourceLineIndexes(
+            for: selectedCandidate,
+            in: snapshot.consolidatedObservations
+        )
+        if scorer.nearbySavePenalty(
+            sourceLineIndexes: selectedIndexes,
+            observations: snapshot.consolidatedObservations
+        ) > 0 {
+            return false
+        }
+
+        if selectedCandidate.priority < heuristicCandidate.priority {
+            return false
+        }
+        if selectedCandidate.priority == heuristicCandidate.priority,
+           selectedCandidate.confidence < heuristicCandidate.confidence {
+            return false
+        }
+
+        return true
+    }
+
     func agreementConfidenceAdjustment(
         heuristicResult: OCRResult,
         selectedCandidate: PriceCandidate?,
@@ -297,6 +346,106 @@ struct PriceParsingAssistedExtractor {
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return lowered.isEmpty ? nil : lowered
+    }
+
+    func preferredItemName(
+        heuristicItemName: String?,
+        modelItemName: String?
+    ) -> String? {
+        guard let heuristicNormalized = normalizedComparisonText(heuristicItemName) else {
+            return modelItemName
+        }
+        guard let modelNormalized = normalizedComparisonText(modelItemName) else {
+            return heuristicItemName
+        }
+
+        if heuristicNormalized == modelNormalized {
+            return heuristicItemName ?? modelItemName
+        }
+
+        if heuristicNormalized.contains(modelNormalized),
+           heuristicNormalized.count > modelNormalized.count {
+            return heuristicItemName
+        }
+
+        return modelItemName
+    }
+
+    func mergedSupportedItemName(from lines: [String]) -> String? {
+        let fragments = lines.compactMap(cleanItemNameFragment)
+        guard let firstFragment = fragments.first else {
+            return nil
+        }
+
+        return fragments.dropFirst().reduce(firstFragment) { partialResult, fragment in
+            mergeNameFragments(partialResult, fragment)
+        }
+    }
+
+    func cleanItemNameFragment(_ line: String) -> String? {
+        let trimmed = line.sanitizeOCRLine()
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+        guard !PriceParsingService.containsPriceSignal(in: trimmed) else {
+            return nil
+        }
+
+        let itemResolver = PriceParsingItemNameResolver()
+        guard !itemResolver.looksLikeReceiptFragment(trimmed) else {
+            return nil
+        }
+        guard !itemResolver.looksLikePromoBanner(trimmed) else {
+            return nil
+        }
+
+        let strippedSizeSuffix = trimmed.replacingOccurrences(
+            of: #"\s+\d{1,4}(?:[.,]\d+)?\s*(g|kg|ml|l|oz|lb|pk|ct|count|pack)\b.*$"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        let cleaned = PriceParsingItemNameResolver().cleanedProductPhrase(from: strippedSizeSuffix)
+        guard cleaned.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else {
+            return nil
+        }
+
+        return cleaned
+    }
+
+    func mergeNameFragments(_ lhs: String, _ rhs: String) -> String {
+        let lhsTokens = lhs.split(whereSeparator: \.isWhitespace).map(String.init)
+        let rhsTokens = rhs.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !lhsTokens.isEmpty else {
+            return rhs
+        }
+        guard !rhsTokens.isEmpty else {
+            return lhs
+        }
+
+        let overlap = maximumTokenOverlap(lhsTokens: lhsTokens, rhsTokens: rhsTokens)
+        let mergedTokens = lhsTokens + rhsTokens.dropFirst(overlap)
+        return mergedTokens.joined(separator: " ")
+    }
+
+    func maximumTokenOverlap(lhsTokens: [String], rhsTokens: [String]) -> Int {
+        let maxOverlap = min(lhsTokens.count, rhsTokens.count)
+        guard maxOverlap > 0 else {
+            return 0
+        }
+
+        for overlap in stride(from: maxOverlap, through: 1, by: -1) {
+            let lhsSuffix = lhsTokens.suffix(overlap).map {
+                $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+            }
+            let rhsPrefix = rhsTokens.prefix(overlap).map {
+                $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+            }
+            if lhsSuffix == rhsPrefix {
+                return overlap
+            }
+        }
+
+        return 0
     }
 }
 

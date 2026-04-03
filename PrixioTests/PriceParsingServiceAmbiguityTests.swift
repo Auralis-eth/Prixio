@@ -5,6 +5,7 @@
 //  Created by Codex on 8/16/25.
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Prixio
@@ -152,6 +153,80 @@ struct PriceParsingServiceAmbiguityTests {
 
         #expect(snapshot.priceCandidates.first?.value == Decimal(string: "5.99"))
         #expect(report.weaknesses.contains(.multipleCompetingPrices) == false)
+    }
+
+    @Test(.tags(.ocr, .product, .shipGate, .realWorldOCR))
+    func shelfTagClusterBeatsPackagingNoiseWhenPriceLivesInSeparateColumn() async throws {
+        let observations = [
+            OCRTextObservation(
+                string: "Cadbury Chocolate Mini",
+                confidence: 0.85,
+                boundingBox: CGRect(x: 0.35, y: 0.48, width: 0.28, height: 0.03)
+            ),
+            OCRTextObservation(
+                string: "Eggs 875 g",
+                confidence: 0.83,
+                boundingBox: CGRect(x: 0.35, y: 0.44, width: 0.18, height: 0.03)
+            ),
+            OCRTextObservation(
+                string: "22.99",
+                confidence: 0.87,
+                boundingBox: CGRect(x: 0.78, y: 0.48, width: 0.10, height: 0.04)
+            ),
+            OCRTextObservation(
+                string: "SAVE THIS WEEK",
+                confidence: 0.88,
+                boundingBox: CGRect(x: 0.32, y: 0.35, width: 0.20, height: 0.04)
+            ),
+            OCRTextObservation(
+                string: "17.99",
+                confidence: 0.95,
+                boundingBox: CGRect(x: 0.66, y: 0.34, width: 0.17, height: 0.07)
+            ),
+            OCRTextObservation(
+                string: "Cadbury",
+                confidence: 0.96,
+                boundingBox: CGRect(x: 0.08, y: 0.76, width: 0.12, height: 0.03)
+            ),
+            OCRTextObservation(
+                string: "Mini Eggs",
+                confidence: 0.96,
+                boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.16, height: 0.05)
+            ),
+            OCRTextObservation(
+                string: "8.75",
+                confidence: 0.86,
+                boundingBox: CGRect(x: 0.12, y: 0.63, width: 0.08, height: 0.04)
+            )
+        ]
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(observations)
+
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "17.99"))
+        #expect(snapshot.itemNameHint?.contains("Cadbury Chocolate Mini Eggs") == true)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func assistedNameFallbackMergesAdjacentDescriptorLines() async throws {
+        let observations = [
+            OCRTextObservation(string: "Cadbury Chocolate Mini", confidence: 0.9),
+            OCRTextObservation(string: "Eggs 875 g", confidence: 0.9),
+            OCRTextObservation(string: "$17.99", confidence: 0.9)
+        ]
+        let assisted = PriceParsingService._test_assistedExtractionResult(
+            targetLineIndexes: [0, 1, 2],
+            selectedPriceCandidateIndex: nil,
+            selectedPriceKind: .unknown,
+            canonicalItemName: nil,
+            ambiguityNotes: [],
+            confidenceBucket: .medium
+        )
+
+        let result = PriceParsingService._test_mergeAssistedExtraction(
+            observations: observations,
+            assisted: assisted
+        )
+
+        #expect(result.itemNameHint == "Cadbury Chocolate Mini Eggs")
     }
 
     @Test(.tags(.ocr, .product, .shipGate))

@@ -19,12 +19,20 @@ struct PriceParsingItemNameResolver {
             )
         }
 
-        return candidateLineIndexes.max { lhs, rhs in
+        guard let bestCandidate = candidateLineIndexes.max(by: { lhs, rhs in
             if lhs.score != rhs.score {
                 return lhs.score < rhs.score
             }
             return lhs.lineIndex > rhs.lineIndex
-        }?.line
+        }) else {
+            return nil
+        }
+
+        return mergedItemName(
+            around: bestCandidate,
+            candidates: candidateLineIndexes,
+            observations: observations
+        ) ?? bestCandidate.line
     }
 
     func scoredItemNameCandidate(
@@ -171,5 +179,110 @@ struct PriceParsingItemNameResolver {
 
     func isPureUnitToken(_ token: String) -> Bool {
         ["ea", "each", "lb", "lbs", "kg", "l", "liter", "litre", "g", "ml"].contains(token)
+    }
+
+    func mergedItemName(
+        around bestCandidate: PriceParsingService.ItemNameCandidate,
+        candidates: [PriceParsingService.ItemNameCandidate],
+        observations: [OCRTextObservation]
+    ) -> String? {
+        let candidateMap = Dictionary(uniqueKeysWithValues: candidates.map { ($0.lineIndex, $0) })
+        let nearbyIndexes = candidates
+            .map(\.lineIndex)
+            .filter { abs($0 - bestCandidate.lineIndex) <= 2 }
+            .sorted()
+            .filter { observations.indices.contains($0) }
+        let fragments = nearbyIndexes.compactMap { index -> String? in
+            guard let candidate = candidateMap[index] else {
+                return nil
+            }
+            return cleanedNameFragment(candidate.line)
+        }
+
+        guard let firstFragment = fragments.first else {
+            return nil
+        }
+
+        return fragments.dropFirst().reduce(firstFragment) { partialResult, fragment in
+            mergeNameFragments(partialResult, fragment)
+        }
+    }
+
+    func cleanedNameFragment(_ line: String) -> String? {
+        let trimmed = line.sanitizeOCRLine()
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let strippedSizeSuffix = trimmed.replacingOccurrences(
+            of: #"\s+\d{1,4}(?:[.,]\d+)?\s*(g|kg|ml|l|oz|lb|pk|ct|count|pack)\b.*$"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        let cleaned = cleanedProductPhrase(from: strippedSizeSuffix)
+        guard cleaned.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else {
+            return nil
+        }
+
+        return cleaned
+    }
+
+    func mergeNameFragments(_ lhs: String, _ rhs: String) -> String {
+        let lhsTokens = lhs.split(whereSeparator: \.isWhitespace).map(String.init)
+        let rhsTokens = rhs.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !lhsTokens.isEmpty else {
+            return rhs
+        }
+        guard !rhsTokens.isEmpty else {
+            return lhs
+        }
+
+        let overlap = maximumTokenOverlap(lhsTokens: lhsTokens, rhsTokens: rhsTokens)
+        let mergedTokens = lhsTokens + rhsTokens.dropFirst(overlap)
+        return mergedTokens.joined(separator: " ")
+    }
+
+    func maximumTokenOverlap(lhsTokens: [String], rhsTokens: [String]) -> Int {
+        let maxOverlap = min(lhsTokens.count, rhsTokens.count)
+        guard maxOverlap > 0 else {
+            return 0
+        }
+
+        for overlap in stride(from: maxOverlap, through: 1, by: -1) {
+            let lhsSuffix = lhsTokens.suffix(overlap).map {
+                $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+            }
+            let rhsPrefix = rhsTokens.prefix(overlap).map {
+                $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+            }
+            if lhsSuffix == rhsPrefix {
+                return overlap
+            }
+        }
+
+        return 0
+    }
+
+    func cleanedProductPhrase(from line: String) -> String {
+        let ignoredTokens: Set<String> = [
+            "save",
+            "this",
+            "week",
+            "easter",
+            "ad",
+            "exp"
+        ]
+        let tokens = line
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .filter { token in
+                let normalized = token
+                    .trimmingCharacters(in: CharacterSet.punctuationCharacters)
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    .lowercased()
+                return !normalized.isEmpty && !ignoredTokens.contains(normalized)
+            }
+
+        return tokens.joined(separator: " ").sanitizeOCRLine()
     }
 }

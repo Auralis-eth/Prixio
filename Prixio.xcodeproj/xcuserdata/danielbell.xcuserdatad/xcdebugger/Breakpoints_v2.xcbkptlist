@@ -408,7 +408,7 @@
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
             uuid = "DC70DF6D-6EDF-4E7A-B683-C1644858D146"
-            shouldBeEnabled = "No"
+            shouldBeEnabled = "Yes"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "Prixio/Scanning/ScanViewModel.swift"
@@ -424,7 +424,7 @@
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
             uuid = "DA3F9AE7-41FB-414D-93C8-2DB46DAE80D4"
-            shouldBeEnabled = "No"
+            shouldBeEnabled = "Yes"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "Prixio/Scanning/ScanViewModel.swift"
@@ -480,8 +480,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "179"
             endingLineNumber = "179"
-            landmarkName = "applyStoreCandidate(_:)"
-            landmarkType = "7">
+            landmarkName = "ScanViewModel"
+            landmarkType = "3">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -496,7 +496,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "175"
             endingLineNumber = "175"
-            landmarkName = "applyItemSuggestion(_:)"
+            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -512,7 +512,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "170"
             endingLineNumber = "170"
-            landmarkName = "applyPriceCandidate(_:)"
+            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -528,7 +528,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "189"
             endingLineNumber = "189"
-            landmarkName = "applyChainSelection(_:)"
+            landmarkName = "applyStoreCandidate(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -544,7 +544,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "194"
             endingLineNumber = "194"
-            landmarkName = "dismissConfirmationForRetake()"
+            landmarkName = "applyStoreCandidate(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -560,7 +560,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "202"
             endingLineNumber = "202"
-            landmarkName = "discardCapture()"
+            landmarkName = "applyChainSelection(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -576,7 +576,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "232"
             endingLineNumber = "232"
-            landmarkName = "applyInferredStore(from:ocrText:nearbyCandidates:)"
+            landmarkName = "save(context:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -592,7 +592,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "263"
             endingLineNumber = "263"
-            landmarkName = "matchStoreCandidate(from:ocrText:currentLocation:)"
+            landmarkName = "applyInferredStore(from:ocrText:nearbyCandidates:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -608,7 +608,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "290"
             endingLineNumber = "290"
-            landmarkName = "shouldAutoApplyStore(candidate:ocrText:nearbyCandidates:)"
+            landmarkName = "matchStoreCandidate(from:ocrText:currentLocation:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -648,7 +648,7 @@
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
             uuid = "54A64B96-EB5D-415E-B64F-7990C36DDEA2"
-            shouldBeEnabled = "No"
+            shouldBeEnabled = "Yes"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "Prixio/Scanning/ScanViewModel.swift"
@@ -1045,22 +1045,6 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "DEED330E-38E8-44CF-88A0-B11B6BA0EEC4"
-            shouldBeEnabled = "Yes"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "Prixio/Scanning/Price/PriceParsingService.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "167"
-            endingLineNumber = "167"
-            landmarkName = "extract(from:)"
-            landmarkType = "7">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
             uuid = "8D125021-A62C-4262-B482-C251EDDEB626"
             shouldBeEnabled = "Yes"
             ignoreCount = "0"
@@ -1120,64 +1104,6 @@
             endingLineNumber = "174"
             landmarkName = "extract(from:)"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "53AABC06-7C4F-42B2-9DDC-A4C36FC61CC4 - 8c0d8b8d12a0fa86"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(1) suspend resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "175"
-                  endingLineNumber = "175">
-               </Location>
-               <Location
-                  uuid = "53AABC06-7C4F-42B2-9DDC-A4C36FC61CC4 - ca76b855cadd184"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(2) await resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "175"
-                  endingLineNumber = "175">
-               </Location>
-               <Location
-                  uuid = "53AABC06-7C4F-42B2-9DDC-A4C36FC61CC4 - fd0f312a6c89beb8"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "175"
-                  endingLineNumber = "175">
-               </Location>
-               <Location
-                  uuid = "53AABC06-7C4F-42B2-9DDC-A4C36FC61CC4 - 26719c141d9adcb9"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(4) suspend resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "175"
-                  endingLineNumber = "175">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1190,40 +1116,10 @@
             filePath = "Prixio/Scanning/Price/PriceParsingService.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "178"
-            endingLineNumber = "178"
+            startingLineNumber = "179"
+            endingLineNumber = "179"
             landmarkName = "extract(from:)"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "E4FD105D-8490-482F-9EB8-3D2FC1006E0A - fd0f312a6c89be04"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "179"
-                  endingLineNumber = "179">
-               </Location>
-               <Location
-                  uuid = "E4FD105D-8490-482F-9EB8-3D2FC1006E0A - 26719c141d9adc05"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(4) suspend resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "179"
-                  endingLineNumber = "179">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1240,36 +1136,6 @@
             endingLineNumber = "176"
             landmarkName = "extract(from:)"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "C4B573BF-EC32-4013-9B8B-2007783AE6BF - fd0f312a6c89be99"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "176"
-                  endingLineNumber = "176">
-               </Location>
-               <Location
-                  uuid = "C4B573BF-EC32-4013-9B8B-2007783AE6BF - 26719c141d9adc98"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(4) suspend resume partial function for static Prixio.PriceParsingService.extract(from: Swift.Array&lt;Prixio.OCRTextObservation&gt;) async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/Price/PriceParsingService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "176"
-                  endingLineNumber = "176">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1292,7 +1158,7 @@
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
             uuid = "AC6D201F-1BF8-4A8F-95E9-FAE34CA4A997"
-            shouldBeEnabled = "Yes"
+            shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "Prixio/Scanning/OCR/OCRService.swift"
@@ -1302,64 +1168,54 @@
             endingLineNumber = "16"
             landmarkName = "extractOCR()"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "AC6D201F-1BF8-4A8F-95E9-FAE34CA4A997 - 25177f79ffb2949"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(1) suspend resume partial function for __C.UIImage.extractOCR() async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/OCR/OCRService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "17"
-                  endingLineNumber = "17">
-               </Location>
-               <Location
-                  uuid = "AC6D201F-1BF8-4A8F-95E9-FAE34CA4A997 - 92d6ca662da9975a"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(2) await resume partial function for __C.UIImage.extractOCR() async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/OCR/OCRService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "17"
-                  endingLineNumber = "17">
-               </Location>
-               <Location
-                  uuid = "AC6D201F-1BF8-4A8F-95E9-FAE34CA4A997 - f6efdf8a25e0f94b"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for __C.UIImage.extractOCR() async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/OCR/OCRService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "17"
-                  endingLineNumber = "17">
-               </Location>
-               <Location
-                  uuid = "AC6D201F-1BF8-4A8F-95E9-FAE34CA4A997 - b248e631380414ee"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "closure #1 (Swift.CheckedContinuation&lt;Prixio.OCRResult, Swift.Never&gt;) -&gt; () in __C.UIImage.extractOCR() async -&gt; Prixio.OCRResult"
-                  moduleName = "Prixio.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/danielbell/Dev/Prixio/Prixio/Scanning/OCR/OCRService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "17"
-                  endingLineNumber = "17">
-               </Location>
-            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "4B11EAE7-94D1-448C-B922-143DCFA5699A"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "Prixio/Scanning/Price/Parsing/PriceParsingSnapshotBuilder.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "22"
+            endingLineNumber = "22"
+            landmarkName = "buildHeuristicSnapshot(from:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "1585AE42-9BE3-4E8A-B965-5491AEC0D811"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "Prixio/Scanning/Price/Parsing/PriceParsingSnapshotBuilder.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "56"
+            endingLineNumber = "56"
+            landmarkName = "buildHeuristicSnapshot(from:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "274BDEF9-D68F-4307-AA9A-6949E2383292"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "Prixio/Scanning/ScanViewModel.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "143"
+            endingLineNumber = "143"
+            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>

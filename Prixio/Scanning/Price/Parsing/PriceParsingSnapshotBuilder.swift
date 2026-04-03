@@ -12,7 +12,10 @@ struct PriceParsingSnapshotBuilder {
             PriceParsingService.isSupportedOCRLine($0.string)
         })
         let spatialGroups = PriceParsingService.makeSpatialObservationGroups(from: supportedObservations)
-        let strongestGroupObservations = spatialGroups.first?.observations ?? supportedObservations
+        let strongestGroupObservations = bestFocusedObservations(
+            from: spatialGroups,
+            fallback: supportedObservations
+        )
         let focusedObservations = strongestGroupObservations
         let cleanedObservations = bestAvailableObservations(
             focusedObservations: focusedObservations,
@@ -148,6 +151,118 @@ struct PriceParsingSnapshotBuilder {
 
         return fallbackSets.last?.cleaned ?? []
     }
+
+    func bestFocusedObservations(
+        from spatialGroups: [PriceParsingService.SpatialObservationGroup],
+        fallback: [OCRTextObservation]
+    ) -> [OCRTextObservation] {
+        let candidates = focusedObservationCandidates(from: spatialGroups)
+        guard let bestCandidate = candidates.max(by: { lhs, rhs in lhs.score < rhs.score }) else {
+            return spatialGroups.first?.observations ?? fallback
+        }
+
+        return bestCandidate.observations
+    }
+
+    func focusedObservationCandidates(
+        from spatialGroups: [PriceParsingService.SpatialObservationGroup]
+    ) -> [(observations: [OCRTextObservation], score: Float)] {
+        guard !spatialGroups.isEmpty else {
+            return []
+        }
+
+        var candidates: [(observations: [OCRTextObservation], score: Float)] = spatialGroups.map { group in
+            let ordered = PriceParsingService.orderObservationsInReadingOrder(group.observations)
+            return (observations: ordered, score: focusedObservationScore(for: ordered))
+        }
+
+        for primaryIndex in spatialGroups.indices {
+            for secondaryIndex in spatialGroups.indices where secondaryIndex != primaryIndex {
+                let primaryGroup = spatialGroups[primaryIndex]
+                let secondaryGroup = spatialGroups[secondaryIndex]
+                guard shouldMergeFocusedObservationGroups(primaryGroup, secondaryGroup) else {
+                    continue
+                }
+
+                let merged = PriceParsingService.orderObservationsInReadingOrder(
+                    primaryGroup.observations + secondaryGroup.observations
+                )
+                candidates.append((observations: merged, score: focusedObservationScore(for: merged)))
+            }
+        }
+
+        return candidates
+    }
+
+    func focusedObservationScore(for observations: [OCRTextObservation]) -> Float {
+        let cleanedObservations = PriceParsingService.removeObviousNoise(from: observations)
+        let priceSignalCount = cleanedObservations.filter {
+            PriceParsingService.containsPriceSignal(in: $0.string)
+        }.count
+        let descriptiveCount = cleanedObservations.filter {
+            PriceParsingService.isDescriptiveObservation($0)
+        }.count
+        let priceDominanceBonus: Float = priceSignalCount >= 2 ? 2 : 0
+        let descriptiveBonus: Float = descriptiveCount >= 2 ? 1 : 0
+        let confidenceScore = PriceParsingService.averageConfidence(in: cleanedObservations) ?? 0
+
+        return Float(cleanedObservations.count) * 1.5
+            + Float(priceSignalCount) * 2.5
+            + Float(descriptiveCount) * 1.5
+            + priceDominanceBonus
+            + descriptiveBonus
+            + confidenceScore
+    }
+
+    func shouldMergeFocusedObservationGroups(
+        _ lhs: PriceParsingService.SpatialObservationGroup,
+        _ rhs: PriceParsingService.SpatialObservationGroup
+    ) -> Bool {
+        guard
+            let lhsFrame = PriceParsingService.spatialFrame(for: lhs.observations),
+            let rhsFrame = PriceParsingService.spatialFrame(for: rhs.observations)
+        else {
+            return false
+        }
+
+        let verticalGap = max(0, lhsFrame.minY - rhsFrame.maxY, rhsFrame.minY - lhsFrame.maxY)
+        guard verticalGap <= 0.12 else {
+            return false
+        }
+
+        let horizontalGap = max(0, lhsFrame.minX - rhsFrame.maxX, rhsFrame.minX - lhsFrame.maxX)
+        guard horizontalGap <= 0.28 else {
+            return false
+        }
+
+        let lhsHasPriceSignal = lhs.observations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
+        let rhsHasPriceSignal = rhs.observations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
+        let lhsHasDescription = lhs.observations.contains { PriceParsingService.isDescriptiveObservation($0) }
+        let rhsHasDescription = rhs.observations.contains { PriceParsingService.isDescriptiveObservation($0) }
+        let lhsPriceSignalCount = lhs.observations.filter { PriceParsingService.containsPriceSignal(in: $0.string) }.count
+        let rhsPriceSignalCount = rhs.observations.filter { PriceParsingService.containsPriceSignal(in: $0.string) }.count
+        let lhsDescriptiveCount = lhs.observations.filter { PriceParsingService.isDescriptiveObservation($0) }.count
+        let rhsDescriptiveCount = rhs.observations.filter { PriceParsingService.isDescriptiveObservation($0) }.count
+        let lhsIsPriceDominant = lhsPriceSignalCount > lhsDescriptiveCount
+        let rhsIsPriceDominant = rhsPriceSignalCount > rhsDescriptiveCount
+        let lhsIsDescriptionDominant = lhsDescriptiveCount > lhsPriceSignalCount
+        let rhsIsDescriptionDominant = rhsDescriptiveCount > rhsPriceSignalCount
+
+        let addsMissingPriceOrDescription = (
+            lhsHasDescription && !lhsHasPriceSignal && rhsIsPriceDominant
+        ) || (
+            rhsHasDescription && !rhsHasPriceSignal && lhsIsPriceDominant
+        ) || (
+            lhsHasPriceSignal && !lhsHasDescription && rhsIsDescriptionDominant
+        ) || (
+            rhsHasPriceSignal && !rhsHasDescription && lhsIsDescriptionDominant
+        )
+        guard addsMissingPriceOrDescription else {
+            return false
+        }
+
+        return true
+    }
 }
 
 extension PriceParsingService {
@@ -244,7 +359,21 @@ extension PriceParsingService {
         let centerDistance = abs(groupFrame.midX - boundingBox.midX)
         let sameColumn = overlapRatio >= 0.35 || centerDistance <= max(groupFrame.width, boundingBox.width) * 0.9
 
-        return sameColumn
+        if sameColumn {
+            return true
+        }
+
+        let verticalOverlap = groupFrame.intersection(boundingBox).height
+        let minimumHeight = min(groupFrame.height, boundingBox.height)
+        let verticalOverlapRatio = minimumHeight > 0 ? verticalOverlap / minimumHeight : 0
+        let horizontalGap = max(0, boundingBox.minX - groupFrame.maxX, groupFrame.minX - boundingBox.maxX)
+        let observationHasPriceSignal = containsPriceSignal(in: observation.string)
+        let groupHasPriceSignal = group.contains { containsPriceSignal(in: $0.string) }
+        let looksLikeShelfTagRow = verticalOverlapRatio >= 0.45
+            && horizontalGap <= 0.28
+            && (observationHasPriceSignal || groupHasPriceSignal)
+
+        return looksLikeShelfTagRow
     }
 
     static func spatialFrame(for observations: [OCRTextObservation]) -> CGRect? {
@@ -274,6 +403,9 @@ extension PriceParsingService {
 
     static func removeObviousNoise(from observations: [OCRTextObservation]) -> [OCRTextObservation] {
         var seenKeys = Set<String>()
+        let shouldPreserveNumericPriceFragments = observations.filter {
+            containsPriceSignal(in: $0.string) || isDescriptiveObservation($0)
+        }.count >= 3
 
         return observations.compactMap { observation in
             let sanitized = observation.string.sanitizeOCRLine()
@@ -281,7 +413,12 @@ extension PriceParsingService {
                 return nil
             }
 
-            guard !isObviousNoiseLine(sanitized) else {
+            guard
+                shouldPreserveNumericPriceLikeLine(
+                    sanitized,
+                    inPriceDenseContext: shouldPreserveNumericPriceFragments
+                ) || !isObviousNoiseLine(sanitized)
+            else {
                 return nil
             }
 
@@ -369,6 +506,20 @@ extension PriceParsingService {
         }
 
         return false
+    }
+
+    static func shouldPreserveNumericPriceLikeLine(
+        _ line: String,
+        inPriceDenseContext: Bool
+    ) -> Bool {
+        guard inPriceDenseContext else {
+            return false
+        }
+        guard line.range(of: #"^\d{3,4}$"#, options: .regularExpression) != nil else {
+            return false
+        }
+
+        return canonicalPriceAmount(from: line) != nil
     }
 
     static func containsPriceSignal(in text: String) -> Bool {
@@ -633,7 +784,21 @@ extension PriceParsingService {
 
     static func canonicalPriceAmount(from text: String) -> String? {
         if text.contains(".") {
-            return Decimal(string: text).map { "\($0)" }
+            guard Decimal(string: text) != nil else {
+                return nil
+            }
+
+            let parts = text.split(separator: ".", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else {
+                return text
+            }
+            let dollars = parts[0]
+            let cents = String(parts[1].prefix(2)).padding(
+                toLength: 2,
+                withPad: "0",
+                startingAt: 0
+            )
+            return "\(dollars).\(cents)"
         }
 
         guard

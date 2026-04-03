@@ -146,6 +146,18 @@ final class ScanViewModel: ObservableObject {
         draft.itemName = result.itemNameHint ?? ""
         draft.review = result.review
 
+#if DEBUG
+        print("========== SCAN RESULT ==========")
+        print("itemName: \(result.itemNameHint ?? "nil")")
+        print("price: \(result.price.map { "\($0)" } ?? "nil")")
+        print("unit: \(result.unit?.rawValue ?? "nil")")
+        print("quantity: \(result.quantity.map { "\($0)" } ?? "nil")")
+        print("priceCandidates: \(result.priceCandidates.map { "\($0.value) src=\($0.sourceText)" })")
+        print("supportingLines: \(result.supportingLines)")
+        print("review: \(result.review.issues.map(\.rawValue)) usedFM=\(result.review.usedFoundationModel)")
+        print("===============================")
+#endif
+
         if sessionStore.nearbyCandidates.isEmpty {
             let stores = await storeService.fetchNearbyStores(location: currentLocation)
             guard activeScanID == scanID else {

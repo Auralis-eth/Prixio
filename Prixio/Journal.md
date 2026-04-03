@@ -260,6 +260,42 @@ That same pass also added a lightweight evaluation suite over realistic fixtures
 
 The satisfying part is the result: the targeted ship-gate run passed cleanly in the current harness, six tests passed, zero failed, and the build stayed green. That does not mean the parser is done learning. It means release quality now has a smaller, sharper definition than “it seems pretty good on my machine,” which is how adults avoid shipping folklore.
 
+### War Story: The Shelf Tag Was Split in Two, So the Parser Fell for the Candy Bag
+One real scan of a Cadbury shelf tag exposed a geometry bug that text-only fixtures were politely hiding. OCR picked up three different neighborhoods at once:
+- product-packaging text on the candy bags
+- the shelf-tag description on the left side of the label
+- the real shelf price in a separate right-hand price block
+
+The parser’s spatial grouping logic was too column-minded. It happily grouped the bag text together, grouped the shelf-tag description separately, and grouped the price block separately. Then it crowned the “strongest” cluster, which turned out to be the product bag whispering `Cadbury`, `Mini Eggs`, and an unrelated `8.75`-looking fragment. That is how you end up with a result that feels believable enough to be dangerous: partial item name, wrong price, confident posture.
+
+The fix was precise:
+- let spatial grouping bridge left-description and right-price blocks when they align like one shelf-tag row
+- keep that merged shelf-tag cluster together long enough for scoring to see the actual `17.99` winner
+- when assisted extraction has multiple descriptive lines but no canonical name, merge those line fragments instead of grabbing the first digit-free line and pretending the name is complete
+
+The lesson is one worth keeping on a sticky note: geometry bugs often dress up like ranking bugs. If the parser is choosing the wrong evidence neighborhood, no amount of downstream confidence math will rescue it.
+
+### War Story: The OCR Saw `1799`, the Parser Threw It Away, and `875 g` Stole the Job
+The next round of debugging finally caught the parser in the act with real console output instead of polite guesses. Vision did not completely miss the shelf price. It saw `1799`. The parser was the one being reckless.
+
+The failure chain was painfully educational:
+- the focused shelf-tag group already contained the right product lines
+- raw OCR included `1799`
+- noise cleanup dropped that numeric-only line before candidate extraction
+- implied-price extraction then looked at `875 g` and cheerfully promoted it to `$8.75`
+- item-name cleanup kept dragging promo/seasonal crumbs like `THIS WEEK` and `Easter` into the final name
+
+That is the kind of bug that makes every downstream stage look suspicious even though the real crime happened near the front door.
+
+The fix was a bundle of small, specific rules:
+- preserve `3` to `4` digit numeric lines like `1799` when they live in a price-dense shelf-tag context
+- reject implied-price candidates when the digits are clearly part of package-size text like `875 g`
+- keep direct price normalization honest so `$5.00 ea` stays `$5.00 ea` instead of losing its cents
+- strip promo and seasonal leftovers from assembled item-name fragments
+- penalize price lines sitting next to a standalone `SAVE` marker so a savings amount does not outrank the actual shelf price
+
+The senior-engineering lesson here is simple: real parser bugs are often a relay race. If one stage deletes the real evidence and the next stage promotes a fake one, you do not need one “smart” fix. You need to stop both runners.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

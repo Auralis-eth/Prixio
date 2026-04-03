@@ -79,6 +79,10 @@ struct PriceCandidateScorer {
                 )
                 + promotionalPriorityBoost(for: candidate.sourceText)
                 + unitLabelPriorityBoost(for: candidate.sourceText)
+                - nearbySavePenalty(
+                    sourceLineIndexes: sourceIndexes,
+                    observations: observations
+                )
                 - regularPricePenalty(for: candidate.sourceText)
                 - depositPenalty(for: candidate.sourceText)
 
@@ -216,7 +220,8 @@ struct PriceCandidateScorer {
     ) -> PriceCandidate? {
         guard
             text.count >= 3,
-            let integerValue = Int(text)
+            let integerValue = Int(text),
+            !looksLikeExplicitSizeContext(sourceText, token: text)
         else {
             return nil
         }
@@ -310,6 +315,24 @@ struct PriceCandidateScorer {
         matchesContextPattern(PriceParsingService.depositMarkerPattern, in: text) ? 3 : 0
     }
 
+    func nearbySavePenalty(
+        sourceLineIndexes: [Int],
+        observations: [OCRTextObservation]
+    ) -> Int {
+        let neighboringLines = sourceLineIndexes.flatMap { index in
+            [index - 1, index + 1]
+                .filter { observations.indices.contains($0) }
+                .map { observations[$0].string }
+        }
+
+        let hasStandaloneSaveMarker = neighboringLines.contains { line in
+            line.range(of: #"(?i)^\W*save\b"#, options: .regularExpression) != nil
+                || line.range(of: #"(?i)^\W*-\s*save\b"#, options: .regularExpression) != nil
+        }
+
+        return hasStandaloneSaveMarker ? 3 : 0
+    }
+
     func matchesContextPattern(_ pattern: String, in text: String) -> Bool {
         text.range(
             of: pattern,
@@ -337,6 +360,15 @@ struct PriceCandidateScorer {
         let lowered = text.lowercased()
         return PriceParsingConfidenceResolver().containsPhoneNumber(in: lowered)
             || PriceParsingConfidenceResolver().looksLikeDateLine(lowered)
+            || PriceParsingService.containsExplicitSizeToken(in: text)
+    }
+
+    func looksLikeExplicitSizeContext(_ sourceText: String, token: String) -> Bool {
+        let escapedToken = NSRegularExpression.escapedPattern(for: token)
+        return sourceText.range(
+            of: #"(?i)\b\#(escapedToken)\s*(g|kg|ml|l|oz|lb|pk|ct|count|pack)\b"#,
+            options: .regularExpression
+        ) != nil
     }
 
     func hasCompetingTopCandidates(_ candidates: [PriceCandidate]) -> Bool {
