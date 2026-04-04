@@ -327,6 +327,19 @@ The fix was not to turn every image into a brittle exact-output contract. That w
 
 That split is the useful pattern to keep. Exact assertions belong on a few deliberate fixtures. Broad “does the pipeline still work on the whole shelf?” coverage belongs on the whole image set. Together they catch both regression classes: precise parser drift and boring end-to-end breakage.
 
+### War Story: The Camera Was Fine. The State Machine Was Lying.
+Device QA found a very product-shaped bug: after a capture, `Retake` could leave the app staring at the old photo instead of returning to the live camera. Repeated captures in one session had the same smell. That kind of issue is easy to misdiagnose as an AVCapture problem, but the actual bug lived higher up the stack.
+
+The scan flow was using “do I still have a `UIImage` around?” as a stand-in for presentation state. That is convenient right up until a sheet dismisses, a reset path misses one image reference, or a reused state object keeps the last capture alive just long enough to look broken. Then the UI feels haunted even though the camera session itself is still healthy.
+
+The fix was to stop letting stale image references drive the whole screen:
+- only show the captured/imported image while review is actually active
+- treat confirmation-sheet dismissal as a real reset path that clears transient scan state
+- force the preview view to refresh after retake/discard/save so repeated capture sessions rebind cleanly
+- add direct `ScanViewModel` tests for those reset paths instead of relying only on taps and vibes
+
+That same pass added a practical QA helper: a button in the confirmation sheet can now save the current scan photo to Photos using add-only photo-library access. That gives device QA a cheap way to preserve bad scans for later parser work instead of trying to recreate them from memory.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

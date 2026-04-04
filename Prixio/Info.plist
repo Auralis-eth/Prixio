@@ -8,6 +8,8 @@
 	<string>Prixio uses your location to suggest nearby grocery stores while scanning.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Prixio can import a photo if the camera is unavailable or you want to scan an existing image.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Prixio can save a scanned price-tag photo to your library so you can reference it later.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

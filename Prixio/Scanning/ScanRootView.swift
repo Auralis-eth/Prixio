@@ -35,7 +35,7 @@ struct ScanRootView: View {
 
                 if viewModel.showToast {
                     VStack {
-                        ToastView(text: "Price saved")
+                        ToastView(text: viewModel.toastMessage)
                         Spacer()
                     }
                     .padding(.top, 24)
@@ -75,7 +75,12 @@ struct ScanRootView: View {
                 await handleSelectedPhotoItem(item)
             }
         }
-        .sheet(isPresented: $viewModel.isShowingConfirmationSheet) {
+        .sheet(isPresented: $viewModel.isShowingConfirmationSheet, onDismiss: {
+            viewModel.handleConfirmationSheetDismissed()
+            Task {
+                await cameraController.resumePreview()
+            }
+        }) {
             ConfirmationSheet(
                 draft: $viewModel.draft,
                 isProcessingOCR: viewModel.isProcessingOCR,
@@ -86,14 +91,24 @@ struct ScanRootView: View {
                 onOpenStoreSelection: { viewModel.isShowingStoreSheet = true },
                 onRetake: {
                     viewModel.dismissConfirmationForRetake()
+                    Task {
+                        await cameraController.resumePreview()
+                    }
                 },
                 onDiscard: viewModel.discardCapture,
+                onSavePhotoReference: {
+                    await viewModel.saveCurrentImageToPhotoLibrary()
+                },
                 onSave: {
                     viewModel.save(context: modelContext)
+                    Task {
+                        await cameraController.resumePreview()
+                    }
                 }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .interactiveDismissDisabled(viewModel.isProcessingOCR)
         }
         .sheet(isPresented: $viewModel.isShowingStoreSheet) {
             StoreSelectionSheet(
@@ -143,6 +158,7 @@ struct ScanRootView: View {
             } else {
                 if cameraController.authorizationStatus == .authorized {
                     CameraPreviewView(session: cameraController.session)
+                        .id(viewModel.cameraPreviewRefreshID)
                         .ignoresSafeArea()
                         .overlay {
                             Rectangle()
@@ -293,7 +309,8 @@ struct ScanRootView: View {
                 await viewModel.handlePickedImage(
                     image,
                     sessionStore: sessionStore,
-                    currentLocation: locationManager.currentLocation
+                    currentLocation: locationManager.currentLocation,
+                    source: .camera
                 )
             }
         }
@@ -315,7 +332,8 @@ struct ScanRootView: View {
         await viewModel.handlePickedImage(
             image,
             sessionStore: sessionStore,
-            currentLocation: locationManager.currentLocation
+            currentLocation: locationManager.currentLocation,
+            source: .photoLibrary
         )
     }
 }

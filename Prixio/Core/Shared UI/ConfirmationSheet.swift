@@ -18,10 +18,14 @@ struct ConfirmationSheet: View {
     let onOpenStoreSelection: () -> Void
     let onRetake: () -> Void
     let onDiscard: () -> Void
+    let onSavePhotoReference: () async -> String
     let onSave: () -> Void
 
     @State private var isShowingImageViewer = false
     @State private var isShowingSaveReviewAlert = false
+    @State private var isSavingPhotoReference = false
+    @State private var photoSaveMessage: String?
+    @State private var isShowingPhotoSaveAlert = false
 
     var body: some View {
         ScrollView {
@@ -53,6 +57,23 @@ struct ConfirmationSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+
+                    Spacer()
+
+                    Button {
+                        handleSavePhotoReferenceTap()
+                    } label: {
+                        if isSavingPhotoReference {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Save Photo", systemImage: "square.and.arrow.down")
+                                .labelStyle(.iconOnly)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(capturedImage == nil || isSavingPhotoReference)
+                    .accessibilityLabel("Save scan image to Photos")
                 }
 
                 reviewCard
@@ -199,6 +220,11 @@ struct ConfirmationSheet: View {
         } message: {
             Text(draft.review.summary)
         }
+        .alert("Save Photo", isPresented: $isShowingPhotoSaveAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(photoSaveMessage ?? "Finished saving the photo.")
+        }
     }
 
     private func fieldTitle(_ text: String) -> some View {
@@ -341,6 +367,22 @@ struct ConfirmationSheet: View {
             return
         }
         onSave()
+    }
+
+    private func handleSavePhotoReferenceTap() {
+        guard !isSavingPhotoReference else {
+            return
+        }
+
+        isSavingPhotoReference = true
+        Task {
+            let message = await onSavePhotoReference()
+            await MainActor.run {
+                photoSaveMessage = message
+                isSavingPhotoReference = false
+                isShowingPhotoSaveAlert = true
+            }
+        }
     }
 }
 

@@ -6,6 +6,7 @@
 //
 
 import CoreLocation
+import Photos
 import SwiftData
 import SwiftUI
 import UIKit
@@ -13,6 +14,11 @@ import UIKit
 import Combine
 @MainActor
 final class ScanViewModel: ObservableObject {
+    enum ScanInputSource: Equatable {
+        case camera
+        case photoLibrary
+    }
+
     @Published var draft = PriceEntryDraft()
     @Published var isShowingImagePicker = false
     @Published var isShowingConfirmationSheet = false
@@ -22,13 +28,19 @@ final class ScanViewModel: ObservableObject {
     @Published var previewImage: UIImage?
     @Published var isFlashEnabled = false
     @Published var showToast = false
+    @Published var toastMessage = "Price saved"
     @Published var recentItems: [String] = []
     @Published var searchResults: [StoreCandidate] = []
+    @Published private(set) var cameraPreviewRefreshID = UUID()
 
     private let storeService = StoreDetectionService()
+    private(set) var currentScanSource: ScanInputSource?
 
     var displayImage: UIImage? {
-        previewImage ?? capturedImage
+        guard isShowingConfirmationSheet || isProcessingOCR else {
+            return nil
+        }
+        return previewImage ?? capturedImage
     }
 
     var storeChipTitle: String {
@@ -116,7 +128,8 @@ final class ScanViewModel: ObservableObject {
     func handlePickedImage(
         _ image: UIImage?,
         sessionStore: ScanSessionStore,
-        currentLocation: CLLocation?
+        currentLocation: CLLocation?,
+        source: ScanInputSource = .photoLibrary
     ) async {
         guard let image else {
             return
@@ -124,14 +137,7 @@ final class ScanViewModel: ObservableObject {
 
         let scanID = UUID()
         activeScanID = scanID
-        previewImage = image
-        capturedImage = image
-        draft = PriceEntryDraft(
-            capturedAt: .now,
-            imageData: image.jpegData(compressionQuality: 0.88)
-        )
-        isProcessingOCR = true
-        isShowingConfirmationSheet = true
+        beginImageReview(image, source: source)
 
         let result = await image.extractOCR()
         guard activeScanID == scanID else {
@@ -202,19 +208,58 @@ final class ScanViewModel: ObservableObject {
     }
 
     func dismissConfirmationForRetake() {
-        invalidateActiveScan()
-        isShowingConfirmationSheet = false
-        capturedImage = nil
-        previewImage = nil
-        draft = PriceEntryDraft()
+        resetCaptureState()
     }
 
     func discardCapture() {
-        invalidateActiveScan()
-        isShowingConfirmationSheet = false
-        capturedImage = nil
-        previewImage = nil
-        draft = PriceEntryDraft()
+        resetCaptureState()
+    }
+
+    func handleConfirmationSheetDismissed() {
+        guard !isShowingConfirmationSheet else {
+            return
+        }
+
+        if capturedImage != nil || previewImage != nil || activeScanID != nil {
+            resetCaptureState()
+        }
+    }
+
+    func beginImageReview(_ image: UIImage, source: ScanInputSource) {
+        currentScanSource = source
+        previewImage = image
+        capturedImage = image
+        draft = PriceEntryDraft(
+            capturedAt: .now,
+            imageData: image.jpegData(compressionQuality: 0.88)
+        )
+        isProcessingOCR = true
+        isShowingConfirmationSheet = true
+    }
+
+    func saveCurrentImageToPhotoLibrary() async -> String {
+        guard let image = capturedImage ?? previewImage else {
+            return "No scan image is available to save."
+        }
+
+        let authorizationStatus = await resolvedPhotoLibraryAuthorizationStatus()
+        switch authorizationStatus {
+        case .authorized, .limited:
+            break
+        case .denied, .restricted:
+            return "Photo Library access is denied. Enable add access in Settings to save reference photos."
+        case .notDetermined:
+            return "Photo Library permission was not resolved."
+        @unknown default:
+            return "Photo Library access is unavailable right now."
+        }
+
+        do {
+            try await saveImageToPhotoLibrary(image)
+            return "Saved this scan image to Photos."
+        } catch {
+            return "Could not save the image to Photos."
+        }
     }
 
     func save(context: ModelContext) {
@@ -226,6 +271,7 @@ final class ScanViewModel: ObservableObject {
             try PriceEntryRepository(context: context).saveEntry(from: draft)
             Haptics.success()
             withAnimation(.easeOut(duration: 0.2)) {
+                toastMessage = "Price saved"
                 showToast = true
             }
             discardCapture()
@@ -318,5 +364,42 @@ final class ScanViewModel: ObservableObject {
     private func invalidateActiveScan() {
         activeScanID = nil
         isProcessingOCR = false
+    }
+
+    private func resetCaptureState() {
+        invalidateActiveScan()
+        isShowingConfirmationSheet = false
+        capturedImage = nil
+        previewImage = nil
+        currentScanSource = nil
+        draft = PriceEntryDraft()
+        cameraPreviewRefreshID = UUID()
+    }
+
+    private func resolvedPhotoLibraryAuthorizationStatus() async -> PHAuthorizationStatus {
+        let currentStatus = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        guard currentStatus == .notDetermined else {
+            return currentStatus
+        }
+        return await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+    }
+
+    private func saveImageToPhotoLibrary(_ image: UIImage) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }, completionHandler: { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: CocoaError(.fileWriteUnknown))
+                }
+            })
+        }
     }
 }

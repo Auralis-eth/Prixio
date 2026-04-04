@@ -50,6 +50,17 @@ final class CameraController: NSObject, ObservableObject {
         }
     }
 
+    func resumePreview() async {
+        guard authorizationStatus == .authorized else {
+            return
+        }
+
+        if !isConfigured {
+            await configureSession()
+        }
+        await startSession()
+    }
+
     private func configureSession() async {
         await withCheckedContinuation { continuation in
             sessionQueue.async {
