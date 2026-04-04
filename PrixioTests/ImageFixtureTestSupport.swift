@@ -6,6 +6,25 @@ import Vision
 private final class ImageFixtureBundleToken: NSObject {}
 
 enum ImageFixtureTestSupport {
+    static let allFixtureNames = [
+        "Screenshot 2026-04-02 at 3.53.44 PM",
+        "IMG_0472",
+        "IMG_0473",
+        "IMG_0474",
+        "IMG_0475",
+        "IMG_0476",
+        "IMG_0477",
+        "IMG_0478",
+        "IMG_0479",
+        "IMG_0480",
+        "IMG_0482",
+        "IMG_0483"
+    ]
+
+    static let fixtureBatchA = Array(allFixtureNames.prefix(4))
+    static let fixtureBatchB = Array(allFixtureNames.dropFirst(4).prefix(4))
+    static let fixtureBatchC = Array(allFixtureNames.dropFirst(8))
+
     static func loadImage(
         named name: String,
         fileExtension: String = "png"

@@ -5,6 +5,82 @@ import UIKit
 
 @MainActor
 struct ImageFixtureParsingTests {
+    func assertFixtureLoadsAndProducesOCR(named fixtureName: String) async throws {
+        let image = try ImageFixtureTestSupport.loadImage(named: fixtureName)
+        let observations = try await ImageFixtureTestSupport.extractObservations(from: image)
+
+        #expect(observations.isEmpty == false, Comment(rawValue: fixtureName))
+        #expect(
+            observations.contains(where: { $0.string.isMeaningfulObservationLine() }),
+            Comment(rawValue: fixtureName)
+        )
+    }
+
+    func assertFixtureProducesReviewableParse(named fixtureName: String) async throws {
+        let image = try ImageFixtureTestSupport.loadImage(named: fixtureName)
+        let observations = try await ImageFixtureTestSupport.extractObservations(from: image)
+        let result = await PriceParsingService.extract(from: observations)
+
+        #expect(result.rawText.isEmpty == false, Comment(rawValue: fixtureName))
+        #expect(result.review.summary.isEmpty == false, Comment(rawValue: fixtureName))
+        #expect(
+            result.itemNameHint != nil || result.price != nil || !result.priceCandidates.isEmpty,
+            Comment(rawValue: fixtureName)
+        )
+
+        if result.priceCandidates.isEmpty {
+            #expect(result.review.state == .reviewRequired, Comment(rawValue: fixtureName))
+        }
+    }
+
+    @Test(
+        .tags(.ocr, .product, .evaluation, .realWorldOCR),
+        arguments: ImageFixtureTestSupport.fixtureBatchA
+    )
+    func fixtureBatchALoadsAndProducesOCR(named fixtureName: String) async throws {
+        try await assertFixtureLoadsAndProducesOCR(named: fixtureName)
+    }
+
+    @Test(
+        .tags(.ocr, .product, .evaluation, .realWorldOCR),
+        arguments: ImageFixtureTestSupport.fixtureBatchB
+    )
+    func fixtureBatchBLoadsAndProducesOCR(named fixtureName: String) async throws {
+        try await assertFixtureLoadsAndProducesOCR(named: fixtureName)
+    }
+
+    @Test(
+        .tags(.ocr, .product, .evaluation, .realWorldOCR),
+        arguments: ImageFixtureTestSupport.fixtureBatchC
+    )
+    func fixtureBatchCLoadsAndProducesOCR(named fixtureName: String) async throws {
+        try await assertFixtureLoadsAndProducesOCR(named: fixtureName)
+    }
+
+    @Test(
+        .tags(.ocr, .product, .evaluation, .realWorldOCR),
+        arguments: ImageFixtureTestSupport.fixtureBatchA
+    )
+    func fixtureBatchAProducesReviewableParse(named fixtureName: String) async throws {
+        try await assertFixtureProducesReviewableParse(named: fixtureName)
+    }
+
+    @Test(
+        .tags(.ocr, .product, .evaluation, .realWorldOCR),
+        arguments: ImageFixtureTestSupport.fixtureBatchB
+    )
+    func fixtureBatchBProducesReviewableParse(named fixtureName: String) async throws {
+        try await assertFixtureProducesReviewableParse(named: fixtureName)
+    }
+
+    @Test(
+        .tags(.ocr, .product, .evaluation, .realWorldOCR),
+        arguments: ImageFixtureTestSupport.fixtureBatchC
+    )
+    func fixtureBatchCProducesReviewableParse(named fixtureName: String) async throws {
+        try await assertFixtureProducesReviewableParse(named: fixtureName)
+    }
+
     @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))
     func cadburyShelfTagImageFixtureStillProducesAReviewableParse() async throws {
         let image = try ImageFixtureTestSupport.loadImage(

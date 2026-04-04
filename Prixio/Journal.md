@@ -318,6 +318,15 @@ That restored the useful names without reopening the junk-text floodgates. The s
 
 Meanwhile, one live Vision fixture taught the usual uncomfortable truth: OCR itself is not stable enough to pin exact raw strings forever. The deterministic parser expectations now live in captured OCR tests, while the live-image tests only prove the pipeline still produces a reviewable parse instead of pretending Apple’s OCR engine signed a blood oath.
 
+### War Story: “We Have a Folder Full of Images” Is Not the Same as “We Test the Folder”
+At one point the project had eleven numbered fixture images sitting in `PrixioTests/Images` plus the Cadbury screenshot, but only two of them were actually exercised by live Vision-backed tests. That is the testing equivalent of owning a fire extinguisher collection and only checking one of them has pressure.
+
+The fix was not to turn every image into a brittle exact-output contract. That would have been expensive and flaky. Instead, the suite now has two layers:
+- strict curated image tests for the high-signal fixtures we already understand well
+- full-set sanity coverage that loads, OCRs, and parses every fixture image and requires non-empty OCR plus a structurally reviewable parse
+
+That split is the useful pattern to keep. Exact assertions belong on a few deliberate fixtures. Broad “does the pipeline still work on the whole shelf?” coverage belongs on the whole image set. Together they catch both regression classes: precise parser drift and boring end-to-end breakage.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
