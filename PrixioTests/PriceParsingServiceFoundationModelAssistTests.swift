@@ -362,4 +362,32 @@ struct PriceParsingServiceFoundationModelAssistTests {
         #expect((multiProduct.confidence ?? 1) < (cleanAgreement.confidence ?? 0))
         #expect((multiProduct.confidence ?? 1) <= 0.65)
     }
+
+    @Test(.tags(.ocr, .product))
+    func saveAdjacentModelCandidateCannotOverrideHeuristicWinner() async throws {
+        let observations = [
+            OCRTextObservation(string: "AD Exp Mar 04, 2026", confidence: 1.0),
+            OCRTextObservation(string: "1799", confidence: 1.0),
+            OCRTextObservation(string: "$5.00 ea", confidence: 1.0),
+            OCRTextObservation(string: "- SAVE", confidence: 1.0),
+            OCRTextObservation(string: "Cadbury Chocolate Mini", confidence: 1.0),
+            OCRTextObservation(string: "Eggs Easter 875 g", confidence: 1.0),
+            OCRTextObservation(string: "THIS WEEK", confidence: 1.0)
+        ]
+
+        let result = PriceParsingService._test_mergeAssistedExtraction(
+            observations: observations,
+            assisted: PriceParsingService._test_assistedExtractionResult(
+                targetLineIndexes: [1, 2],
+                selectedPriceCandidateIndex: 1,
+                selectedPriceKind: .sale,
+                canonicalItemName: "Cadbury Chocolate Mini Eggs",
+                ambiguityNotes: ["save amount nearby"],
+                confidenceBucket: .high
+            )
+        )
+
+        #expect(result.price == Decimal(string: "17.99"))
+        #expect(result.itemNameHint == "Cadbury Chocolate Mini Eggs")
+    }
 }

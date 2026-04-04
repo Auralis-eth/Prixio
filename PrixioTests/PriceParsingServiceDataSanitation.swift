@@ -253,4 +253,75 @@ struct PriceParsingServiceDataSanitation {
         #expect(snapshot.detectedUnit == .lb)
         #expect(snapshot.resolvedQuantity == Decimal(1))
     }
+
+    @Test(.tags(.ocr, .product))
+    func removeObviousNoisePreservesStandaloneImpliedPriceInShelfTagContext() async throws {
+        let cleaned = PriceParsingService.removeObviousNoise(from: [
+            OCRTextObservation(string: "1799", confidence: 1.0),
+            OCRTextObservation(string: "$5.00 ea", confidence: 1.0),
+            OCRTextObservation(string: "Cadbury Chocolate Mini", confidence: 1.0),
+            OCRTextObservation(string: "Eggs Easter 875 g", confidence: 1.0)
+        ])
+
+        #expect(cleaned.map(\.string).contains("1799"))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func impliedCurrencyFilteringRejectsExplicitSizeContext() async throws {
+        let candidates = PriceCandidateScorer().extractInlinePriceCandidates(
+            from: OCRTextObservation(string: "Eggs Easter 875 g", confidence: 1.0)
+        )
+
+        #expect(candidates.isEmpty)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func saveAdjacentPenaltyAppliesOnlyWhenStandaloneSaveMarkerIsNearby() async throws {
+        let scorer = PriceCandidateScorer()
+        let penalty = scorer.nearbySavePenalty(
+            sourceLineIndexes: [1],
+            observations: [
+                OCRTextObservation(string: "- SAVE", confidence: 1.0),
+                OCRTextObservation(string: "$5.00 ea", confidence: 1.0),
+                OCRTextObservation(string: "1799", confidence: 1.0)
+            ]
+        )
+        let noPenalty = scorer.nearbySavePenalty(
+            sourceLineIndexes: [1],
+            observations: [
+                OCRTextObservation(string: "Organic Raspberries", confidence: 1.0),
+                OCRTextObservation(string: "$5.00 ea", confidence: 1.0),
+                OCRTextObservation(string: "Member Price", confidence: 1.0)
+            ]
+        )
+
+        #expect(penalty > 0)
+        #expect(noPenalty == 0)
+    }
+
+    @Test(.tags(.ocr, .product))
+    func saveAdjacentPenaltyDoesNotDisplaceNormalEachPriceWithoutSaveBanner() async throws {
+        let observations = [
+            OCRTextObservation(string: "Organic Raspberries", confidence: 0.93),
+            OCRTextObservation(string: "$5.00 ea", confidence: 0.93),
+            OCRTextObservation(string: "Member Price", confidence: 0.79)
+        ]
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(observations)
+
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "5"))
+    }
+
+    @Test(.tags(.ocr, .product))
+    func itemNameIgnoresDescriptiveProduceCardCopyBelowTheTitle() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "MINI CUCUMBER", confidence: 1.0),
+            OCRTextObservation(string: "Perfect for snacking", confidence: 1.0),
+            OCRTextObservation(string: "High water content helps to keep you", confidence: 1.0),
+            OCRTextObservation(string: "hydrated", confidence: 1.0),
+            OCRTextObservation(string: "$4.00", confidence: 1.0)
+        ])
+
+        #expect(snapshot.itemNameHint == "MINI CUCUMBER")
+        #expect(snapshot.priceCandidates.first?.value == Decimal(string: "4"))
+    }
 }

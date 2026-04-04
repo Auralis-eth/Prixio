@@ -14,17 +14,19 @@ enum ImageFixtureTestSupport {
             return bundleImage
         }
 
-        let sourceDirectory = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-        let fileURL = sourceDirectory.appendingPathComponent("\(name).\(fileExtension)")
-        guard
-            let data = try? Data(contentsOf: fileURL),
-            let image = UIImage(data: data)
-        else {
-            throw FixtureError.missingImage(fileURL.path)
+        let sourceDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let candidateURLs = [
+            sourceDirectory.appendingPathComponent("\(name).\(fileExtension)"),
+            sourceDirectory.appendingPathComponent("Images/\(name).\(fileExtension)")
+        ]
+
+        for fileURL in candidateURLs {
+            if let data = try? Data(contentsOf: fileURL), let image = UIImage(data: data) {
+                return image
+            }
         }
 
-        return image
+        throw FixtureError.missingImage(candidateURLs.map(\.path).joined(separator: ", "))
     }
 
     static func extractObservations(from image: UIImage) async throws -> [OCRTextObservation] {
@@ -82,11 +84,15 @@ enum ImageFixtureTestSupport {
 
         let searchedBundles = Array(NSOrderedSet(array: candidateBundles)).compactMap { $0 as? Bundle }
         for bundle in searchedBundles {
-            guard let url = bundle.url(forResource: name, withExtension: fileExtension) else {
-                continue
-            }
-            if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
-                return image
+            let candidateURLs = [
+                bundle.url(forResource: name, withExtension: fileExtension),
+                bundle.url(forResource: name, withExtension: fileExtension, subdirectory: "Images")
+            ]
+
+            for url in candidateURLs.compactMap({ $0 }) {
+                if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
+                    return image
+                }
             }
         }
 

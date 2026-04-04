@@ -58,6 +58,9 @@ struct PriceParsingItemNameResolver {
         guard !looksLikePromoBanner(trimmed) else {
             return nil
         }
+        guard !looksLikeDescriptiveCopy(trimmed) else {
+            return nil
+        }
 
         let words = trimmed.normalizedWords()
         let hasOCRVariantEvidence = trimmed.digitsAsLettersCount() >= 2
@@ -179,6 +182,57 @@ struct PriceParsingItemNameResolver {
 
     func isPureUnitToken(_ token: String) -> Bool {
         ["ea", "each", "lb", "lbs", "kg", "l", "liter", "litre", "g", "ml"].contains(token)
+    }
+
+    func looksLikeDescriptiveCopy(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.normalizedWords()
+        guard words.count >= 2 else {
+            return false
+        }
+
+        let descriptiveStopwords: Set<String> = [
+            "a",
+            "an",
+            "and",
+            "for",
+            "fresh",
+            "from",
+            "helps",
+            "high",
+            "hydrated",
+            "in",
+            "it",
+            "keep",
+            "of",
+            "perfect",
+            "snacking",
+            "the",
+            "to",
+            "with",
+            "you",
+            "your"
+        ]
+        let stopwordCount = words.filter { descriptiveStopwords.contains($0) }.count
+        let lowercaseTokenCount = trimmed
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .filter { token in
+                let sanitized = token.trimmingCharacters(in: .punctuationCharacters)
+                guard sanitized.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else {
+                    return false
+                }
+                return sanitized == sanitized.lowercased()
+            }
+            .count
+
+        let startsLikeSentence = trimmed.first?.isUppercase == true
+            && trimmed.dropFirst().contains(where: \.isLowercase)
+        let isMostlySentenceCase = lowercaseTokenCount >= max(1, words.count - 1)
+
+        return startsLikeSentence
+            && isMostlySentenceCase
+            && (stopwordCount >= 1 || words.count >= 4)
     }
 
     func mergedItemName(

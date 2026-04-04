@@ -296,6 +296,15 @@ The fix was a bundle of small, specific rules:
 
 The senior-engineering lesson here is simple: real parser bugs are often a relay race. If one stage deletes the real evidence and the next stage promotes a fake one, you do not need one “smart” fix. You need to stop both runners.
 
+### War Story: The Produce Card Was Giving Nutrition Advice, and the Parser Tried to Save It as the Product Name
+The next real-image fixture was almost comically clean. `IMG_0473` showed a produce bin with a tidy card for `MINI CUCUMBER` and a clear `$4.00` price. OCR read it perfectly. Then the parser did something only a parser would do: it glued the helpful marketing copy onto the item name and returned something like `MINI CUCUMBER Perfect for snacking High water content helps to keep you hydrated`.
+
+This was not an OCR problem and not a price problem. It was an item-name-boundary problem. The resolver was acting like any nearby non-price text might be a continuation of the title, which is fine for split shelf-tag names and terrible for produce cards that include little lifestyle blurbs underneath the product name.
+
+The fix was to teach the resolver a new kind of suspicion: descriptive card copy is not a title fragment. Sentence-like lines with stopwords and lowercased explanatory phrasing now get filtered out before they can merge into the winning item name. In practical terms, `MINI CUCUMBER` survives, while `Perfect for snacking` and `High water content helps to keep you hydrated` stay where they belong: useful context, not identity.
+
+This was also the moment the image-fixture harness grew up a little. The loader now looks in `PrixioTests/Images`, there is a real Vision-backed fixture test for `IMG_0473`, and the OCR observations are frozen into captured-fixture tests so the next bug can be diagnosed without rerunning Vision every time. That is a good engineering trade: use the real image to prove the pipeline works, then use frozen OCR to make iteration cheap.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

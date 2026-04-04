@@ -80,6 +80,16 @@ enum CapturedOCRFixtures {
         ]
     }
 
+    static func miniCucumberObservations() -> [OCRTextObservation] {
+        [
+            observation("MINI CUCUMBER", confidence: 1.0, x: 0.430, y: 0.323, width: 0.153, height: 0.015),
+            observation("Perfect for snacking", confidence: 1.0, x: 0.434, y: 0.305, width: 0.087, height: 0.009),
+            observation("High water content helps to keep you", confidence: 1.0, x: 0.434, y: 0.295, width: 0.155, height: 0.009),
+            observation("hydrated", confidence: 1.0, x: 0.436, y: 0.286, width: 0.041, height: 0.007),
+            observation("$4.00", confidence: 1.0, x: 0.469, y: 0.266, width: 0.066, height: 0.022)
+        ]
+    }
+
     private static func observation(
         _ string: String,
         confidence: Float,
