@@ -279,6 +279,14 @@ struct PriceParsingServiceDataSanitation {
     func saveAdjacentPenaltyAppliesOnlyWhenStandaloneSaveMarkerIsNearby() async throws {
         let scorer = PriceCandidateScorer()
         let penalty = scorer.nearbySavePenalty(
+            candidate: PriceCandidate(
+                label: "$5.00",
+                value: Decimal(string: "5")!,
+                quantity: nil,
+                priority: 3,
+                sourceText: "$5.00 ea",
+                confidence: 1.0
+            ),
             sourceLineIndexes: [1],
             observations: [
                 OCRTextObservation(string: "- SAVE", confidence: 1.0),
@@ -287,6 +295,14 @@ struct PriceParsingServiceDataSanitation {
             ]
         )
         let noPenalty = scorer.nearbySavePenalty(
+            candidate: PriceCandidate(
+                label: "$5.00",
+                value: Decimal(string: "5")!,
+                quantity: nil,
+                priority: 3,
+                sourceText: "$5.00 ea",
+                confidence: 1.0
+            ),
             sourceLineIndexes: [1],
             observations: [
                 OCRTextObservation(string: "Organic Raspberries", confidence: 1.0),

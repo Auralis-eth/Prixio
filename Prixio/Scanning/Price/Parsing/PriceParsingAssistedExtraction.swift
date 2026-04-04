@@ -95,6 +95,7 @@ struct PriceParsingAssistedExtractor {
             && shouldPreferModelCandidate(
                 selectedCandidate: selectedCandidate,
                 heuristicCandidate: topHeuristicCandidate,
+                targetLineIndexes: assisted.targetLineIndexes,
                 snapshot: snapshot
             )
         let shouldTrustModelName = assisted.confidenceBucket != .low
@@ -114,11 +115,16 @@ struct PriceParsingAssistedExtractor {
             modelItemName: modelItemName
         )
         let finalLines = supportingLines(from: assisted.targetLineIndexes, snapshot: snapshot)
+        let filteredFinalLines = filteredSupportingLines(
+            finalLines,
+            canonicalItemName: assisted.canonicalItemName
+        )
         let agreementAdjustment = agreementConfidenceAdjustment(
             heuristicResult: heuristicResult,
             selectedCandidate: selectedCandidate,
             finalItemName: finalItemName,
-            finalLines: finalLines,
+            finalLines: filteredFinalLines,
+            trustedModelCandidate: shouldTrustModelCandidate,
             replacedPrice: shouldTrustModelCandidate
         )
         let finalConfidence = mergedConfidence(
@@ -141,7 +147,7 @@ struct PriceParsingAssistedExtractor {
                 usedFoundationModel: true,
                 ambiguityNotes: assisted.ambiguityNotes
             ),
-            supportingLines: finalLines
+            supportingLines: filteredFinalLines
         )
     }
 
@@ -268,6 +274,7 @@ struct PriceParsingAssistedExtractor {
     func shouldPreferModelCandidate(
         selectedCandidate: PriceCandidate?,
         heuristicCandidate: PriceCandidate?,
+        targetLineIndexes: [Int],
         snapshot: PriceParsingService.HeuristicExtractionSnapshot
     ) -> Bool {
         guard let selectedCandidate else {
@@ -286,10 +293,22 @@ struct PriceParsingAssistedExtractor {
             in: snapshot.consolidatedObservations
         )
         if scorer.nearbySavePenalty(
+            candidate: selectedCandidate,
             sourceLineIndexes: selectedIndexes,
             observations: snapshot.consolidatedObservations
         ) > 0 {
             return false
+        }
+
+        let heuristicIndexes = PriceParsingConfidenceResolver().sourceLineIndexes(
+            for: heuristicCandidate,
+            in: snapshot.consolidatedObservations
+        )
+        let targetLineSet = Set(targetLineIndexes)
+        let selectedAlignedWithTarget = !targetLineSet.isDisjoint(with: selectedIndexes)
+        let heuristicAlignedWithTarget = !targetLineSet.isDisjoint(with: heuristicIndexes)
+        if selectedAlignedWithTarget && !heuristicAlignedWithTarget {
+            return true
         }
 
         if selectedCandidate.priority < heuristicCandidate.priority {
@@ -308,6 +327,7 @@ struct PriceParsingAssistedExtractor {
         selectedCandidate: PriceCandidate?,
         finalItemName: String?,
         finalLines: [String],
+        trustedModelCandidate: Bool,
         replacedPrice: Bool
     ) -> Float {
         var adjustment: Float = 0
@@ -318,6 +338,12 @@ struct PriceParsingAssistedExtractor {
             } else {
                 adjustment -= replacedPrice ? 0.04 : 0.08
             }
+        }
+
+        if trustedModelCandidate {
+            adjustment += 0.03
+        } else if selectedCandidate != nil {
+            adjustment -= 0.02
         }
 
         if normalizedComparisonText(finalItemName) == normalizedComparisonText(heuristicResult.itemNameHint) {
@@ -333,6 +359,28 @@ struct PriceParsingAssistedExtractor {
         }
 
         return adjustment
+    }
+
+    func filteredSupportingLines(
+        _ lines: [String],
+        canonicalItemName: String?
+    ) -> [String] {
+        guard canonicalItemName != nil else {
+            return lines
+        }
+
+        let filtered = lines.filter { line in
+            let trimmed = line.sanitizeOCRLine()
+            if PriceParsingService.containsPriceSignal(in: trimmed) {
+                return true
+            }
+            if PriceParsingService.containsExplicitSizeToken(in: trimmed) {
+                return true
+            }
+            return trimmed.digitsAsLettersCount() < 2
+        }
+
+        return filtered.isEmpty ? lines : filtered
     }
 
     func normalizedComparisonText(_ text: String?) -> String? {

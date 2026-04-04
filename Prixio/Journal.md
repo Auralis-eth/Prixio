@@ -305,6 +305,19 @@ The fix was to teach the resolver a new kind of suspicion: descriptive card copy
 
 This was also the moment the image-fixture harness grew up a little. The loader now looks in `PrixioTests/Images`, there is a real Vision-backed fixture test for `IMG_0473`, and the OCR observations are frozen into captured-fixture tests so the next bug can be diagnosed without rerunning Vision every time. That is a good engineering trade: use the real image to prove the pipeline works, then use frozen OCR to make iteration cheap.
 
+### War Story: Keeping `12 PK` Without Marrying `Pepsi`
+One regression round managed to break two opposite things at once, which is how parser work likes to keep you humble. The item-name cleanup started stripping trailing size and pack markers too aggressively, so solid names like `Dr Pepper Zero 12 PK`, `Sparkling Water 12 PK`, and `Coca Cola Zero Sugar 2 L` came back on a crash diet. Then the first attempt to fix that swung too far in the other direction and started over-merging nearby text, producing gems like `Coke Zero Pepsi` and `Cadbury Chocolate Mini Eggs Qadouro Mind`.
+
+The real lesson was that “keep size tokens” and “merge nearby fragments” are not the same rule.
+
+The fix ended up being a two-part truce:
+- preserve trailing size and pack markers only on the primary winning product line
+- only merge a secondary fragment when it earns it by sharing token overlap or carrying an explicit size/pack signal
+
+That restored the useful names without reopening the junk-text floodgates. The side quest was assisted extraction: the Foundation Models merge path was being too deferential to heuristic scoring, so valid model-selected candidates for the correct product cluster could still lose to the old winner. That got corrected by letting target-line alignment beat raw priority when the selected candidate clearly belongs to a different product block.
+
+Meanwhile, one live Vision fixture taught the usual uncomfortable truth: OCR itself is not stable enough to pin exact raw strings forever. The deterministic parser expectations now live in captured OCR tests, while the live-image tests only prove the pipeline still produces a reviewable parse instead of pretending Apple’s OCR engine signed a blood oath.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

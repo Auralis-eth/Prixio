@@ -246,34 +246,52 @@ struct PriceParsingItemNameResolver {
             .filter { abs($0 - bestCandidate.lineIndex) <= 2 }
             .sorted()
             .filter { observations.indices.contains($0) }
-        let fragments = nearbyIndexes.compactMap { index -> String? in
+        let fragments = nearbyIndexes.compactMap { index -> (line: String, fragment: String)? in
             guard let candidate = candidateMap[index] else {
                 return nil
             }
-            return cleanedNameFragment(candidate.line)
+            guard let fragment = cleanedNameFragment(
+                candidate.line,
+                preserveTrailingSizeTokens: index == bestCandidate.lineIndex
+            ) else {
+                return nil
+            }
+            return (line: candidate.line, fragment: fragment)
         }
 
         guard let firstFragment = fragments.first else {
             return nil
         }
 
-        return fragments.dropFirst().reduce(firstFragment) { partialResult, fragment in
-            mergeNameFragments(partialResult, fragment)
+        return fragments.dropFirst().reduce(firstFragment.fragment) { partialResult, candidate in
+            guard shouldMergeNameFragment(
+                partialResult,
+                candidate.fragment,
+                originalLine: candidate.line
+            ) else {
+                return partialResult
+            }
+            return mergeNameFragments(partialResult, candidate.fragment)
         }
     }
 
-    func cleanedNameFragment(_ line: String) -> String? {
+    func cleanedNameFragment(
+        _ line: String,
+        preserveTrailingSizeTokens: Bool = false
+    ) -> String? {
         let trimmed = line.sanitizeOCRLine()
         guard !trimmed.isEmpty else {
             return nil
         }
 
-        let strippedSizeSuffix = trimmed.replacingOccurrences(
-            of: #"\s+\d{1,4}(?:[.,]\d+)?\s*(g|kg|ml|l|oz|lb|pk|ct|count|pack)\b.*$"#,
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-        let cleaned = cleanedProductPhrase(from: strippedSizeSuffix)
+        let cleanedSource = preserveTrailingSizeTokens
+            ? trimmed
+            : trimmed.replacingOccurrences(
+                of: #"\s+\d{1,4}(?:[.,]\d+)?\s*(g|kg|ml|l|oz|lb|pk|ct|count|pack)\b.*$"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        let cleaned = cleanedProductPhrase(from: cleanedSource)
         guard cleaned.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else {
             return nil
         }
@@ -294,6 +312,20 @@ struct PriceParsingItemNameResolver {
         let overlap = maximumTokenOverlap(lhsTokens: lhsTokens, rhsTokens: rhsTokens)
         let mergedTokens = lhsTokens + rhsTokens.dropFirst(overlap)
         return mergedTokens.joined(separator: " ")
+    }
+
+    func shouldMergeNameFragment(
+        _ lhs: String,
+        _ rhs: String,
+        originalLine: String
+    ) -> Bool {
+        let lhsTokens = lhs.split(whereSeparator: \.isWhitespace).map(String.init)
+        let rhsTokens = rhs.split(whereSeparator: \.isWhitespace).map(String.init)
+        if maximumTokenOverlap(lhsTokens: lhsTokens, rhsTokens: rhsTokens) > 0 {
+            return true
+        }
+
+        return PriceParsingService.containsExplicitSizeToken(in: originalLine)
     }
 
     func maximumTokenOverlap(lhsTokens: [String], rhsTokens: [String]) -> Int {

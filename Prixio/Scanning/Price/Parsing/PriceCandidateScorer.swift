@@ -80,6 +80,7 @@ struct PriceCandidateScorer {
                 + promotionalPriorityBoost(for: candidate.sourceText)
                 + unitLabelPriorityBoost(for: candidate.sourceText)
                 - nearbySavePenalty(
+                    candidate: candidate,
                     sourceLineIndexes: sourceIndexes,
                     observations: observations
                 )
@@ -316,6 +317,7 @@ struct PriceCandidateScorer {
     }
 
     func nearbySavePenalty(
+        candidate: PriceCandidate,
         sourceLineIndexes: [Int],
         observations: [OCRTextObservation]
     ) -> Int {
@@ -330,7 +332,16 @@ struct PriceCandidateScorer {
                 || line.range(of: #"(?i)^\W*-\s*save\b"#, options: .regularExpression) != nil
         }
 
-        return hasStandaloneSaveMarker ? 3 : 0
+        guard hasStandaloneSaveMarker else {
+            return 0
+        }
+
+        // Preserve big standalone shelf prices that often sit next to a SAVE banner,
+        // while still demoting small savings amounts like "$5.00 ea".
+        let isLikelyPrimaryShelfPrice = candidate.value >= 10
+            && !matchesContextPattern(PriceParsingService.unitLabelPattern, in: candidate.sourceText)
+            && candidate.quantity == nil
+        return isLikelyPrimaryShelfPrice ? 0 : 3
     }
 
     func matchesContextPattern(_ pattern: String, in text: String) -> Bool {

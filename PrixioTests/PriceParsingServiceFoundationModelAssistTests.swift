@@ -268,7 +268,7 @@ struct PriceParsingServiceFoundationModelAssistTests {
             OCRTextObservation(string: "$2.99", confidence: 0.93)
         ])
 
-        let prompt = PriceParsingService.buildAssistedExtractionPrompt(
+        let prompt = PriceParsingAssistedExtractor().buildAssistedExtractionPrompt(
             snapshot: snapshot,
             ambiguity: ambiguity
         )
