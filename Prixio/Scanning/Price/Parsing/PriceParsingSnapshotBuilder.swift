@@ -196,14 +196,21 @@ struct PriceParsingSnapshotBuilder {
 
     func focusedObservationScore(for observations: [OCRTextObservation]) -> Float {
         let cleanedObservations = PriceParsingService.removeObviousNoise(from: observations)
+        let normalizedObservations = PriceParsingService.applyContextualNormalization(to: cleanedObservations)
+        let consolidatedObservations = normalizedObservations.consolidateObservations()
+        let supportedLines = consolidatedObservations.isEmpty ? normalizedObservations : consolidatedObservations
+        let priceCandidates = PriceCandidateScorer().extractPriceCandidates(from: supportedLines)
         let priceSignalCount = cleanedObservations.filter {
             PriceParsingService.containsPriceSignal(in: $0.string)
         }.count
         let descriptiveCount = cleanedObservations.filter {
             PriceParsingService.isDescriptiveObservation($0)
         }.count
+        let priceCandidateCount = priceCandidates.count
         let priceDominanceBonus: Float = priceSignalCount >= 2 ? 2 : 0
         let descriptiveBonus: Float = descriptiveCount >= 2 ? 1 : 0
+        let extractedCandidateBonus: Float = priceCandidateCount > 0 ? 8 + Float(priceCandidateCount - 1) * 3 : 0
+        let noCandidatePenalty: Float = descriptiveCount >= 2 && priceCandidateCount == 0 ? 10 : 0
         let confidenceScore = PriceParsingService.averageConfidence(in: cleanedObservations) ?? 0
 
         return Float(cleanedObservations.count) * 1.5
@@ -212,6 +219,8 @@ struct PriceParsingSnapshotBuilder {
             + priceDominanceBonus
             + descriptiveBonus
             + confidenceScore
+            + extractedCandidateBonus
+            - noCandidatePenalty
     }
 
     func shouldMergeFocusedObservationGroups(

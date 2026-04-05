@@ -222,4 +222,109 @@ struct PriceParsingServiceCapturedOCRTests {
         #expect(result.review.issues == [.missingUnit, .missingQuantity])
         #expect(result.review.usedFoundationModel == false)
     }
+
+    @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))
+    func capturedBananasStage4OCRPinsWrongWinnerContract() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(
+            CapturedOCRFixtures.bananasStage4Observations()
+        )
+        let result = await PriceParsingService.extract(
+            from: CapturedOCRFixtures.bananasStage4Observations()
+        )
+
+        #expect(snapshot.consolidatedObservations.map(\.string) == [
+            ".99",
+            ") 247",
+            "545 / Kg",
+            "Bananas Stage 4 PLU 4011",
+            ".79.-"
+        ])
+        #expect(snapshot.priceCandidates.map(\.value) == [
+            Decimal(string: "40.11")!,
+            Decimal(string: "5.45")!,
+            Decimal(string: "2.47")!
+        ])
+        #expect(snapshot.itemNameHint == "Bananas Stage 4 PLU 4011")
+        #expect(snapshot.detectedUnit == .kg)
+        #expect(result.itemNameHint == "545 Kg")
+        #expect(result.price == Decimal(string: "40.11"))
+        #expect(result.unit == .kg)
+        #expect(result.quantity == Decimal(1))
+        #expect(result.review.state == .reviewRequired)
+        #expect(result.review.usedFoundationModel == true)
+        #expect(result.supportingLines == [") 247", "545 / Kg"])
+    }
+
+    @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))
+    func capturedSparseGrowerOCRPinsSparsePriceCompetitionContract() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(
+            CapturedOCRFixtures.sparseGrowerObservations()
+        )
+        let ambiguity = PriceParsingService._test_analyzeAmbiguity(
+            CapturedOCRFixtures.sparseGrowerObservations()
+        )
+        let result = await PriceParsingService.extract(
+            from: CapturedOCRFixtures.sparseGrowerObservations()
+        )
+
+        #expect(snapshot.consolidatedObservations.map(\.string) == [
+            "1908.0",
+            "HGROWER. COM YE",
+            "299"
+        ])
+        #expect(snapshot.priceCandidates.map(\.value) == [
+            Decimal(string: "2.99")!,
+            Decimal(string: "19.08")!
+        ])
+        #expect(snapshot.itemNameHint == "HGROWER. COM YE")
+        #expect(ambiguity.weaknesses == [.missingUnit, .missingQuantity])
+        #expect(ambiguity.shouldUseFoundationModel == false)
+        #expect(result.itemNameHint == "HGROWER. COM YE")
+        #expect(result.price == Decimal(string: "2.99"))
+        #expect(result.unit == nil)
+        #expect(result.quantity == nil)
+        #expect(result.review.state == .reviewRecommended)
+        #expect(result.review.usedFoundationModel == false)
+        #expect(result.supportingLines == [
+            "1908.0",
+            "HGROWER. COM YE",
+            "299"
+        ])
+    }
+
+    @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))
+    func capturedButterShelfOCRPrefersSaltedTagWithRecoverablePrice() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(
+            CapturedOCRFixtures.butterShelfCompetingTagObservations()
+        )
+        let result = await PriceParsingService.extract(
+            from: CapturedOCRFixtures.butterShelfCompetingTagObservations()
+        )
+
+        #expect(snapshot.cleanedObservations.map(\.string) == [
+            "Comp Butter Salted",
+            "454 g",
+            "599"
+        ])
+        #expect(snapshot.consolidatedObservations.map(\.string) == [
+            "Comp Butter Salted",
+            "454 g",
+            "599"
+        ])
+        #expect(snapshot.priceCandidates.map(\.value) == [Decimal(string: "5.99")!])
+        #expect(snapshot.itemNameHint == "Comp Butter Salted")
+        #expect(snapshot.detectedUnit == .each)
+        #expect(snapshot.resolvedQuantity == nil)
+        #expect(result.itemNameHint == "Comp Butter Salted")
+        #expect(result.price == Decimal(string: "5.99"))
+        #expect(result.unit == .each)
+        #expect(result.quantity == nil)
+        #expect(result.review.state == .clean)
+        #expect(result.review.usedFoundationModel == false)
+        #expect(result.supportingLines == [
+            "Comp Butter Salted",
+            "454 g",
+            "599"
+        ])
+    }
 }

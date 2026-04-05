@@ -340,6 +340,40 @@ The fix was to stop letting stale image references drive the whole screen:
 
 That same pass added a practical QA helper: a button in the confirmation sheet can now save the current scan photo to Photos using add-only photo-library access. That gives device QA a cheap way to preserve bad scans for later parser work instead of trying to recreate them from memory.
 
+### War Story: “Reviewable Parse” Was a Comfort Blanket, Not a Contract
+The image-fixture suite finally hit the point where its old shape stopped being honest. The tests could prove that every real image still loaded, OCR still returned something, and the parser still emitted a vaguely reviewable result. That sounds useful until you realize it would happily pass while the parser quietly changed `MINI CUCUMBER` into marketing copy soup, promoted a PLU into a banana price, or decided the toothpaste aisle cost `100` per imaginary unit of chaos.
+
+So the fixture strategy got sharper. The live-image suite now behaves like a customs checkpoint instead of a wave-through line:
+- every real fixture has a contract case
+- every contract asserts the meaningful fields: item, price, unit, quantity, review state, and whether Foundation Models stepped in
+- exact OCR lines, candidate lists, and supporting lines only get pinned where they have proved stable enough to deserve it
+
+That last point matters. Vision OCR is not a rock. It is more like a very fast intern who usually does the right thing and occasionally decides `Butterleaf` is `BKUXBUKN`. Freezing every raw line for every image would turn the suite into a weather vane. Freezing the stable, high-signal outputs makes it a guardrail.
+
+The second half of the cleanup was about moving real-image failures into cheaper, more exact parser tests. Instead of making every bug hunt depend on rerunning Vision, the suite now also carries captured-OCR fixtures for the cases that actually teach us something:
+- the Cadbury shelf tag where `1799` and `$5.00 ea` fight for attention
+- the clean mini cucumber card that proves title-vs-description boundaries
+- the banana tag where `PLU 4011` currently wins a price election it should absolutely lose
+- the sparse grower label where `19.08` looms in the background but `2.99` still wins
+
+That is the deeper lesson worth keeping: broad image coverage and exact parser contracts are different tools. Live image tests answer “does the full pipeline still behave on real photos?” Captured OCR tests answer “did this specific parser behavior just drift?” When those two layers are separated cleanly, regressions stop hiding inside comforting words like “reviewable.”
+
+### War Story: The Butter Tag Was Right There, but the Parser Picked the Bigger Wrong Neighborhood
+One of the new strict image contracts immediately paid rent. The butter shelf photo (`IMG_0483`) contains two plausible tag clusters:
+- a larger unsalted cluster with clean descriptive text, `/100G`, promo points, and a mangled price OCR fragment
+- a smaller salted cluster with a boring but perfectly recoverable `599` shelf price
+
+Before the fix, the parser behaved like a rookie detective who trusts the biggest witness instead of the witness with the usable evidence. Spatial grouping crowned the unsalted cluster because it had more lines and looked richer in text. Then candidate extraction found no valid shelf price in that winning group, and the parser still stayed loyal to it. Result: `Comp Butter Unsalted`, no price, and a review-required shrug while the real `$5.99` salted tag sat a few inches away waving both arms.
+
+The fix stayed in the focused-group scoring, which is exactly where it belonged. Candidate groups now get rewarded for producing actual recoverable price candidates after cleanup and normalization, and text-heavy groups get penalized when they still cannot surface a usable price. In other words, a shelf-tag group no longer wins just by talking a lot. It has to bring receipts.
+
+That changed the butter fixture the way you would want:
+- focused observations collapse to `Comp Butter Salted`, `454 g`, `599`
+- the parser returns `$5.99`
+- the result stays on the heuristic path with a clean review state instead of escalating out of confusion
+
+This one is worth remembering because it is a classic parser trap. Bigger context is not always better context. If a candidate cluster cannot cash out into a believable price, the parser should stop being impressed by its vocabulary and look for the group that can actually finish the job.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

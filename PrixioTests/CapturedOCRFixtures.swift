@@ -90,6 +90,52 @@ enum CapturedOCRFixtures {
         ]
     }
 
+    static func bananasStage4Observations() -> [OCRTextObservation] {
+        [
+            observation(".99", confidence: 0.98, x: 0.401, y: 0.331, width: 0.048, height: 0.040),
+            observation(") 247", confidence: 0.91, x: 0.446, y: 0.302, width: 0.070, height: 0.052),
+            observation("545 / Kg", confidence: 0.95, x: 0.462, y: 0.270, width: 0.121, height: 0.047),
+            observation("Bananas Stage 4 PLU 4011", confidence: 0.97, x: 0.358, y: 0.221, width: 0.278, height: 0.051),
+            observation(".79.-", confidence: 0.89, x: 0.397, y: 0.190, width: 0.075, height: 0.041)
+        ]
+    }
+
+    static func sparseGrowerObservations() -> [OCRTextObservation] {
+        [
+            observation("1908.0", confidence: 0.87, x: 0.349, y: 0.355, width: 0.099, height: 0.044),
+            observation("HGROWER. COM YE", confidence: 0.93, x: 0.301, y: 0.302, width: 0.246, height: 0.045),
+            observation("299", confidence: 0.96, x: 0.438, y: 0.247, width: 0.051, height: 0.041),
+            observation("299", confidence: 0.94, x: 0.436, y: 0.197, width: 0.052, height: 0.042)
+        ]
+    }
+
+    static func butterShelfCompetingTagObservations() -> [OCRTextObservation] {
+        [
+            observation("A20-RO4", confidence: 0.5, x: 0.05232558111917209, y: 0.454941860896497, width: 0.031007751585945244, height: 0.008720929660494314),
+            observation("EDV", confidence: 0.5, x: 0.09883720964873331, y: 0.4549418605465696, width: 0.015503875792972632, height: 0.005813953422364793),
+            observation("Comp Butter Salted", confidence: 1.0, x: 0.05176881948831763, y: 0.44508062418756866, width: 0.08624565285980387, height: 0.011925028430091023),
+            observation("PK 50", confidence: 0.5, x: 0.13953488432529376, y: 0.452034884001572, width: 0.017441859320988712, height: 0.007290512796432336),
+            observation("454 g", confidence: 1.0, x: 0.05038759756685362, y: 0.4360119047229002, width: 0.019379844110478793, height: 0.007302048660459914),
+            observation("599", confidence: 1.0, x: 0.12984496215139593, y: 0.42151162820510446, width: 0.05426356401393023, height: 0.02325581368945895),
+            observation("09 0506950", confidence: 1.0, x: 0.04651162906058323, y: 0.4171511631251792, width: 0.04457364258942782, height: 0.008720929660494425),
+            observation("CANADA", confidence: 0.3, x: 0.7054263578433329, y: 0.9520348843719352, width: 0.046511624855969935, height: 0.01889534791310632),
+            observation("Comp Butter Unsalted", confidence: 1.0, x: 0.6874287095680477, y: 0.8935328827678447, width: 0.0980107948262855, height: 0.012352839348808153),
+            observation("Product of Canada", confidence: 1.0, x: 0.6836016684002378, y: 0.8871153846554898, width: 0.06883124699668286, height: 0.010491950171334308),
+            observation("250 G", confidence: 1.0, x: 0.6841085283965148, y: 0.8735119047410688, width: 0.02131782763849488, height: 0.007302048660459914),
+            observation("4УУOU", confidence: 0.3, x: 0.6821705427227844, y: 0.869186046646393, width: 0.019379842849004847, height: 0.0029069764746559867),
+            observation("/100G", confidence: 1.0, x: 0.7073643422356197, y: 0.866279069999634, width: 0.023255812427985023, height: 0.0072674415414295535),
+            observation("5574253713", confidence: 1.0, x: 0.6821705413986346, y: 0.8604651163840817, width: 0.04263566032288568, height: 0.0072674415414295535),
+            observation("VY 0483561", confidence: 1.0, x: 0.6802325610278485, y: 0.8561046512975558, width: 0.03488371864197748, height: 0.003022332867932742),
+            observation("Scene", confidence: 1.0, x: 0.6841085293382492, y: 0.812500000006446, width: 0.04263565527698987, height: 0.010174418252612005),
+            observation("4°9", confidence: 1.0, x: 0.7499999996512187, y: 0.8604651167764579, width: 0.04263566032288568, height: 0.02034883650522379),
+            observation("FS Exp Mar 18, 2026", confidence: 1.0, x: 0.755504375523564, y: 0.8495360912785237, width: 0.07431519725335345, height: 0.009763447065202047),
+            observation("Buy", confidence: 1.0, x: 0.6879844960833614, y: 0.7630813955621947, width: 0.029069766796455232, height: 0.008720929660494425),
+            observation("1", confidence: 0.5, x: 0.6957364344423415, y: 0.7500000003587063, width: 0.009689922055239442, height: 0.008720929660494425),
+            observation("50", confidence: 1.0, x: 0.7616279066744889, y: 0.7601744188315429, width: 0.019379845371952698, height: 0.010174418252611894),
+            observation("PTS", confidence: 1.0, x: 0.7538759691224864, y: 0.7470930234691715, width: 0.02713178200696509, height: 0.008720929660494314)
+        ]
+    }
+
     private static func observation(
         _ string: String,
         confidence: Float,
