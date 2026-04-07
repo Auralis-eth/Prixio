@@ -386,6 +386,34 @@ So the fix was to tighten the contract around the deterministic parts instead of
 
 That is the useful lesson: when a test crosses into model-guided behavior, assert the invariant, not the exact breadcrumb arrangement. Otherwise the suite turns into a lie detector for randomness.
 
+### Aha: The Next Parser Leap Is Not "More OCR," It Is Better Traffic Control
+After enough fixture work, a pattern finally became impossible to ignore: most of the remaining parser misses do not come from having zero OCR. They come from having OCR that is locally plausible but globally untrustworthy. A compact `299` might be a price. It might also be a fragment. `PLU 4011` might look price-shaped if the parser squints hard enough and makes bad life choices. A promo card can have excellent text recognition and still be the wrong scene for normal shelf-tag logic.
+
+That is what pushed the project toward a new plan captured in `OCRParsingPipelineRefactorPlan.md`. The design direction is heavily informed by what mature OCR systems do well:
+- EasyOCR is a good reminder to keep structured detections alive instead of flattening too early
+- Tesseract is a good reminder that segmentation assumptions are part of correctness, not preprocessing trivia
+- PaddleOCR is a good reminder that detection, orientation, recognition, and downstream understanding should stay modular
+
+The key Prixio-specific takeaway is that the next meaningful upgrade is architectural:
+- classify the scene before ranking prices
+- promote product/evidence clusters to first-class parser data
+- make prices earn ownership inside a product block
+- separate OCR confidence from parser confidence
+- keep Foundation Models as a scoped tie-breaker instead of a janitor for weak deterministic context
+
+In coffee-shop terms: the current parser is like a smart cashier reading whatever lands nearest the scanner. The next version needs to behave more like a floor manager who first decides which shelf tag we are even talking about, then asks whether the price sticker actually belongs to that tag, and only then writes down the number.
+
+### Aha, Part 2: Better OCR Starts Before OCR
+One subtle trap in parser work is blaming every bad result on parsing. Sometimes the parser is guilty. Sometimes it is just being handed a crooked, glare-heavy, low-contrast mess and asked to do algebra with fog.
+
+That is why the OCR refactor plan now starts with image preprocessing instead of parser surgery. The new direction in `OCRParsingPipelineRefactorPlan.md` treats `OCRService.swift` as a real seam, not a thin utility wrapper. The service is now the natural home for experiments like:
+- orientation normalization
+- perspective rectification for shelf tags
+- high-contrast and grayscale OCR variants
+- bounded fallback passes when the first Vision result is obviously weak
+
+This is the practical lesson from older OCR stacks that still applies on iOS: the best regex in the world cannot recover text that the recognizer never saw clearly. If the image hits Vision already straightened and easier to read, every downstream parser stage gets to be less desperate and more honest.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
