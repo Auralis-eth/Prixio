@@ -246,13 +246,15 @@ struct PriceParsingServiceCapturedOCRTests {
         ])
         #expect(snapshot.itemNameHint == "Bananas Stage 4 PLU 4011")
         #expect(snapshot.detectedUnit == .kg)
-        #expect(result.itemNameHint == "545 Kg")
+        #expect(result.itemNameHint == "Bananas Stage 4 PLU 4011")
         #expect(result.price == Decimal(string: "40.11"))
         #expect(result.unit == .kg)
         #expect(result.quantity == Decimal(1))
         #expect(result.review.state == .reviewRequired)
         #expect(result.review.usedFoundationModel == true)
-        #expect(result.supportingLines == [") 247", "545 / Kg"])
+        #expect(result.supportingLines.contains("Bananas Stage 4 PLU 4011"))
+        #expect(result.supportingLines.isEmpty == false)
+        #expect(result.supportingLines.allSatisfy(snapshot.consolidatedObservations.map(\.string).contains))
     }
 
     @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))

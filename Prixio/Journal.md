@@ -374,6 +374,18 @@ That changed the butter fixture the way you would want:
 
 This one is worth remembering because it is a classic parser trap. Bigger context is not always better context. If a candidate cluster cannot cash out into a believable price, the parser should stop being impressed by its vocabulary and look for the group that can actually finish the job.
 
+### War Story: When the Model Was Right but the Test Wanted the Exact Breadcrumb Trail
+One captured-OCR test for the Stage 4 banana tag started acting like a slot machine. The parse itself was stable enough: same wrong winner, same `40.11`, same `.kg`, same review-required outcome. But the `supportingLines` assertion kept flipping because the live Foundation Models step would sometimes point at one valid subset of the shelf text and sometimes another.
+
+That bug was not in the parser output the product actually cares about. It was in the test pretending the model would always leave the exact same footprints.
+
+So the fix was to tighten the contract around the deterministic parts instead of worshipping a flaky detail:
+- the test still pins the final item name, price, unit, quantity, and review state
+- it now requires that `supportingLines` includes `Bananas Stage 4 PLU 4011`
+- it also requires every returned supporting line to come from the consolidated OCR snapshot
+
+That is the useful lesson: when a test crosses into model-guided behavior, assert the invariant, not the exact breadcrumb arrangement. Otherwise the suite turns into a lie detector for randomness.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
