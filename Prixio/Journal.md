@@ -485,6 +485,22 @@ The other important addition is a `winningClusterIndex`. That gives the parser a
 
 This is a good example of the right refactor order. First make the concepts real. Then let later phases use those concepts more aggressively. If you reverse that order, you usually end up with a lot of "smart" branching code built on unnamed ideas.
 
+### War Story: The Item Name Finally Stopped Looking Over Its Shoulder
+Phase 5 was the moment the final item name got told to stay in its lane.
+
+Before this pass, the parser had evidence clusters, but the snapshot could still compute the final `itemNameHint` from the broader focused observation set. That meant the data model knew which product block had won, but the final name could still be assembled with one eye drifting toward neighboring product text or promo copy. Architecturally, that is the worst kind of half-finished refactor: the right concept exists, but the public result still answers to the old boss.
+
+The fix was simple and appropriately boring:
+- if a winning cluster exists and it has a local item name, use that as the final item hint
+- only fall back to the broader resolver when the winning cluster cannot produce a name at all
+
+That changes the behavior in the direction you would want:
+- neighboring products stop getting a vote on the winner's name
+- promo copy can still exist nearby without becoming identity
+- the broader merge logic remains available as a safety net instead of the default source of truth
+
+This is one of those changes that feels small in code and large in meaning. Once you introduce first-class product blocks, the final item name should come from the winning block by default. Otherwise the parser is basically announcing, "I know which tag won, but I am still going to ask the aisle for opinions."
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

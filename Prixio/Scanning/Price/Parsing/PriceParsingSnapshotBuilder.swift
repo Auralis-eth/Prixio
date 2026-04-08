@@ -52,7 +52,9 @@ struct PriceParsingSnapshotBuilder {
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let itemNameHint = itemNameResolver.extractItemNameHint(
+        let itemNameHint = winningClusterIndex.flatMap { index in
+            evidenceClusters.indices.contains(index) ? evidenceClusters[index].itemNameHint : nil
+        } ?? itemNameResolver.extractItemNameHint(
             from: supportedLines,
             priceCandidates: priceCandidates
         )

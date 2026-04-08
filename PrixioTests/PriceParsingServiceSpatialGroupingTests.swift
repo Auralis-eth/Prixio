@@ -122,6 +122,34 @@ struct PriceParsingServiceSpatialGroupingTests {
         #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.role == .primaryProduct)
     }
 
+    @Test(.tags(.ocr, .product))
+    func finalItemNamePrefersWinningClusterOverNeighboringProductText() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            observation("Organic Bananas", confidence: 0.95, x: 0.05, y: 0.80, width: 0.28, height: 0.08),
+            observation("$1.29 /lb", confidence: 0.94, x: 0.06, y: 0.69, width: 0.20, height: 0.08),
+            observation("Pepsi Zero 12 PK", confidence: 0.93, x: 0.60, y: 0.80, width: 0.26, height: 0.08),
+            observation("$3.49", confidence: 0.92, x: 0.61, y: 0.69, width: 0.14, height: 0.08)
+        ])
+
+        #expect(snapshot.itemNameHint == "Organic Bananas")
+        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Organic Bananas")
+        #expect(snapshot.evidenceClusters[safe: 1]?.itemNameHint == "Pepsi Zero 12 PK")
+    }
+
+    @Test(.tags(.ocr, .product))
+    func finalItemNameIgnoresPromoCopyWhenWinningClusterHasRealProductName() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            observation("SAVE THIS WEEK", confidence: 0.90, x: 0.05, y: 0.84, width: 0.24, height: 0.06),
+            observation("Valid Fri Sat Sun", confidence: 0.88, x: 0.05, y: 0.77, width: 0.30, height: 0.06),
+            observation("Fresh Blueberries", confidence: 0.95, x: 0.48, y: 0.80, width: 0.26, height: 0.08),
+            observation("Sale $3.99 ea", confidence: 0.93, x: 0.49, y: 0.69, width: 0.18, height: 0.08)
+        ])
+
+        #expect(snapshot.itemNameHint == "Fresh Blueberries")
+        #expect(snapshot.evidenceClusters.contains(where: { $0.role == .promoCopy }))
+        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Fresh Blueberries")
+    }
+
     private func observation(
         _ string: String,
         confidence: Float,
