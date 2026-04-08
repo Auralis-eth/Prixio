@@ -11,6 +11,7 @@ struct ShoppingListRootView: View {
     @State private var isShowingAddSheet = false
     @State private var isShowingCompleted = false
     @State private var selectedRow: ShoppingListRowData?
+    @State private var scanNudgeRow: ShoppingListRowData?
 
     var body: some View {
         NavigationStack {
@@ -88,6 +89,18 @@ struct ShoppingListRootView: View {
                 entries: entries,
                 onDelete: {
                     deleteRow(row)
+                }
+            )
+        }
+        .sheet(item: $scanNudgeRow) { row in
+            ScanNudgeSheet(
+                itemName: row.displayName,
+                onScanNow: {
+                    launchScan(for: row)
+                    scanNudgeRow = nil
+                },
+                onDismiss: {
+                    scanNudgeRow = nil
                 }
             )
         }
@@ -186,8 +199,13 @@ struct ShoppingListRootView: View {
             return
         }
 
-        try? ShoppingListRepository(context: modelContext).setDone(!item.isDone, for: item)
+        let newValue = !item.isDone
+        _ = try? ShoppingListRepository(context: modelContext).setDone(newValue, for: item)
         recompute()
+
+        if newValue && row.shouldNudgeForFreshness {
+            scanNudgeRow = row
+        }
     }
 
     private func deleteRow(_ row: ShoppingListRowData) {
@@ -197,5 +215,27 @@ struct ShoppingListRootView: View {
 
         _ = try? ShoppingListRepository(context: modelContext).deleteItem(item)
         recompute()
+    }
+
+    private func launchScan(for row: ShoppingListRowData) {
+        navigationModel.launchScan(
+            itemName: row.displayName,
+            preferredChainName: preferredChainName(for: row)
+        )
+    }
+
+    private func preferredChainName(for row: ShoppingListRowData) -> String? {
+        if let bestStoreName = row.bestStoreName {
+            return bestStoreName
+        }
+
+        switch viewModel.tripRecommendation {
+        case .strongWinner(_, let chainName, _, _, _):
+            return chainName
+        case .splitTrip(_, let primaryChainName, _, _, _, _, _):
+            return primaryChainName
+        case .insufficientData:
+            return nil
+        }
     }
 }
