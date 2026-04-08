@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import SwiftData
 import Testing
@@ -106,7 +107,35 @@ struct ShoppingListViewModelTests {
         #expect(viewModel.activeRows.first?.shouldNudgeForFreshness == false)
     }
 
-    private func makeEntry(item: String, chainName: String, price: String, capturedAt: Date) -> PriceEntry {
+    @Test
+    func rowDistanceUsesSuggestionCoordinatesWhenUserLocationExists() {
+        let viewModel = ShoppingListViewModel()
+        let item = ShoppingListItem(itemKey: "milk", displayName: "Milk")
+        let entries = [
+            makeEntry(
+                item: "milk",
+                chainName: "Co-op",
+                price: "4.00",
+                capturedAt: Date(timeIntervalSince1970: 8_000_000),
+                latitude: 51.0447,
+                longitude: -114.0719
+            )
+        ]
+        let userLocation = CLLocation(latitude: 51.0450, longitude: -114.0721)
+
+        viewModel.recompute(items: [item], entries: entries, userLocation: userLocation)
+
+        #expect(viewModel.activeRows.first?.distanceMeters != nil)
+    }
+
+    private func makeEntry(
+        item: String,
+        chainName: String,
+        price: String,
+        capturedAt: Date,
+        latitude: Double? = nil,
+        longitude: Double? = nil
+    ) -> PriceEntry {
         PriceEntry(
             capturedAt: capturedAt,
             itemNameRaw: item.capitalized,
@@ -120,6 +149,8 @@ struct ShoppingListViewModelTests {
             storeLocationId: nil,
             storeChainNameSnapshot: chainName,
             storeLocationNameSnapshot: nil,
+            storeCoordinateLat: latitude,
+            storeCoordinateLon: longitude,
             photoAssetId: ""
         )
     }

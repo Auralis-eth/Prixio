@@ -43,9 +43,9 @@ final class ShoppingListViewModel: ObservableObject {
         for item: ShoppingListItem,
         suggestion: PriceInsightEngine.BestStoreSuggestion?,
         userLocation: CLLocation?,
-        now: Date
+        now _: Date
     ) -> ShoppingListRowData {
-        let distanceMeters = distanceMeters(from: userLocation, suggestion: suggestion, entriesNow: now)
+        let distanceMeters = distanceMeters(from: userLocation, suggestion: suggestion)
         let ageText = suggestion.map { "\($0.ageDays)d" }
         let bestStoreName = suggestion?.storeChainName ?? suggestion?.storeLocationName
         let bestPriceText = suggestion.map {
@@ -108,12 +108,17 @@ final class ShoppingListViewModel: ObservableObject {
     }
 
     private func distanceMeters(
-        from _: CLLocation?,
-        suggestion: PriceInsightEngine.BestStoreSuggestion?,
-        entriesNow: Date
+        from userLocation: CLLocation?,
+        suggestion: PriceInsightEngine.BestStoreSuggestion?
     ) -> CLLocationDistance? {
-        _ = suggestion
-        _ = entriesNow
-        return nil
+        guard
+            let userLocation,
+            let latitude = suggestion?.storeCoordinateLat,
+            let longitude = suggestion?.storeCoordinateLon
+        else {
+            return nil
+        }
+
+        return userLocation.distance(from: CLLocation(latitude: latitude, longitude: longitude))
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct ShoppingListItemDetailSheet: View {
     let row: ShoppingListRowData
     let entries: [PriceEntry]
+    let onScanNow: () -> Void
     let onDelete: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -17,10 +18,25 @@ struct ShoppingListItemDetailSheet: View {
                         systemImage: "basket",
                         description: Text("Scan a few store prices to see the best options for this item.")
                     )
+                    .overlay(alignment: .bottom) {
+                        Button("Scan price now") {
+                            onScanNow()
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.bottom, 24)
+                    }
                 } else {
                     Section("Best Stores") {
                         ForEach(Array(comparisonRows.prefix(3))) { comparisonRow in
                             StoreRowView(row: comparisonRow)
+                        }
+                    }
+
+                    Section {
+                        Button("Scan price now") {
+                            onScanNow()
+                            dismiss()
                         }
                     }
                 }

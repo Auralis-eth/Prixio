@@ -17,6 +17,8 @@ enum PriceInsightEngine {
         let ageDays: Int
         let stalenessBucket: StalenessBucket
         let usedNormalizedPricing: Bool
+        let storeCoordinateLat: Double?
+        let storeCoordinateLon: Double?
 
         var isStale: Bool {
             stalenessBucket.isStale
@@ -81,7 +83,9 @@ enum PriceInsightEngine {
             capturedAt: bestEntry.capturedAt,
             ageDays: ageDays,
             stalenessBucket: stalenessBucket(for: bestEntry.capturedAt, now: now),
-            usedNormalizedPricing: useNormalizedPricing
+            usedNormalizedPricing: useNormalizedPricing,
+            storeCoordinateLat: bestEntry.storeCoordinateLat,
+            storeCoordinateLon: bestEntry.storeCoordinateLon
         )
     }
 

@@ -87,6 +87,9 @@ struct ShoppingListRootView: View {
             ShoppingListItemDetailSheet(
                 row: row,
                 entries: entries,
+                onScanNow: {
+                    launchScan(for: row)
+                },
                 onDelete: {
                     deleteRow(row)
                 }
@@ -107,7 +110,9 @@ struct ShoppingListRootView: View {
     }
 
     private var activeList: ShoppingList? {
-        lists.first { !$0.isArchived }
+        lists.first {
+            !$0.isArchived && $0.name == ShoppingListRepository.defaultListName
+        } ?? lists.first { !$0.isArchived }
     }
 
     private var emptyStateSection: some View {
@@ -186,7 +191,7 @@ struct ShoppingListRootView: View {
             return
         }
 
-        try? ShoppingListRepository(context: modelContext).addItem(
+        _ = try? ShoppingListRepository(context: modelContext).addItem(
             to: activeList,
             displayName: displayName,
             quantityNote: quantityNote
