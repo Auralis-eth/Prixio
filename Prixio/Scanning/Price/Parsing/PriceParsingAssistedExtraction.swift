@@ -193,6 +193,7 @@ struct PriceParsingAssistedExtractor {
         return OCRResult(
             rawText: snapshot.rawText,
             itemNameHint: finalItemName,
+            itemNameEvidence: snapshot.itemNameEvidence,
             price: finalPrice,
             unit: snapshot.detectedUnit,
             quantity: finalQuantity,

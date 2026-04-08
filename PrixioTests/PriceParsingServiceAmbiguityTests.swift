@@ -252,6 +252,18 @@ struct PriceParsingServiceAmbiguityTests {
         #expect(result.itemNameHint == "Cadbury Chocolate Mini Eggs")
     }
 
+    @Test(.tags(.ocr, .product))
+    func splitTitleKeepsEvidenceNameSeparateFromCanonicalDisplayName() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            OCRTextObservation(string: "Cadbury Chocolate Mini", confidence: 0.91),
+            OCRTextObservation(string: "Eggs 875 g", confidence: 0.88),
+            OCRTextObservation(string: "$17.99", confidence: 0.9)
+        ])
+
+        #expect(snapshot.itemNameEvidence == "Cadbury Chocolate Mini Eggs 875 g")
+        #expect(snapshot.itemNameHint == "Cadbury Chocolate Mini Eggs")
+    }
+
     @Test(.tags(.ocr, .product, .shipGate))
     func cleanScanProducesHighConfidenceResult() async throws {
         let result = PriceParsingService._test_makeOCRResult([

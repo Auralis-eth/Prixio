@@ -16,6 +16,7 @@ struct PriceParsingServiceCapturedOCRTests {
         #expect(snapshot.priceCandidates.first?.kind == .shelf)
         #expect(snapshot.priceCandidates.contains(where: { $0.value == Decimal(string: "5") }))
         #expect(snapshot.priceCandidates.contains(where: { $0.value == Decimal(string: "8.75") }) == false)
+        #expect(snapshot.itemNameEvidence == "Cadbury Chocolate Mini Eggs 875 g")
         #expect(snapshot.itemNameHint == "Cadbury Chocolate Mini Eggs")
         #expect(snapshot.detectedUnit == .each)
     }
@@ -102,12 +103,23 @@ struct PriceParsingServiceCapturedOCRTests {
             from: CapturedOCRFixtures.cadburyShelfTagObservations()
         )
 
+        #expect(result.itemNameEvidence == "Cadbury Chocolate Mini Eggs 875 g")
         #expect(result.itemNameHint?.contains("Cadbury Chocolate Mini Eggs") == true)
         #expect(result.price == Decimal(string: "17.99"))
         #expect(result.unit == .each)
         #expect(result.review.state == .reviewRequired)
         #expect(result.review.usedFoundationModel)
         #expect(result.priceCandidates.first?.value == Decimal(string: "17.99"))
+    }
+
+    @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))
+    func capturedCadburyOCRKeepsEvidenceNameSeparateFromCanonicalDisplayName() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(
+            CapturedOCRFixtures.cadburyShelfTagObservations()
+        )
+
+        #expect(snapshot.itemNameEvidence == "Cadbury Chocolate Mini Eggs 875 g")
+        #expect(snapshot.itemNameHint == "Cadbury Chocolate Mini Eggs")
     }
 
     @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))

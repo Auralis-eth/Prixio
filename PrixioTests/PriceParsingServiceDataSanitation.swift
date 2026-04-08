@@ -132,6 +132,7 @@ struct PriceParsingServiceDataSanitation {
             OCRTextObservation(string: "$2.99", confidence: 0.91)
         ])
 
+        #expect(snapshot.itemNameEvidence == "Coca Cola Zero Sugar 2 L")
         #expect(snapshot.itemNameHint == "Coca Cola Zero Sugar 2 L")
     }
 
@@ -143,6 +144,7 @@ struct PriceParsingServiceDataSanitation {
             OCRTextObservation(string: "$2.49", confidence: 0.90)
         ])
 
+        #expect(snapshot.itemNameEvidence == "7UP Zero Sugar 2 L")
         #expect(snapshot.itemNameHint == "7UP Zero Sugar 2 L")
     }
 
@@ -154,6 +156,7 @@ struct PriceParsingServiceDataSanitation {
             OCRTextObservation(string: "$4.99", confidence: 0.89)
         ])
 
+        #expect(snapshot.itemNameEvidence == "Organic Strawberries 454g")
         #expect(snapshot.itemNameHint == "Organic Strawberries 454g")
     }
 
@@ -279,7 +282,8 @@ struct PriceParsingServiceDataSanitation {
             OCRTextObservation(string: "$2.79 ea", confidence: 0.90)
         ])
 
-        #expect(snapshot.itemNameHint == "C0KE ZER0 SGR")
+        #expect(snapshot.itemNameEvidence == "C0KE ZER0 SGR")
+        #expect(snapshot.itemNameHint == "Coke Zero Sugar")
         #expect(snapshot.priceCandidates.first?.value == Decimal(string: "2.79"))
         #expect(snapshot.detectedUnit == .each)
     }

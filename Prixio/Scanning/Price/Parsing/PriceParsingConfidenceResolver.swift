@@ -55,6 +55,7 @@ struct PriceParsingConfidenceResolver {
         return OCRResult(
             rawText: snapshot.rawText,
             itemNameHint: snapshot.itemNameHint,
+            itemNameEvidence: snapshot.itemNameEvidence,
             price: snapshot.priceCandidates.first?.value,
             unit: snapshot.detectedUnit,
             quantity: snapshot.resolvedQuantity,

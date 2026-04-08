@@ -42,6 +42,11 @@ enum PriceParsingService {
         let lineIndex: Int
     }
 
+    struct ItemNameResolution: Sendable {
+        let evidenceName: String?
+        let canonicalName: String?
+    }
+
     struct SpatialObservationGroup: Sendable {
         let observations: [OCRTextObservation]
         let score: Float
@@ -51,6 +56,7 @@ enum PriceParsingService {
         let observations: [OCRTextObservation]
         let lines: [String]
         let priceCandidates: [PriceCandidate]
+        let itemNameEvidence: String?
         let itemNameHint: String?
         let detectedUnit: UnitType?
         let resolvedQuantity: Decimal?
@@ -76,6 +82,7 @@ enum PriceParsingService {
         let sceneClassification: SceneClassification
         let priceCandidates: [PriceCandidate]
         let detectedUnit: UnitType?
+        let itemNameEvidence: String?
         let itemNameHint: String?
         let resolvedQuantity: Decimal?
         let heuristicConfidence: Float

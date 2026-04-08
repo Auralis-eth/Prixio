@@ -6,10 +6,18 @@
 import Foundation
 
 struct PriceParsingItemNameResolver {
-    func extractItemNameHint(
+    private let canonicalTokenRepairs: [String: String] = [
+        "c0ke": "Coke",
+        "zer0": "Zero",
+        "sgr": "Sugar",
+        "choc0late": "Chocolate",
+        "minl": "Mini"
+    ]
+
+    func resolveItemName(
         from observations: [OCRTextObservation],
         priceCandidates: [PriceCandidate]
-    ) -> String? {
+    ) -> PriceParsingService.ItemNameResolution {
         let candidateLineIndexes = observations.enumerated().compactMap { index, observation in
             scoredItemNameCandidate(
                 for: observation.string,
@@ -25,14 +33,31 @@ struct PriceParsingItemNameResolver {
             }
             return lhs.lineIndex > rhs.lineIndex
         }) else {
-            return nil
+            return PriceParsingService.ItemNameResolution(evidenceName: nil, canonicalName: nil)
         }
 
-        return mergedItemName(
+        let evidenceName = mergedEvidenceItemName(
             around: bestCandidate,
             candidates: candidateLineIndexes,
             observations: observations
         ) ?? bestCandidate.line
+        let canonicalName = canonicalDisplayName(from: mergedItemName(
+            around: bestCandidate,
+            candidates: candidateLineIndexes,
+            observations: observations
+        ) ?? evidenceName)
+
+        return PriceParsingService.ItemNameResolution(
+            evidenceName: evidenceName,
+            canonicalName: canonicalName
+        )
+    }
+
+    func extractItemNameHint(
+        from observations: [OCRTextObservation],
+        priceCandidates: [PriceCandidate]
+    ) -> String? {
+        resolveItemName(from: observations, priceCandidates: priceCandidates).canonicalName
     }
 
     func scoredItemNameCandidate(
@@ -275,6 +300,43 @@ struct PriceParsingItemNameResolver {
         }
     }
 
+    func mergedEvidenceItemName(
+        around bestCandidate: PriceParsingService.ItemNameCandidate,
+        candidates: [PriceParsingService.ItemNameCandidate],
+        observations: [OCRTextObservation]
+    ) -> String? {
+        let candidateMap = Dictionary(uniqueKeysWithValues: candidates.map { ($0.lineIndex, $0) })
+        let nearbyIndexes = candidates
+            .map(\.lineIndex)
+            .filter { abs($0 - bestCandidate.lineIndex) <= 2 }
+            .sorted()
+            .filter { observations.indices.contains($0) }
+        let fragments = nearbyIndexes.compactMap { index -> (line: String, fragment: String)? in
+            guard let candidate = candidateMap[index] else {
+                return nil
+            }
+            guard let fragment = cleanedNameFragment(candidate.line, preserveTrailingSizeTokens: true) else {
+                return nil
+            }
+            return (line: candidate.line, fragment: fragment)
+        }
+
+        guard let firstFragment = fragments.first else {
+            return nil
+        }
+
+        return fragments.dropFirst().reduce(firstFragment.fragment) { partialResult, candidate in
+            guard shouldMergeNameFragment(
+                partialResult,
+                candidate.fragment,
+                originalLine: candidate.line
+            ) else {
+                return partialResult
+            }
+            return mergeNameFragments(partialResult, candidate.fragment)
+        }
+    }
+
     func cleanedNameFragment(
         _ line: String,
         preserveTrailingSizeTokens: Bool = false
@@ -370,5 +432,53 @@ struct PriceParsingItemNameResolver {
             }
 
         return tokens.joined(separator: " ").sanitizeOCRLine()
+    }
+
+    func canonicalDisplayName(from evidenceName: String?) -> String? {
+        guard let evidenceName else {
+            return nil
+        }
+
+        let repairedTokens = evidenceName
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .map(repairedDisplayToken)
+        let canonical = repairedTokens.joined(separator: " ").sanitizeOCRLine()
+        return canonical.isEmpty ? nil : canonical
+    }
+
+    func repairedDisplayToken(_ token: String) -> String {
+        let trimmed = token.trimmingCharacters(in: .punctuationCharacters)
+        guard trimmed.isEmpty == false else {
+            return token
+        }
+
+        let normalized = trimmed
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        if let repaired = canonicalTokenRepairs[normalized] {
+            return token.replacingOccurrences(of: trimmed, with: repaired)
+        }
+
+        let hasLetters = trimmed.unicodeScalars.contains(where: CharacterSet.letters.contains)
+        let hasDigits = trimmed.unicodeScalars.contains(where: CharacterSet.decimalDigits.contains)
+        guard hasLetters && hasDigits else {
+            return token
+        }
+        if trimmed.range(
+            of: #"^\d+(?:[.,]\d+)?(?:g|kg|ml|l|oz|lb|pk|ct)$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
+            return token
+        }
+
+        let replaced = trimmed
+            .replacingOccurrences(of: "0", with: "O")
+            .replacingOccurrences(of: "1", with: "I")
+            .replacingOccurrences(of: "5", with: "S")
+            .replacingOccurrences(of: "6", with: "G")
+            .replacingOccurrences(of: "8", with: "B")
+
+        return token.replacingOccurrences(of: trimmed, with: replaced)
     }
 }

@@ -152,6 +152,7 @@ struct OCRQualityReport: Codable, Equatable, Sendable {
 struct OCRResult {
     var rawText: String
     var itemNameHint: String?
+    var itemNameEvidence: String? = nil
     var price: Decimal?
     var unit: UnitType?
     var quantity: Decimal?

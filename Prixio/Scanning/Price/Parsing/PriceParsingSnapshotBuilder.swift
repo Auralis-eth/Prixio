@@ -57,16 +57,24 @@ struct PriceParsingSnapshotBuilder {
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let globalItemNameHint = itemNameResolver.extractItemNameHint(
+        let globalItemNameResolution = itemNameResolver.resolveItemName(
             from: supportedLines,
             priceCandidates: priceCandidates
         )
+        let globalItemNameHint = globalItemNameResolution.canonicalName
         let winningClusterItemNameHint = winningClusterIndex.flatMap { index in
             evidenceClusters.indices.contains(index) ? evidenceClusters[index].itemNameHint : nil
+        }
+        let winningClusterItemNameEvidence = winningClusterIndex.flatMap { index in
+            evidenceClusters.indices.contains(index) ? evidenceClusters[index].itemNameEvidence : nil
         }
         let itemNameHint = preferredItemNameHint(
             winningClusterHint: winningClusterItemNameHint,
             globalHint: globalItemNameHint
+        )
+        let itemNameEvidence = preferredItemNameHint(
+            winningClusterHint: winningClusterItemNameEvidence,
+            globalHint: globalItemNameResolution.evidenceName
         )
         let resolvedQuantity = unitResolver.inferResolvedQuantity(
             from: supportedLines,
@@ -90,6 +98,7 @@ struct PriceParsingSnapshotBuilder {
             sceneClassification: sceneClassification,
             priceCandidates: priceCandidates,
             detectedUnit: detectedUnit,
+            itemNameEvidence: itemNameEvidence,
             itemNameHint: itemNameHint,
             resolvedQuantity: resolvedQuantity,
             heuristicConfidence: heuristicConfidence
@@ -109,6 +118,7 @@ struct PriceParsingSnapshotBuilder {
                 observations: cluster.observations,
                 lines: cluster.lines,
                 priceCandidates: cluster.priceCandidates,
+                itemNameEvidence: cluster.itemNameEvidence,
                 itemNameHint: cluster.itemNameHint,
                 detectedUnit: cluster.detectedUnit,
                 resolvedQuantity: cluster.resolvedQuantity,
@@ -136,10 +146,11 @@ struct PriceParsingSnapshotBuilder {
         )
         let joinedText = supportedLines.map(\.string).joined(separator: "\n")
         let detectedUnit = PriceParsingUnitResolver().detectUnit(in: joinedText)
-        let itemNameHint = PriceParsingItemNameResolver().extractItemNameHint(
+        let itemNameResolution = PriceParsingItemNameResolver().resolveItemName(
             from: supportedLines,
             priceCandidates: priceCandidates
         )
+        let itemNameHint = itemNameResolution.canonicalName
         let resolvedQuantity = PriceParsingUnitResolver().inferResolvedQuantity(
             from: supportedLines,
             priceCandidates: priceCandidates,
@@ -162,6 +173,7 @@ struct PriceParsingSnapshotBuilder {
             observations: ordered,
             lines: supportedLines.map(\.string),
             priceCandidates: priceCandidates,
+            itemNameEvidence: itemNameResolution.evidenceName,
             itemNameHint: itemNameHint,
             detectedUnit: detectedUnit,
             resolvedQuantity: resolvedQuantity,

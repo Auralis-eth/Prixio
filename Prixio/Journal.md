@@ -265,6 +265,15 @@ So OCR got a report card. `OCRResult` now carries an `OCRQualityReport` with the
 
 The important part is not the extra struct. The important part is the contract change. Preprocessing quality is now something the rest of the pipeline can inspect, test, and eventually use for review behavior or evaluation metrics. The fixture suite also picked up a narrow quality-report assertion so this does not regress back into “someone forgot to wire the metadata through, but the parser still kind of works.”
 
+### War Story: A Good Display Name Is Not the Same Thing as Raw OCR Evidence
+Phase 4 was the parser finally admitting that there are two different truths in an item name. One truth is what the OCR evidence actually gave us. The other is what we want to show a human after a little light cleanup. Those are related, but they are not the same thing.
+
+The classic example was `C0KE ZER0 SGR`. Raw OCR absolutely said that. Shipping it straight to the UI makes Prixio look like it learned English from a barcode scanner. But replacing it without preserving the evidence creates a different problem: now the parser acts like it always saw clean text, which makes debugging and review harder.
+
+So item-name resolution now carries both suitcases. The snapshot and final OCR result preserve an `itemNameEvidence` string alongside the cleaned `itemNameHint`. The resolver also got a more explicit split between fragment assembly and display-name repair. That let the parser keep evidence-rich names like `Cadbury Chocolate Mini Eggs 875 g` while still surfacing the nicer canonical form `Cadbury Chocolate Mini Eggs`.
+
+The repair rules stay intentionally light. This is not a language model in a fake moustache. It just fixes the kinds of grocery OCR scars we actually see: digit-for-letter substitutions like `C0KE`, obvious token repairs like `SGR -> Sugar`, and basic fragment composition across split product-title lines. The useful lesson is simple: if you want the UI to look smarter without making the parser less honest, preserve the evidence and repair the display name separately.
+
 The satisfying part is the result: the targeted ship-gate run passed cleanly in the current harness, six tests passed, zero failed, and the build stayed green. That does not mean the parser is done learning. It means release quality now has a smaller, sharper definition than “it seems pretty good on my machine,” which is how adults avoid shipping folklore.
 
 ### War Story: The Shelf Tag Was Split in Two, So the Parser Fell for the Candy Bag
