@@ -95,7 +95,8 @@ extension Array where Element == OCRTextObservation {
                 observation: OCRTextObservation(
                     string: sanitized,
                     confidence: observation.confidence,
-                    boundingBox: observation.boundingBox
+                    boundingBox: observation.boundingBox,
+                    alternateStrings: observation.alternateStrings
                 ),
                 words: words,
                 hasDigits: hasDigits

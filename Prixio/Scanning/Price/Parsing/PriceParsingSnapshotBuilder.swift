@@ -678,7 +678,8 @@ extension PriceParsingService {
             return OCRTextObservation(
                 string: sanitized,
                 confidence: observation.confidence,
-                boundingBox: observation.boundingBox
+                boundingBox: observation.boundingBox,
+                alternateStrings: observation.alternateStrings
             )
         }
     }
@@ -701,7 +702,8 @@ extension PriceParsingService {
             return OCRTextObservation(
                 string: sanitized,
                 confidence: observation.confidence,
-                boundingBox: observation.boundingBox
+                boundingBox: observation.boundingBox,
+                alternateStrings: observation.alternateStrings
             )
         }
     }
@@ -829,7 +831,8 @@ extension PriceParsingService {
             return OCRTextObservation(
                 string: correctedTokens.sanitizeOCRLine(),
                 confidence: observation.confidence,
-                boundingBox: observation.boundingBox
+                boundingBox: observation.boundingBox,
+                alternateStrings: observation.alternateStrings
             )
         }
     }

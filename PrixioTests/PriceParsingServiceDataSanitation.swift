@@ -20,6 +20,31 @@ extension Tag {
 @MainActor
 struct PriceParsingServiceDataSanitation {
     @Test(.tags(.ocr, .product))
+    func compactPriceObservationKeepsAlternateHypotheses() async throws {
+        let observation = OCRTextObservation(
+            string: "299",
+            confidence: 0.81,
+            alternateStrings: ["2.99", "$2.99", "299"]
+        )
+
+        #expect(observation.alternateStrings == ["2.99", "$2.99"])
+        #expect(observation.allCandidateStrings == ["299", "2.99", "$2.99"])
+        #expect(observation.likelyCompactPriceAlternates == ["299"])
+    }
+
+    @Test(.tags(.ocr, .product))
+    func nonPriceObservationDoesNotNeedAlternateCompactPriceCandidates() async throws {
+        let observation = OCRTextObservation(
+            string: "Fresh Bananas",
+            confidence: 0.93,
+            alternateStrings: ["Fresh Bononos"]
+        )
+
+        #expect(observation.allCandidateStrings == ["Fresh Bananas", "Fresh Bononos"])
+        #expect(observation.likelyCompactPriceAlternates.isEmpty)
+    }
+
+    @Test(.tags(.ocr, .product))
     func normalizesCommaDecimalPriceLineIntoCanonicalCurrency() async throws {
         let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
             OCRTextObservation(string: "Fresh Bananas", confidence: 0.93),

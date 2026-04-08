@@ -547,6 +547,18 @@ then the FM path is skipped. That is exactly how this should behave. A model sho
 
 This is another good example of raising the bar by reducing unnecessary cleverness. The best model call is often the one you did not need to make.
 
+### War Story: We Added an OCR Enrichment Seam Without Forcing the Parser to Marry It
+Phase 8 was intentionally cautious. The goal was not to suddenly make the parser depend on alternate OCR hypotheses everywhere. That would have been a big behavior change disguised as "just adding more evidence."
+
+Instead, the system got a new seam:
+- `OCRTextObservation` can now preserve alternate candidate strings
+- `OCRService` captures a bounded second Vision candidate for price-like observations
+- the normalization and consolidation path preserves those alternates instead of discarding them immediately
+
+That is exactly the right amount of ambition for this phase. The parser still reasons from the primary recognized string. The new alternate hypotheses are there as structured evidence for future experiments, tests, and debugging, not as a surprise new source of truth.
+
+This is the engineering equivalent of running conduit before you need the wiring. You do the boring structural prep now so that a later experiment does not require opening every wall in the house.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

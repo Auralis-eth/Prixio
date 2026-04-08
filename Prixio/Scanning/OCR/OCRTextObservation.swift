@@ -12,6 +12,7 @@ struct OCRTextObservation {
     let string: String
     let confidence: Float
     let boundingBox: CGRect?
+    let alternateStrings: [String]
     
     var cleanlinessScore: Double {
         let currencyBonus = string.contains("$") ? 0.2 : 0
@@ -19,9 +20,32 @@ struct OCRTextObservation {
         return Double(confidence) + currencyBonus - digitPenalty
     }
 
-    init(string: String, confidence: Float, boundingBox: CGRect? = nil) {
+    var allCandidateStrings: [String] {
+        [string] + alternateStrings
+    }
+
+    var likelyCompactPriceAlternates: [String] {
+        allCandidateStrings.filter { candidate in
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.range(of: #"^\$?\d{3,4}$"#, options: .regularExpression) != nil
+        }
+    }
+
+    init(
+        string: String,
+        confidence: Float,
+        boundingBox: CGRect? = nil,
+        alternateStrings: [String] = []
+    ) {
         self.string = string
         self.confidence = confidence
         self.boundingBox = boundingBox
+        self.alternateStrings = Array(
+            NSOrderedSet(
+                array: alternateStrings
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty && $0 != string }
+            )
+        ) as? [String] ?? alternateStrings
     }
 }

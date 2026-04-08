@@ -12,7 +12,8 @@ struct PriceCandidateScorer {
             OCRTextObservation(
                 string: observation.string.replacingOccurrences(of: ",", with: "."),
                 confidence: observation.confidence,
-                boundingBox: observation.boundingBox
+                boundingBox: observation.boundingBox,
+                alternateStrings: observation.alternateStrings
             )
         }
 
@@ -25,7 +26,8 @@ struct PriceCandidateScorer {
                 OCRTextObservation(
                     string: "\(lhs.string)\n\(rhs.string)",
                     confidence: min(lhs.confidence, rhs.confidence),
-                    boundingBox: nil
+                    boundingBox: nil,
+                    alternateStrings: lhs.alternateStrings + rhs.alternateStrings
                 )
             }
 

@@ -188,11 +188,16 @@ struct OCRService {
                 }
 
                 let observations = (request.results as? [VNRecognizedTextObservation] ?? []).compactMap { observation in
-                    observation.topCandidates(1).first.map { candidate in
+                    let candidates = observation.topCandidates(2)
+                    return candidates.first.map { candidate in
                         OCRTextObservation(
                             string: candidate.string,
                             confidence: candidate.confidence,
-                            boundingBox: observation.boundingBox
+                            boundingBox: observation.boundingBox,
+                            alternateStrings: alternateStrings(
+                                for: candidate.string,
+                                from: candidates.dropFirst().map(\.string)
+                            )
                         )
                     }
                 }
@@ -265,6 +270,23 @@ struct OCRService {
 
         let compactPricePattern = #"^\$?\d{3,4}$"#
         return trimmed.range(of: compactPricePattern, options: .regularExpression) != nil
+    }
+
+    private func alternateStrings(
+        for primary: String,
+        from candidates: [String]
+    ) -> [String] {
+        guard shouldPreserveAlternateCandidates(for: primary, candidates: candidates) else {
+            return []
+        }
+        return candidates
+    }
+
+    private func shouldPreserveAlternateCandidates(
+        for primary: String,
+        candidates: [String]
+    ) -> Bool {
+        isLikelyPriceSignal(in: primary) || candidates.contains(where: isLikelyPriceSignal(in:))
     }
 
 #if DEBUG
