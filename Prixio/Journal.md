@@ -678,3 +678,12 @@ A senior-engineer move here is to fix the narrowest broken assumption instead of
 
 ## If I Were Starting Over...
 I would make the OCR pipeline stages more observable from day one. Snapshot-style tests are already helping, but a tiny debug surface that prints supported, cleaned, normalized, consolidated, and extracted candidates for a fixture would make regressions like this much cheaper to diagnose. The bug was simple. Finding where the evidence disappeared was the real work.
+
+### Aha! Moment: Planning Docs Expire Faster Than Good Context
+At some point the planning markdown stopped being a roadmap and started being a museum of half-archived intentions. Some files said "done," some still had unchecked boxes, and some managed the impressive trick of being both complete and incomplete at the same time.
+
+So the planning stack got collapsed into two durable documents:
+- `LLMAppContext.md` for future model sessions that need to understand the app quickly
+- `OutstandingWork.md` for the work that is honestly still open
+
+That is a better shape for a living project. Finished architecture belongs in code, tests, and project memory. Open work belongs in one backlog. Everything else is how engineers accidentally end up maintaining fan fiction about their own codebase.
