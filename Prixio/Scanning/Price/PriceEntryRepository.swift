@@ -41,7 +41,7 @@ struct PriceEntryRepository {
         let entry = PriceEntry(
             capturedAt: draft.capturedAt,
             itemNameRaw: draft.itemName,
-            itemNameNormalized: normalizeItemName(draft.itemName),
+            itemNameNormalized: ItemKeyNormalizer.normalize(draft.itemName),
             priceValue: parsedPrice,
             unitType: unit,
             unitQuantityValue: draft.quantity,
@@ -67,7 +67,7 @@ struct PriceEntryRepository {
     }
 
     func cheapestEntries(for itemName: String, normalizedUnitType: UnitType) throws -> [PriceEntry] {
-        let normalizedName = normalizeItemName(itemName)
+        let normalizedName = ItemKeyNormalizer.normalize(itemName)
         let descriptor = FetchDescriptor<PriceEntry>(
             predicate: #Predicate<PriceEntry> { entry in
                 entry.itemNameNormalized == normalizedName && entry.normalizedUnitType == normalizedUnitType
@@ -78,7 +78,7 @@ struct PriceEntryRepository {
     }
 
     func cheapestEntries(for itemName: String, chainId: UUID, normalizedUnitType: UnitType) throws -> [PriceEntry] {
-        let normalizedName = normalizeItemName(itemName)
+        let normalizedName = ItemKeyNormalizer.normalize(itemName)
         let descriptor = FetchDescriptor<PriceEntry>(
             predicate: #Predicate<PriceEntry> { entry in
                 entry.itemNameNormalized == normalizedName &&
@@ -91,7 +91,7 @@ struct PriceEntryRepository {
     }
 
     func priceHistory(for locationId: UUID, itemName: String) throws -> [PriceEntry] {
-        let normalizedName = normalizeItemName(itemName)
+        let normalizedName = ItemKeyNormalizer.normalize(itemName)
         let descriptor = FetchDescriptor<PriceEntry>(
             predicate: #Predicate<PriceEntry> { entry in
                 entry.storeLocationId == locationId && entry.itemNameNormalized == normalizedName
@@ -160,11 +160,5 @@ struct PriceEntryRepository {
         }
 
         return fileURL.path
-    }
-
-    private func normalizeItemName(_ name: String) -> String {
-        name
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
     }
 }
