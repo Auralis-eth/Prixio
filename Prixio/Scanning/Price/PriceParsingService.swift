@@ -16,6 +16,13 @@ enum PriceParsingService {
         case unclear
     }
 
+    enum EvidenceClusterRole: String, Sendable {
+        case primaryProduct
+        case secondaryProduct
+        case promoCopy
+        case noise
+    }
+
     struct VocabularySignal {
         var frequency: Int
         var lineIndexes: [Int]
@@ -38,9 +45,22 @@ enum PriceParsingService {
         let score: Float
     }
 
+    struct EvidenceCluster: Sendable {
+        let observations: [OCRTextObservation]
+        let lines: [String]
+        let priceCandidates: [PriceCandidate]
+        let itemNameHint: String?
+        let detectedUnit: UnitType?
+        let resolvedQuantity: Decimal?
+        let role: EvidenceClusterRole
+        let score: Float
+    }
+
     struct HeuristicExtractionSnapshot: Sendable {
         let supportedObservations: [OCRTextObservation]
         let spatialGroups: [SpatialObservationGroup]
+        let evidenceClusters: [EvidenceCluster]
+        let winningClusterIndex: Int?
         let cleanedObservations: [OCRTextObservation]
         let normalizedObservations: [OCRTextObservation]
         let consolidatedObservations: [OCRTextObservation]
@@ -265,6 +285,14 @@ enum PriceParsingService {
             let lines = group.observations.map(\.string).joined(separator: " | ")
             print("  [\(index)] score=\(String(format: "%.3f", group.score)) lines=\(lines)")
         }
+        print("evidence clusters (\(snapshot.evidenceClusters.count)):")
+        for (index, cluster) in snapshot.evidenceClusters.enumerated() {
+            let clusterPrices = cluster.priceCandidates.map { $0.value }
+            print(
+                "  [\(index)] role=\(cluster.role.rawValue) score=\(String(format: "%.3f", cluster.score)) item=\(cluster.itemNameHint ?? "nil") prices=\(clusterPrices)"
+            )
+        }
+        print("winning cluster index: \(snapshot.winningClusterIndex.map(String.init) ?? "nil")")
 
         print("cleaned observations: \(snapshot.cleanedObservations.map(\.string))")
         print("normalized observations: \(snapshot.normalizedObservations.map(\.string))")

@@ -28,6 +28,10 @@ struct PriceParsingServiceSpatialGroupingTests {
         #expect(supportingLines.contains("$1.29 /lb"))
         #expect(snapshot.rawText.contains("Pepsi Zero") == false)
         #expect(snapshot.spatialGroups.count == 2)
+        #expect(snapshot.evidenceClusters.count == 2)
+        #expect(snapshot.winningClusterIndex == 0)
+        #expect(snapshot.evidenceClusters[safe: 0]?.role == .primaryProduct)
+        #expect(snapshot.evidenceClusters[safe: 1]?.role == .secondaryProduct)
     }
 
     @Test(.tags(.ocr, .product))
@@ -84,6 +88,7 @@ struct PriceParsingServiceSpatialGroupingTests {
         #expect(supportingLines.contains("$1.29 /lb"))
         #expect(supportingLines.contains("Pepsi Zero") == false)
         #expect(snapshot.priceCandidates.first?.value == Decimal(string: "1.29"))
+        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Organic Bananas")
     }
 
     @Test(.tags(.ocr, .product))
@@ -101,6 +106,22 @@ struct PriceParsingServiceSpatialGroupingTests {
         #expect(report.shouldUseFoundationModel)
     }
 
+    @Test(.tags(.ocr, .product))
+    func promoOnlyClusterIsNotChosenAsWinningProductCluster() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            observation("SAVE THIS WEEK", confidence: 0.90, x: 0.05, y: 0.86, width: 0.24, height: 0.06),
+            observation("Valid Fri Sat Sun", confidence: 0.88, x: 0.05, y: 0.79, width: 0.30, height: 0.06),
+            observation("Organic Bananas", confidence: 0.95, x: 0.48, y: 0.78, width: 0.26, height: 0.08),
+            observation("$1.29 /lb", confidence: 0.93, x: 0.49, y: 0.67, width: 0.18, height: 0.08)
+        ])
+
+        #expect(snapshot.evidenceClusters.count == 2)
+        #expect(snapshot.evidenceClusters.contains(where: { $0.role == .promoCopy }))
+        #expect(snapshot.winningClusterIndex != nil)
+        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Organic Bananas")
+        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.role == .primaryProduct)
+    }
+
     private func observation(
         _ string: String,
         confidence: Float,
@@ -114,5 +135,11 @@ struct PriceParsingServiceSpatialGroupingTests {
             confidence: confidence,
             boundingBox: CGRect(x: x, y: y, width: width, height: height)
         )
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

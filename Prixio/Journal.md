@@ -461,6 +461,30 @@ This also cleaned up the ambiguity path. Instead of always trying to rediscover 
 
 In restaurant terms, the parser used to say, "something seems wrong with this ticket." Now it can say, "this is not a normal table order, this is a catering sheet," which is a much better starting point for deciding what to do next.
 
+### War Story: Spatial Groups Were Not Enough, We Needed Product Blocks With Paperwork
+Phase 4 turned spatial groups into something more accountable. Before this pass, the parser already knew how to group nearby observations, but those groups were still just piles of lines with a score. Useful, but not enough. A pile of lines cannot tell you, "I am probably the primary product tag," or "I am promo noise trying to look important."
+
+So the snapshot now carries first-class `evidenceClusters`. Each cluster has:
+- its local observations
+- normalized lines
+- local price candidates
+- local item hint
+- local unit and quantity signals
+- a role hint
+- a cluster score
+
+The role hints are intentionally blunt:
+- `primaryProduct`
+- `secondaryProduct`
+- `promoCopy`
+- `noise`
+
+That bluntness is a feature, not a bug. The first version of a clustering layer should behave like a decent warehouse label maker, not like a poet. It needs to separate the useful carton from the cardboard filler before it tries to sound clever.
+
+The other important addition is a `winningClusterIndex`. That gives the parser a concrete answer to a question it had previously been answering indirectly: "Which product block do we think we are actually parsing?" Right now the existing focus and candidate ranking flow still does most of the heavy lifting, which is fine. Phase 4 was about making the data model explicit first, not ripping out working heuristics just to feel architectural.
+
+This is a good example of the right refactor order. First make the concepts real. Then let later phases use those concepts more aggressively. If you reverse that order, you usually end up with a lot of "smart" branching code built on unnamed ideas.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

@@ -39,6 +39,8 @@ struct PriceParsingSnapshotBuilder {
             extractedPriceCandidates,
             in: supportedLines
         )
+        let evidenceClusters = buildEvidenceClusters(from: spatialGroups)
+        let winningClusterIndex = winningClusterIndex(in: evidenceClusters)
         let sceneClassification = classifyScene(
             spatialGroups: spatialGroups,
             lines: supportedLines.map(\.string),
@@ -65,6 +67,8 @@ struct PriceParsingSnapshotBuilder {
         return PriceParsingService.HeuristicExtractionSnapshot(
             supportedObservations: supportedObservations,
             spatialGroups: spatialGroups,
+            evidenceClusters: evidenceClusters,
+            winningClusterIndex: winningClusterIndex,
             cleanedObservations: cleanedObservations,
             normalizedObservations: normalizedObservations,
             consolidatedObservations: supportedLines,
@@ -78,6 +82,145 @@ struct PriceParsingSnapshotBuilder {
             resolvedQuantity: resolvedQuantity,
             heuristicConfidence: heuristicConfidence
         )
+    }
+
+    func buildEvidenceClusters(
+        from spatialGroups: [PriceParsingService.SpatialObservationGroup]
+    ) -> [PriceParsingService.EvidenceCluster] {
+        let baseClusters = spatialGroups.map(makeEvidenceCluster)
+        let productIndexes = baseClusters.enumerated()
+            .filter { $0.element.role == .primaryProduct }
+            .sorted { lhs, rhs in lhs.element.score > rhs.element.score }
+            .map(\.offset)
+
+        return baseClusters.enumerated().map { index, cluster in
+            guard let productRank = productIndexes.firstIndex(of: index) else {
+                return cluster
+            }
+
+            let adjustedRole: PriceParsingService.EvidenceClusterRole = productRank == 0 ? .primaryProduct : .secondaryProduct
+            return PriceParsingService.EvidenceCluster(
+                observations: cluster.observations,
+                lines: cluster.lines,
+                priceCandidates: cluster.priceCandidates,
+                itemNameHint: cluster.itemNameHint,
+                detectedUnit: cluster.detectedUnit,
+                resolvedQuantity: cluster.resolvedQuantity,
+                role: adjustedRole,
+                score: cluster.score
+            )
+        }
+    }
+
+    func makeEvidenceCluster(
+        from group: PriceParsingService.SpatialObservationGroup
+    ) -> PriceParsingService.EvidenceCluster {
+        let ordered = PriceParsingService.orderObservationsInReadingOrder(group.observations)
+        let cleaned = PriceParsingService.removeObviousNoise(from: ordered)
+        let normalized = PriceParsingService.applyContextualNormalization(to: cleaned)
+        let consolidated = normalized.consolidateObservations()
+        let supportedLines = (consolidated.isEmpty ? normalized : consolidated)
+        let priceCandidates = PriceCandidateScorer().scorePriceCandidates(
+            PriceCandidateScorer().extractPriceCandidates(from: supportedLines),
+            in: supportedLines
+        )
+        let joinedText = supportedLines.map(\.string).joined(separator: "\n")
+        let detectedUnit = PriceParsingUnitResolver().detectUnit(in: joinedText)
+        let itemNameHint = PriceParsingItemNameResolver().extractItemNameHint(
+            from: supportedLines,
+            priceCandidates: priceCandidates
+        )
+        let resolvedQuantity = PriceParsingUnitResolver().inferResolvedQuantity(
+            from: supportedLines,
+            priceCandidates: priceCandidates,
+            detectedUnit: detectedUnit,
+            fallbackText: joinedText
+        )
+        let role = clusterRole(
+            lines: supportedLines.map(\.string),
+            priceCandidates: priceCandidates,
+            itemNameHint: itemNameHint
+        )
+        let score = clusterScore(
+            groupScore: group.score,
+            priceCandidates: priceCandidates,
+            itemNameHint: itemNameHint,
+            role: role
+        )
+
+        return PriceParsingService.EvidenceCluster(
+            observations: ordered,
+            lines: supportedLines.map(\.string),
+            priceCandidates: priceCandidates,
+            itemNameHint: itemNameHint,
+            detectedUnit: detectedUnit,
+            resolvedQuantity: resolvedQuantity,
+            role: role,
+            score: score
+        )
+    }
+
+    func clusterRole(
+        lines: [String],
+        priceCandidates: [PriceCandidate],
+        itemNameHint: String?
+    ) -> PriceParsingService.EvidenceClusterRole {
+        let confidenceResolver = PriceParsingConfidenceResolver()
+        let promoLineCount = lines.filter { line in
+            line.range(of: PriceParsingService.promoMarkerPattern, options: [.regularExpression, .caseInsensitive]) != nil
+                || line.localizedCaseInsensitiveContains("save")
+                || confidenceResolver.looksLikeDateLine(line)
+        }.count
+        let descriptiveLineCount = lines.filter(confidenceResolver.isProductDescriptor).count
+
+        if descriptiveLineCount >= 1 && !priceCandidates.isEmpty && itemNameHint?.isEmpty == false {
+            return .primaryProduct
+        }
+
+        if promoLineCount >= 1 && descriptiveLineCount >= 1 {
+            return .promoCopy
+        }
+
+        return .noise
+    }
+
+    func clusterScore(
+        groupScore: Float,
+        priceCandidates: [PriceCandidate],
+        itemNameHint: String?,
+        role: PriceParsingService.EvidenceClusterRole
+    ) -> Float {
+        var score = groupScore
+        if !priceCandidates.isEmpty {
+            score += 6 + Float(max(0, priceCandidates.count - 1))
+        }
+        if itemNameHint?.isEmpty == false {
+            score += 4
+        }
+
+        switch role {
+        case .primaryProduct:
+            score += 3
+        case .secondaryProduct:
+            score += 1
+        case .promoCopy:
+            score -= 1
+        case .noise:
+            score -= 3
+        }
+
+        return score
+    }
+
+    func winningClusterIndex(
+        in clusters: [PriceParsingService.EvidenceCluster]
+    ) -> Int? {
+        clusters.enumerated()
+            .filter { cluster in
+                cluster.element.role == .primaryProduct || cluster.element.role == .secondaryProduct
+            }
+            .max { lhs, rhs in lhs.element.score < rhs.element.score }?
+            .offset
     }
 
     func classifyScene(
