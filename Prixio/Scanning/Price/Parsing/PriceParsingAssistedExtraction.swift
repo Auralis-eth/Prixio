@@ -189,6 +189,15 @@ struct PriceParsingAssistedExtractor {
             replacedPrice: shouldTrustModelCandidate,
             agreementAdjustment: agreementAdjustment
         )
+        let decisionResolver = PriceParsingConfidenceResolver()
+        let decisionReport = decisionResolver.makeDecisionReport(
+            snapshot: snapshot,
+            ambiguity: ambiguity,
+            ocrConfidence: decisionResolver.ocrEvidenceConfidence(snapshot: snapshot),
+            parseConfidence: decisionResolver.parseStructureConfidence(snapshot: snapshot),
+            combinedConfidence: finalConfidence,
+            usedFoundationModel: true
+        )
 
         return OCRResult(
             rawText: snapshot.rawText,
@@ -204,6 +213,7 @@ struct PriceParsingAssistedExtractor {
                 usedFoundationModel: true,
                 ambiguityNotes: assisted.ambiguityNotes
             ),
+            parserDecisionReport: decisionReport,
             supportingLines: filteredFinalLines
         )
     }

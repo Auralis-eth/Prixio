@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum PriceKind: String, Sendable {
+enum PriceKind: String, Codable, Sendable {
     case shelf
     case sale
     case member

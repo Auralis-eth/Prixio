@@ -16,6 +16,8 @@ struct OCRReviewStateTests {
         #expect(result.review.state == .clean)
         #expect(result.review.usedFoundationModel == false)
         #expect(result.review.issues.isEmpty)
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.category == .ownership && $0.code == "single_tag_scene" }) == true)
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.category == .candidateKind && $0.code == "winning_price_kind_unit" }) == true)
     }
 
     @Test(.tags(.ocr, .product, .shipGate))
@@ -31,6 +33,8 @@ struct OCRReviewStateTests {
 
         #expect(result.review.state == .reviewRequired)
         #expect(result.review.issues.contains(.possibleMultiProductScan))
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.category == .ownership && $0.code == "scene_unclear" }) == true)
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.category == .review && $0.code == "possibleMultiProductScan" }) == true)
     }
 
     @Test(.tags(.ocr, .product, .shipGate))
@@ -43,6 +47,7 @@ struct OCRReviewStateTests {
 
         #expect(result.review.issues.contains(.lowConfidence))
         #expect((result.confidence ?? 1) < 0.5)
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.category == .ocr && $0.code == "sparse_ocr" }) == true)
     }
 
     @Test(.tags(.ocr, .product, .shipGate))
@@ -85,5 +90,6 @@ struct OCRReviewStateTests {
         #expect(result.review.usedFoundationModel)
         #expect(result.review.state == .reviewRequired)
         #expect(result.review.ambiguityNotes == ["two nearby prices"])
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.category == .review && $0.code == "foundation_model_used" }) == true)
     }
 }

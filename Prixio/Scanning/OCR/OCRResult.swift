@@ -160,6 +160,7 @@ struct OCRResult {
     var priceCandidates: [PriceCandidate]
     var review: OCRReview = .clean
     var ocrQualityReport: OCRQualityReport? = nil
+    var parserDecisionReport: PriceParsingService.ParserDecisionReport? = nil
     /// Evidence for the selected parse result. Deterministic inputs may pin this exactly,
     /// while live OCR or model-assisted paths should only rely on stable invariants.
     let supportingLines: [String]

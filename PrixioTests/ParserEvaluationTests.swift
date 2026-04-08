@@ -88,6 +88,8 @@ struct ParserEvaluationTests {
         var matchedItemCount = 0
         var matchedReviewStateCount = 0
         var foundationModelCount = 0
+        var decisionReportCount = 0
+        var reviewReasonCount = 0
 
         for evaluationCase in cases {
             let result = await PriceParsingService.extract(from: evaluationCase.observations)
@@ -98,6 +100,8 @@ struct ParserEvaluationTests {
             if result.itemNameHint == evaluationCase.expectedItemName { matchedItemCount += 1 }
             if result.review.state == evaluationCase.expectedReviewState { matchedReviewStateCount += 1 }
             if result.review.usedFoundationModel { foundationModelCount += 1 }
+            if result.parserDecisionReport != nil { decisionReportCount += 1 }
+            reviewReasonCount += result.parserDecisionReport?.reasons.filter { $0.category == .review }.count ?? 0
 
             #expect(result.itemNameHint == evaluationCase.expectedItemName, Comment(rawValue: evaluationCase.name))
             #expect(result.price == evaluationCase.expectedPrice, Comment(rawValue: evaluationCase.name))
@@ -105,6 +109,7 @@ struct ParserEvaluationTests {
             #expect(result.quantity == evaluationCase.expectedQuantity, Comment(rawValue: evaluationCase.name))
             #expect(result.review.state == evaluationCase.expectedReviewState, Comment(rawValue: evaluationCase.name))
             #expect(result.review.usedFoundationModel == evaluationCase.expectsFoundationModel, Comment(rawValue: evaluationCase.name))
+            #expect(result.parserDecisionReport != nil, Comment(rawValue: evaluationCase.name))
         }
 
         let total = cases.count
@@ -118,6 +123,8 @@ struct ParserEvaluationTests {
             - matched item name: \(matchedItemCount)/\(total)
             - matched review state: \(matchedReviewStateCount)/\(total)
             - FM-assisted cases observed: \(foundationModelCount)
+            - decision reports emitted: \(decisionReportCount)/\(total)
+            - review reasons observed: \(reviewReasonCount)
             """
         )
     }

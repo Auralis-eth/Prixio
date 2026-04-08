@@ -9,7 +9,7 @@ import CoreGraphics
 import Foundation
 
 enum PriceParsingService {
-    enum SceneClassification: String, Sendable {
+    enum SceneClassification: String, Codable, Sendable {
         case singleTag
         case multiTag
         case promoCard
@@ -23,6 +23,13 @@ enum PriceParsingService {
         case promoBanner
         case unitDetail
         case noise
+    }
+
+    enum ParserDecisionCategory: String, Codable, Sendable {
+        case ocr
+        case ownership
+        case candidateKind
+        case review
     }
 
     struct VocabularySignal {
@@ -86,6 +93,21 @@ enum PriceParsingService {
         let itemNameHint: String?
         let resolvedQuantity: Decimal?
         let heuristicConfidence: Float
+    }
+
+    struct ParserDecisionReason: Codable, Equatable, Sendable {
+        let category: ParserDecisionCategory
+        let code: String
+        let detail: String
+    }
+
+    struct ParserDecisionReport: Codable, Equatable, Sendable {
+        let ocrConfidence: Float
+        let parseConfidence: Float
+        let combinedConfidence: Float
+        let sceneClassification: SceneClassification
+        let winningPriceKind: PriceKind?
+        let reasons: [ParserDecisionReason]
     }
 
     enum ExtractionWeakness: String, CaseIterable, Sendable {

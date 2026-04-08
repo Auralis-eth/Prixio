@@ -52,6 +52,12 @@ struct PriceParsingConfidenceResolver {
 
     func makeOCRResult(from snapshot: PriceParsingService.HeuristicExtractionSnapshot) -> OCRResult {
         let ambiguity = analyzeAmbiguity(in: snapshot)
+        let ocrConfidence = ocrEvidenceConfidence(snapshot: snapshot)
+        let parseConfidence = parseStructureConfidence(snapshot: snapshot)
+        let combined = combinedConfidence(
+            ocrConfidence: ocrConfidence,
+            parseConfidence: parseConfidence
+        )
         return OCRResult(
             rawText: snapshot.rawText,
             itemNameHint: snapshot.itemNameHint,
@@ -62,11 +68,19 @@ struct PriceParsingConfidenceResolver {
             confidence: assembleHeuristicConfidence(
                 snapshot: snapshot,
                 ambiguity: ambiguity,
-                ocrConfidence: ocrEvidenceConfidence(snapshot: snapshot),
-                parseConfidence: parseStructureConfidence(snapshot: snapshot)
+                ocrConfidence: ocrConfidence,
+                parseConfidence: parseConfidence
             ),
             priceCandidates: snapshot.priceCandidates,
             review: OCRReview(ambiguity: ambiguity, usedFoundationModel: false),
+            parserDecisionReport: makeDecisionReport(
+                snapshot: snapshot,
+                ambiguity: ambiguity,
+                ocrConfidence: ocrConfidence,
+                parseConfidence: parseConfidence,
+                combinedConfidence: combined,
+                usedFoundationModel: false
+            ),
             supportingLines: snapshot.consolidatedObservations.map(\.string)
         )
     }
@@ -222,6 +236,137 @@ struct PriceParsingConfidenceResolver {
             return 0.10
         case .possibleMultiProductScan:
             return 0.16
+        }
+    }
+
+    func makeDecisionReport(
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot,
+        ambiguity: PriceParsingService.ExtractionAmbiguityReport,
+        ocrConfidence: Float,
+        parseConfidence: Float,
+        combinedConfidence: Float,
+        usedFoundationModel: Bool
+    ) -> PriceParsingService.ParserDecisionReport {
+        PriceParsingService.ParserDecisionReport(
+            ocrConfidence: ocrConfidence,
+            parseConfidence: parseConfidence,
+            combinedConfidence: combinedConfidence,
+            sceneClassification: snapshot.sceneClassification,
+            winningPriceKind: snapshot.priceCandidates.first?.kind,
+            reasons: makeDecisionReasons(
+                snapshot: snapshot,
+                ambiguity: ambiguity,
+                ocrConfidence: ocrConfidence,
+                parseConfidence: parseConfidence,
+                usedFoundationModel: usedFoundationModel
+            )
+        )
+    }
+
+    func makeDecisionReasons(
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot,
+        ambiguity: PriceParsingService.ExtractionAmbiguityReport,
+        ocrConfidence: Float,
+        parseConfidence: Float,
+        usedFoundationModel: Bool
+    ) -> [PriceParsingService.ParserDecisionReason] {
+        var reasons: [PriceParsingService.ParserDecisionReason] = []
+
+        if snapshot.cleanedObservations.count <= 1 || snapshot.lines.count <= 1 {
+            reasons.append(.init(
+                category: .ocr,
+                code: "sparse_ocr",
+                detail: "OCR recovered very few usable lines."
+            ))
+        } else if ocrConfidence >= 0.7 {
+            reasons.append(.init(
+                category: .ocr,
+                code: "usable_ocr_evidence",
+                detail: "OCR recovered enough evidence to support parsing."
+            ))
+        }
+
+        switch snapshot.sceneClassification {
+        case .multiTag, .unclear:
+            reasons.append(.init(
+                category: .ownership,
+                code: "scene_\(snapshot.sceneClassification.rawValue)",
+                detail: "Scene structure suggests ambiguous ownership between nearby product evidence."
+            ))
+        case .singleTag:
+            reasons.append(.init(
+                category: .ownership,
+                code: "single_tag_scene",
+                detail: "Cluster layout looks like one product tag."
+            ))
+        case .promoCard, .receiptLike:
+            reasons.append(.init(
+                category: .ownership,
+                code: "scene_\(snapshot.sceneClassification.rawValue)",
+                detail: "Scene shape changes how confidently the parser can assign ownership."
+            ))
+        }
+
+        if let winningKind = snapshot.priceCandidates.first?.kind {
+            reasons.append(.init(
+                category: .candidateKind,
+                code: "winning_price_kind_\(winningKind.rawValue)",
+                detail: "The winning price candidate was classified as \(winningKind.rawValue)."
+            ))
+        }
+        if PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) {
+            reasons.append(.init(
+                category: .candidateKind,
+                code: "competing_price_candidates",
+                detail: "More than one price candidate remained close enough to compete."
+            ))
+        }
+
+        for weakness in ambiguity.weaknesses {
+            reasons.append(.init(
+                category: .review,
+                code: weakness.rawValue,
+                detail: weaknessDetail(for: weakness)
+            ))
+        }
+
+        if usedFoundationModel {
+            reasons.append(.init(
+                category: .review,
+                code: "foundation_model_used",
+                detail: "Foundation Models were used as a tie-breaker."
+            ))
+        }
+
+        if parseConfidence >= 0.7 && ambiguity.weaknesses.isEmpty {
+            reasons.append(.init(
+                category: .review,
+                code: "stable_parse",
+                detail: "The deterministic parser reached a stable result without review issues."
+            ))
+        }
+
+        return reasons
+    }
+
+    func weaknessDetail(for weakness: PriceParsingService.ExtractionWeakness) -> String {
+        switch weakness {
+        case .noPriceCandidates:
+            return "No reliable price candidate survived parsing."
+        case .multipleCompetingPrices:
+            return "Multiple price candidates remained close enough to compete."
+        case .missingItemName:
+            return "The parser could not build a confident item name."
+        case .missingUnit:
+            return "The parser could not confirm a unit of measure."
+        case .missingQuantity:
+            return "The parser could not confirm quantity context."
+        case .lowConfidence:
+            return "Combined OCR and parse confidence stayed low."
+        case .sparseOCR:
+            return "OCR evidence was too sparse for a stable parse."
+        case .possibleMultiProductScan:
+            return "The image may contain more than one product."
         }
     }
 

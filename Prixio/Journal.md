@@ -274,6 +274,13 @@ So item-name resolution now carries both suitcases. The snapshot and final OCR r
 
 The repair rules stay intentionally light. This is not a language model in a fake moustache. It just fixes the kinds of grocery OCR scars we actually see: digit-for-letter substitutions like `C0KE`, obvious token repairs like `SGR -> Sugar`, and basic fragment composition across split product-title lines. The useful lesson is simple: if you want the UI to look smarter without making the parser less honest, preserve the evidence and repair the display name separately.
 
+### War Story: Confidence Needed an Audit Trail, Not Just a Score
+Phase 5 tightened the part of parser design that always gets hand-wavy if you let it: confidence and review state. A float score is useful. A float score without reasons is a tiny mystery novel with the last chapter ripped out.
+
+So the parser now leaves breadcrumbs. `OCRResult` carries a compact `ParserDecisionReport` with categorized reasons for what happened. Some reasons are OCR-shaped: sparse evidence or enough usable text to trust the scan. Some are ownership-shaped: single-tag scene, unclear scene, promo-card scene. Some are candidate-kind shaped: the winning candidate was a unit price, or there were still competing prices. And some are review-shaped: missing unit, low confidence, possible multi-product scan, Foundation Models were used, or the parse was stable enough to stay on the deterministic path.
+
+That sounds like extra metadata because it is. But it is the good kind of extra metadata. The evaluation tests can now say more than “passed” or “failed.” Review-state tests can verify that the parser got to the right answer for the right reasons. And future regressions have a fighting chance of being diagnosed without dropping into snippets and asking the codebase to explain its childhood.
+
 The satisfying part is the result: the targeted ship-gate run passed cleanly in the current harness, six tests passed, zero failed, and the build stayed green. That does not mean the parser is done learning. It means release quality now has a smaller, sharper definition than “it seems pretty good on my machine,” which is how adults avoid shipping folklore.
 
 ### War Story: The Shelf Tag Was Split in Two, So the Parser Fell for the Candy Bag
