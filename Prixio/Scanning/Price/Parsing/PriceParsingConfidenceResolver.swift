@@ -37,7 +37,7 @@ struct PriceParsingConfidenceResolver {
             weaknesses.append(.sparseOCR)
         }
 
-        if looksLikeMultiProductScan(snapshot) {
+        if snapshot.sceneClassification == .multiTag || looksLikeMultiProductScan(snapshot) {
             weaknesses.append(.possibleMultiProductScan)
         }
 
@@ -120,7 +120,7 @@ struct PriceParsingConfidenceResolver {
         if !PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) {
             confidence += 0.04
         }
-        if !looksLikeMultiProductScan(snapshot) {
+        if snapshot.sceneClassification != .multiTag && !looksLikeMultiProductScan(snapshot) {
             confidence += 0.03
         }
 

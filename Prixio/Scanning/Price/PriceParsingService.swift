@@ -8,6 +8,13 @@
 import Foundation
 
 enum PriceParsingService {
+    enum SceneClassification: String, Sendable {
+        case singleTag
+        case multiTag
+        case promoCard
+        case receiptLike
+        case unclear
+    }
 
     struct VocabularySignal {
         var frequency: Int
@@ -40,6 +47,7 @@ enum PriceParsingService {
         let rawText: String
         let normalizedText: String
         let lines: [String]
+        let sceneClassification: SceneClassification
         let priceCandidates: [PriceCandidate]
         let detectedUnit: UnitType?
         let itemNameHint: String?
@@ -261,6 +269,7 @@ enum PriceParsingService {
         print("cleaned observations: \(snapshot.cleanedObservations.map(\.string))")
         print("normalized observations: \(snapshot.normalizedObservations.map(\.string))")
         print("consolidated observations: \(snapshot.consolidatedObservations.map(\.string))")
+        print("scene classification: \(snapshot.sceneClassification.rawValue)")
         print("heuristic confidence: \(snapshot.heuristicConfidence)")
         print("price candidates (\(snapshot.priceCandidates.count)):")
         for (index, candidate) in snapshot.priceCandidates.enumerated() {

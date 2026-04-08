@@ -15,6 +15,7 @@ struct PriceParsingServiceAmbiguityTests {
     struct AmbiguityCase {
         let name: String
         let observations: [OCRTextObservation]
+        let expectedSceneClassification: PriceParsingService.SceneClassification
         let expectedWeaknesses: Set<PriceParsingService.ExtractionWeakness>
         let shouldEscalate: Bool
     }
@@ -28,6 +29,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "Fresh Bananas", confidence: 0.92),
                     OCRTextObservation(string: "$1.29 /lb", confidence: 0.91)
                 ],
+                expectedSceneClassification: .singleTag,
                 expectedWeaknesses: [],
                 shouldEscalate: false
             ),
@@ -37,6 +39,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "Fresh Bananas", confidence: 0.91),
                     OCRTextObservation(string: "Great taste /lb", confidence: 0.88)
                 ],
+                expectedSceneClassification: .unclear,
                 expectedWeaknesses: [.noPriceCandidates],
                 shouldEscalate: true
             ),
@@ -47,6 +50,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "$3.99", confidence: 0.94),
                     OCRTextObservation(string: "$4.49", confidence: 0.94)
                 ],
+                expectedSceneClassification: .unclear,
                 expectedWeaknesses: [.missingUnit, .missingQuantity],
                 shouldEscalate: true
             ),
@@ -55,6 +59,7 @@ struct PriceParsingServiceAmbiguityTests {
                 observations: [
                     OCRTextObservation(string: "$3.99", confidence: 0.66)
                 ],
+                expectedSceneClassification: .unclear,
                 expectedWeaknesses: [.missingItemName, .missingUnit, .sparseOCR],
                 shouldEscalate: true
             ),
@@ -66,6 +71,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "Pepsi", confidence: 0.92),
                     OCRTextObservation(string: "$3.49", confidence: 0.90)
                 ],
+                expectedSceneClassification: .multiTag,
                 expectedWeaknesses: [.multipleCompetingPrices, .missingUnit, .possibleMultiProductScan],
                 shouldEscalate: true
             ),
@@ -76,6 +82,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "$5.99", confidence: 0.91),
                     OCRTextObservation(string: "$0.10 deposit", confidence: 0.91)
                 ],
+                expectedSceneClassification: .singleTag,
                 expectedWeaknesses: [.missingUnit, .missingQuantity],
                 shouldEscalate: false
             ),
@@ -88,6 +95,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "Regular 6.49", confidence: 0.82),
                     OCRTextObservation(string: "plus dep", confidence: 0.75)
                 ],
+                expectedSceneClassification: .singleTag,
                 expectedWeaknesses: [],
                 shouldEscalate: false
             ),
@@ -100,14 +108,29 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "SAVE 2.00", confidence: 0.78),
                     OCRTextObservation(string: "Valid Fri Sat Sun", confidence: 0.76)
                 ],
+                expectedSceneClassification: .promoCard,
                 expectedWeaknesses: [],
                 shouldEscalate: false
+            ),
+            AmbiguityCase(
+                name: "receipt-like scene is classified conservatively",
+                observations: [
+                    OCRTextObservation(string: "Subtotal", confidence: 0.91),
+                    OCRTextObservation(string: "Tax", confidence: 0.89),
+                    OCRTextObservation(string: "Total", confidence: 0.93),
+                    OCRTextObservation(string: "Visa", confidence: 0.90)
+                ],
+                expectedSceneClassification: .receiptLike,
+                expectedWeaknesses: [.noPriceCandidates, .missingItemName, .missingUnit],
+                shouldEscalate: true
             )
         ]
     )
     func analyzesAmbiguity(case testCase: AmbiguityCase) async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot(testCase.observations)
         let report = PriceParsingService._test_analyzeAmbiguity(testCase.observations)
 
+        #expect(snapshot.sceneClassification == testCase.expectedSceneClassification, Comment(rawValue: testCase.name))
         #expect(report.shouldUseFoundationModel == testCase.shouldEscalate, Comment(rawValue: testCase.name))
         #expect(Set(report.weaknesses).isSuperset(of: testCase.expectedWeaknesses), Comment(rawValue: testCase.name))
     }

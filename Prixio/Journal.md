@@ -445,6 +445,22 @@ The debug story got better too. Parser debug output now reports heuristic confid
 
 This was one of those phases that feels less glamorous than shipping a new heuristic, but it raises the technical bar. A parser team that cannot distinguish deterministic contracts from live-system invariants eventually starts fighting randomness and calling it quality work.
 
+### War Story: The Parser Finally Learned to Name the Kind of Mess It Was Looking At
+Phase 3 added something the pipeline had been faking for a while: scene classification. Before this pass, the parser could act suspicious about a scan, but it could not cleanly say what kind of suspicious scene it thought it was looking at. Everything got funneled through field completeness, competing prices, and a few special-case checks. That works until you realize a promo card, a multi-tag shelf photo, and a receipt-like fragment are all different flavors of trouble.
+
+The new snapshot now carries a `sceneClassification` value:
+- `singleTag`
+- `multiTag`
+- `promoCard`
+- `receiptLike`
+- `unclear`
+
+The important design choice was restraint. `unclear` is the default unless the evidence really earns something more specific. That keeps the classifier from becoming a tiny overconfident oracle that mislabels noisy scans just because it wants to be helpful.
+
+This also cleaned up the ambiguity path. Instead of always trying to rediscover "is this maybe multi-product?" from scratch, the confidence resolver can now use the scene classification as an explicit signal. That makes the code easier to reason about and gives tests a much sharper contract: not just "did we escalate?" but "what scene did we think this was?"
+
+In restaurant terms, the parser used to say, "something seems wrong with this ticket." Now it can say, "this is not a normal table order, this is a catering sheet," which is a much better starting point for deciding what to do next.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

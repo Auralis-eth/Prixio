@@ -39,6 +39,12 @@ struct PriceParsingSnapshotBuilder {
             extractedPriceCandidates,
             in: supportedLines
         )
+        let sceneClassification = classifyScene(
+            spatialGroups: spatialGroups,
+            lines: supportedLines.map(\.string),
+            priceCandidates: priceCandidates,
+            rawText: rawText
+        )
         let detectedUnit = unitResolver.detectUnit(in: unitScopeText.isEmpty ? normalizedText : unitScopeText)
         let lines = (unitScopeText.isEmpty ? normalizedText : unitScopeText)
             .components(separatedBy: .newlines)
@@ -65,12 +71,96 @@ struct PriceParsingSnapshotBuilder {
             rawText: rawText,
             normalizedText: normalizedText,
             lines: lines,
+            sceneClassification: sceneClassification,
             priceCandidates: priceCandidates,
             detectedUnit: detectedUnit,
             itemNameHint: itemNameHint,
             resolvedQuantity: resolvedQuantity,
             heuristicConfidence: heuristicConfidence
         )
+    }
+
+    func classifyScene(
+        spatialGroups: [PriceParsingService.SpatialObservationGroup],
+        lines: [String],
+        priceCandidates: [PriceCandidate],
+        rawText: String
+    ) -> PriceParsingService.SceneClassification {
+        if PriceParsingService.looksLikeReceipt(text: rawText) {
+            return .receiptLike
+        }
+
+        let meaningfulGroups = meaningfulProductGroups(in: spatialGroups)
+        if meaningfulGroups.count >= 2 {
+            return .multiTag
+        }
+
+        if looksLikePromoCard(
+            lines: lines,
+            priceCandidates: priceCandidates,
+            meaningfulGroupCount: meaningfulGroups.count
+        ) {
+            return .promoCard
+        }
+
+        if looksLikeSingleTag(
+            lines: lines,
+            priceCandidates: priceCandidates,
+            meaningfulGroupCount: meaningfulGroups.count
+        ) {
+            return .singleTag
+        }
+
+        return .unclear
+    }
+
+    func meaningfulProductGroups(
+        in spatialGroups: [PriceParsingService.SpatialObservationGroup]
+    ) -> [PriceParsingService.SpatialObservationGroup] {
+        let confidenceResolver = PriceParsingConfidenceResolver()
+        return spatialGroups.filter { group in
+            let hasPrice = group.observations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
+            let hasDescription = group.observations.contains { observation in
+                confidenceResolver.isProductDescriptor(observation.string)
+            }
+            return group.observations.count >= 2 && hasPrice && hasDescription
+        }
+    }
+
+    func looksLikePromoCard(
+        lines: [String],
+        priceCandidates: [PriceCandidate],
+        meaningfulGroupCount: Int
+    ) -> Bool {
+        guard meaningfulGroupCount <= 1 else {
+            return false
+        }
+
+        let confidenceResolver = PriceParsingConfidenceResolver()
+        let promoLineCount = lines.filter { line in
+            line.range(of: PriceParsingService.promoMarkerPattern, options: [.regularExpression, .caseInsensitive]) != nil
+                || line.localizedCaseInsensitiveContains("save")
+                || confidenceResolver.looksLikeDateLine(line)
+        }.count
+        let descriptiveLineCount = lines.filter(confidenceResolver.isProductDescriptor).count
+
+        return promoLineCount >= 2 && descriptiveLineCount >= 1 && !priceCandidates.isEmpty
+    }
+
+    func looksLikeSingleTag(
+        lines: [String],
+        priceCandidates: [PriceCandidate],
+        meaningfulGroupCount: Int
+    ) -> Bool {
+        guard meaningfulGroupCount <= 1 else {
+            return false
+        }
+
+        let confidenceResolver = PriceParsingConfidenceResolver()
+        let descriptiveLineCount = lines.filter(confidenceResolver.isProductDescriptor).count
+        let hasCompetingCandidates = PriceCandidateScorer().hasCompetingTopCandidates(priceCandidates)
+
+        return descriptiveLineCount >= 1 && !priceCandidates.isEmpty && !hasCompetingCandidates
     }
 
     func shouldFallbackFromFocusedObservations(
