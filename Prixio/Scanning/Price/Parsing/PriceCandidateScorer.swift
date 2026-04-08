@@ -74,11 +74,17 @@ struct PriceCandidateScorer {
 
         let scoredCandidates = candidates.map { candidate in
             let sourceIndexes = PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: observations)
+            let kind = inferPriceKind(
+                candidate: candidate,
+                sourceLineIndexes: sourceIndexes,
+                observations: observations
+            )
             let adjustedPriority = candidate.priority
                 + proximityPriorityBoost(
                     sourceLineIndexes: sourceIndexes,
                     descriptiveLineIndexes: descriptiveLineIndexes
                 )
+                + kindPriorityBoost(for: kind)
                 + promotionalPriorityBoost(for: candidate.sourceText)
                 + unitLabelPriorityBoost(for: candidate.sourceText)
                 + standaloneShelfPriceBoost(
@@ -105,6 +111,8 @@ struct PriceCandidateScorer {
                 quantity: candidate.quantity,
                 priority: max(0, adjustedPriority),
                 sourceText: candidate.sourceText,
+                kind: kind,
+                sourceLineIndexes: sourceIndexes,
                 confidence: candidate.confidence
             )
         }
@@ -135,6 +143,8 @@ struct PriceCandidateScorer {
                         quantity: quantity,
                         priority: 4,
                         sourceText: observation.string,
+                        kind: .unknown,
+                        sourceLineIndexes: [],
                         confidence: observation.confidence
                     )
                 )
@@ -166,6 +176,8 @@ struct PriceCandidateScorer {
                         quantity: nil,
                         priority: contextualPricePriority(in: observation.string, basePriority: 3),
                         sourceText: observation.string,
+                        kind: .unknown,
+                        sourceLineIndexes: [],
                         confidence: observation.confidence
                     )
                 )
@@ -222,6 +234,8 @@ struct PriceCandidateScorer {
             quantity: nil,
             priority: 2,
             sourceText: sourceText,
+            kind: .unknown,
+            sourceLineIndexes: [],
             confidence: confidence
         )
     }
@@ -257,6 +271,8 @@ struct PriceCandidateScorer {
             quantity: nil,
             priority: 1,
             sourceText: sourceText,
+            kind: .unknown,
+            sourceLineIndexes: [],
             confidence: confidence
         )
     }
@@ -277,6 +293,10 @@ struct PriceCandidateScorer {
     func comparePriceCandidates(_ lhs: PriceCandidate, _ rhs: PriceCandidate) -> Bool {
         if lhs.priority != rhs.priority {
             return lhs.priority > rhs.priority
+        }
+
+        if lhs.kind != rhs.kind {
+            return kindSortWeight(lhs.kind) > kindSortWeight(rhs.kind)
         }
 
         if lhs.confidence != rhs.confidence {
@@ -315,6 +335,25 @@ struct PriceCandidateScorer {
 
     func promotionalPriorityBoost(for text: String) -> Int {
         matchesContextPattern(PriceParsingService.promoMarkerPattern, in: text) ? 1 : 0
+    }
+
+    func kindPriorityBoost(for kind: PriceKind) -> Int {
+        switch kind {
+        case .shelf:
+            return 3
+        case .sale:
+            return 2
+        case .member, .unit:
+            return 1
+        case .regular:
+            return -2
+        case .save:
+            return -4
+        case .deposit:
+            return -5
+        case .unknown:
+            return 0
+        }
     }
 
     func unitLabelPriorityBoost(for text: String) -> Int {
@@ -471,11 +510,17 @@ struct PriceCandidateScorer {
 
         let top = candidates[0]
         let runnerUp = candidates[1]
-        if matchesContextPattern(PriceParsingService.depositMarkerPattern, in: runnerUp.sourceText) {
+        if runnerUp.kind == .deposit {
             return false
         }
-        if matchesContextPattern(PriceParsingService.regularPriceMarkerPattern, in: runnerUp.sourceText) {
+        if runnerUp.kind == .regular || runnerUp.kind == .save {
             return false
+        }
+        if top.kind != runnerUp.kind {
+            let kindGap = abs(kindSortWeight(top.kind) - kindSortWeight(runnerUp.kind))
+            if kindGap >= 2 {
+                return false
+            }
         }
 
         let priorityGap = abs(top.priority - runnerUp.priority)
@@ -489,5 +534,72 @@ struct PriceCandidateScorer {
         }
 
         return top.sourceText != runnerUp.sourceText || top.value != runnerUp.value
+    }
+
+    func inferPriceKind(
+        candidate: PriceCandidate,
+        sourceLineIndexes: [Int],
+        observations: [OCRTextObservation]
+    ) -> PriceKind {
+        let sourceText = candidate.sourceText.lowercased()
+        let neighboringText = sourceLineIndexes.flatMap { index in
+            [index - 1, index, index + 1]
+                .filter { observations.indices.contains($0) }
+                .map { observations[$0].string.lowercased() }
+        }.joined(separator: "\n")
+
+        if sourceText.range(of: #"(?i)^\W*-?\s*save\b"#, options: .regularExpression) != nil
+            || neighboringText.range(of: #"(?i)^\W*-?\s*save\b"#, options: .regularExpression) != nil {
+            return .save
+        }
+        if matchesContextPattern(PriceParsingService.depositMarkerPattern, in: sourceText)
+            || matchesContextPattern(PriceParsingService.depositMarkerPattern, in: neighboringText) {
+            return .deposit
+        }
+        if matchesContextPattern(PriceParsingService.regularPriceMarkerPattern, in: sourceText)
+            || matchesContextPattern(PriceParsingService.regularPriceMarkerPattern, in: neighboringText) {
+            return .regular
+        }
+        if sourceText.contains("member")
+            || sourceText.contains("club")
+            || sourceText.contains("loyalty")
+            || neighboringText.contains("member")
+            || neighboringText.contains("club")
+            || neighboringText.contains("loyalty") {
+            return .member
+        }
+        let looksLikeUnitPrice = matchesContextPattern(PriceParsingService.unitLabelPattern, in: sourceText)
+            || sourceText.range(of: #"(?i)/\s*(lb|lbs|kg|l|liter|litre|100\s?g)\b"#, options: .regularExpression) != nil
+        if looksLikeUnitPrice {
+            return sourceText.contains("sale") ? .sale : .unit
+        }
+        if sourceText.contains("sale") || sourceText.contains("special") || sourceText.contains("deal") {
+            return .sale
+        }
+        if candidate.value >= 1 {
+            return .shelf
+        }
+        return .unknown
+    }
+
+    func kindSortWeight(_ kind: PriceKind) -> Int {
+        switch kind {
+        case .shelf:
+            return 7
+        case .sale:
+            return 6
+        case .member:
+            return 5
+        case .unit:
+            return 4
+        case .unknown:
+            return 3
+        case .regular:
+            return 2
+        case .save:
+            return 1
+        case .deposit:
+            return 0
+        }
     }
 }

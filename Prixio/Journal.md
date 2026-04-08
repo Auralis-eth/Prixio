@@ -618,6 +618,22 @@ Phase 1 of the v2 pass fixed that by teaching clusters to have roles and relatio
 
 That is a quiet architectural win, but it matters. It means the parser can start reasoning about shelf-tag layout instead of only reading OCR like a poem with too many dollar signs.
 
+### War Story: Two Prices Can Mean Two Products, or Just One Honest Shelf Tag
+Phase 2 was where the parser finally stopped pretending every number-shaped thing belonged in the same cage match.
+
+`PriceCandidate` now carries a typed `PriceKind`, which sounds like bookkeeping until you hit the first real shelf-tag trap:
+- a regular fallback price
+- a save amount
+- a deposit line
+- a member price
+- a unit-bearing shelf price
+
+If those all compete as anonymous prices, the parser spends its life rediscovering context it already had. Once the candidates got typed, the ranking logic got much easier to defend. Deposit lines stopped pretending they were serious competitors. Save amounts stopped swaggering around like shelf prices. Unit-bearing lines and standalone shelf prices could be scored differently on purpose instead of by accident.
+
+The more important v2 win was ownership-first ranking. Once the cluster model can say "this product block owns that price column," the parser should use that information before consulting the global price leaderboard. That is what pulled the cross-column Cadbury case back into line. The wrong product block stopped winning just because its local number looked easier to score.
+
+This phase also produced a good little lesson about ambiguity policy. A parser can become too eager to escalate if it treats every runner-up price as existential. The final rule is more grown-up: truly competing shelf prices still count as ambiguity, but a less-relevant candidate kind should not automatically drag a stable parse into Foundation Models theater.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

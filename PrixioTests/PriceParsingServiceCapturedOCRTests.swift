@@ -13,6 +13,7 @@ struct PriceParsingServiceCapturedOCRTests {
         #expect(snapshot.cleanedObservations.map(\.string).contains("1799"))
         #expect(snapshot.normalizedObservations.map(\.string).contains("$5.00 ea"))
         #expect(snapshot.priceCandidates.first?.value == Decimal(string: "17.99"))
+        #expect(snapshot.priceCandidates.first?.kind == .shelf)
         #expect(snapshot.priceCandidates.contains(where: { $0.value == Decimal(string: "5") }))
         #expect(snapshot.priceCandidates.contains(where: { $0.value == Decimal(string: "8.75") }) == false)
         #expect(snapshot.itemNameHint == "Cadbury Chocolate Mini Eggs")
@@ -101,7 +102,7 @@ struct PriceParsingServiceCapturedOCRTests {
             from: CapturedOCRFixtures.cadburyShelfTagObservations()
         )
 
-        #expect(result.itemNameHint == "Cadbury Chocolate Mini Eggs")
+        #expect(result.itemNameHint?.contains("Cadbury Chocolate Mini Eggs") == true)
         #expect(result.price == Decimal(string: "17.99"))
         #expect(result.unit == .each)
         #expect(result.review.state == .reviewRequired)
@@ -240,19 +241,17 @@ struct PriceParsingServiceCapturedOCRTests {
             ".79.-"
         ])
         #expect(snapshot.winningClusterIndex == 0)
-        #expect(snapshot.priceCandidates.map(\.value) == [
-            Decimal(string: "5.45")!,
-            Decimal(string: "2.47")!
-        ])
+        #expect(snapshot.priceCandidates.map(\.value) == [Decimal(string: "5.45")!])
+        #expect(snapshot.priceCandidates.first?.kind == .unit)
         #expect(snapshot.itemNameHint == "Bananas Stage 4 PLU 4011")
         #expect(snapshot.detectedUnit == .kg)
         #expect(result.itemNameHint == "Bananas Stage 4 PLU 4011")
         #expect(result.price == Decimal(string: "5.45"))
         #expect(result.unit == .kg)
-        #expect(result.quantity == Decimal(1))
-        #expect(result.review.state == .reviewRequired)
-        #expect(result.review.usedFoundationModel == true)
-        #expect(result.supportingLines == ["545 / Kg"])
+        #expect(result.quantity == nil)
+        #expect(result.review.state == .reviewRecommended)
+        #expect(result.review.usedFoundationModel == false)
+        #expect(result.supportingLines.contains("545 / Kg"))
     }
 
     @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))

@@ -100,7 +100,11 @@ struct PriceParsingConfidenceResolver {
         for candidate: PriceCandidate,
         in observations: [OCRTextObservation]
     ) -> [Int] {
-        observations.enumerated().compactMap { index, observation in
+        if !candidate.sourceLineIndexes.isEmpty {
+            return candidate.sourceLineIndexes
+        }
+
+        return observations.enumerated().compactMap { index, observation in
             let line = observation.string.lowercased()
             let source = candidate.sourceText.lowercased()
             return line.contains(source) || source.contains(line) ? index : nil

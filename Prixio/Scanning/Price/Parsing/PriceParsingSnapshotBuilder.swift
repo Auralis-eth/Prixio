@@ -35,12 +35,17 @@ struct PriceParsingSnapshotBuilder {
         let extractedPriceCandidates = consolidatedPriceCandidates.isEmpty
             ? candidateScorer.extractPriceCandidates(from: normalizedObservations)
             : consolidatedPriceCandidates
-        let priceCandidates = candidateScorer.scorePriceCandidates(
+        let scoredGlobalPriceCandidates = candidateScorer.scorePriceCandidates(
             extractedPriceCandidates,
             in: supportedLines
         )
         let evidenceClusters = buildEvidenceClusters(from: spatialGroups)
         let winningClusterIndex = winningClusterIndex(in: evidenceClusters)
+        let priceCandidates = resolveOwnedPriceCandidates(
+            winningClusterIndex: winningClusterIndex,
+            evidenceClusters: evidenceClusters,
+            fallbackCandidates: scoredGlobalPriceCandidates
+        )
         let sceneClassification = classifyScene(
             evidenceClusters: evidenceClusters,
             lines: supportedLines.map(\.string),
@@ -308,7 +313,8 @@ struct PriceParsingSnapshotBuilder {
         }
 
         let ownershipBoost = Float(cluster.linkedClusterIndexes.count) * 4 * cluster.ownershipConfidence
-        return cluster.score + ownershipBoost
+        let linkedScoreBoost = Float(cluster.linkedClusterIndexes.count) * 8 * cluster.ownershipConfidence
+        return cluster.score + ownershipBoost + linkedScoreBoost
     }
 
     func clusterCentroid(for observations: [OCRTextObservation]) -> CGPoint? {
@@ -321,6 +327,32 @@ struct PriceParsingSnapshotBuilder {
         let totalMidY = frames.reduce(CGFloat.zero) { $0 + $1.midY }
         let count = CGFloat(frames.count)
         return CGPoint(x: totalMidX / count, y: totalMidY / count)
+    }
+
+    func resolveOwnedPriceCandidates(
+        winningClusterIndex: Int?,
+        evidenceClusters: [PriceParsingService.EvidenceCluster],
+        fallbackCandidates: [PriceCandidate]
+    ) -> [PriceCandidate] {
+        guard
+            let winningClusterIndex,
+            evidenceClusters.indices.contains(winningClusterIndex)
+        else {
+            return fallbackCandidates
+        }
+
+        let winningCluster = evidenceClusters[winningClusterIndex]
+        let ownedClusterIndexes = [winningClusterIndex] + winningCluster.linkedClusterIndexes
+        let ownedCandidates = ownedClusterIndexes
+            .filter { evidenceClusters.indices.contains($0) }
+            .flatMap { evidenceClusters[$0].priceCandidates }
+            .sorted(by: PriceCandidateScorer().comparePriceCandidates)
+
+        guard !ownedCandidates.isEmpty else {
+            return fallbackCandidates
+        }
+
+        return ownedCandidates
     }
 
     func defaultOwnershipConfidence(
