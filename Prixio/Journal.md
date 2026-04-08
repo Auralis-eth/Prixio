@@ -687,3 +687,52 @@ So the planning stack got collapsed into two durable documents:
 - `OutstandingWork.md` for the work that is honestly still open
 
 That is a better shape for a living project. Finished architecture belongs in code, tests, and project memory. Open work belongs in one backlog. Everything else is how engineers accidentally end up maintaining fan fiction about their own codebase.
+
+### War Story: The App Finally Grew Up From One Good Scanner Into Three Honest Flows
+The scanner had reached the point where it could save solid `PriceEntry` records, but the rest of the app was still mostly promise. There is a classic product trap there: a beautiful intake flow with nowhere useful for the data to go. Like building a great loading dock and forgetting the warehouse.
+
+The Compare and Shopping List work fixed that by refusing to duplicate pricing logic in two different screens. The tempting bad version would have been:
+- one set of "best price" rules inside Compare
+- another set of "best store" rules inside Shopping List
+- a third slightly-different item-name normalization hiding in some sheet
+
+That is how teams end up debugging the same grocery item three times with three different answers.
+
+So the useful architectural move was a shared seam: `PriceInsightEngine` plus `ItemKeyNormalizer`. Compare and Shopping List both read from the same normalized `PriceEntry` records and ask the same core questions:
+- what counts as stale?
+- which entry wins for this item?
+- which store is most relevant?
+- when is the app allowed to sound confident?
+
+That made the rest of the feature work much less dramatic.
+
+`Compare` became the browsing surface:
+- search
+- recent captures
+- suggested comparison cards
+- item detail with ranked store rows
+
+`Shopping List` became the payoff surface:
+- freeform or typeahead item adds
+- completed-item separation
+- trip recommendation
+- scan nudge loop back into the scanner
+
+The nicest part is the loop finally feels like a product instead of a demo:
+- scan a shelf tag
+- compare stores later
+- build a trip list
+- get nudged to refresh stale prices while shopping
+- land back in Scan with the right item and store prefilled
+
+That is the kind of feature connection users experience as "this app remembers what I was trying to do," which is much rarer than it should be.
+
+### Aha! Moment: A Shared Price Brain Is Cheaper Than Two Clever Screens
+One thing worth remembering from this build-out: the difficult part was not drawing the screens. SwiftUI is pretty good at drawing screens. The difficult part was deciding where the truth lives.
+
+The senior-engineer answer here is boring in the best way:
+- persisted truth lives in `PriceEntry`, `ShoppingList`, and `ShoppingListItem`
+- derived truth lives in pure helpers like `PriceInsightEngine`
+- routing truth lives in one app-level navigation model
+
+That split pays rent immediately. The Compare tab and Shopping List tab can disagree visually, but they should not disagree mathematically. When they both use the same staleness buckets and winner-selection rules, you stop shipping accidental arguments between tabs.

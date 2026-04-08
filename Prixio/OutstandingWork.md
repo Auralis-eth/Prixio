@@ -10,7 +10,9 @@ Anything fully implemented should live in code, tests, `AGENTS.md`, or `Journal.
 - Parser refactor: complete
 - OCR pipeline v1: complete
 - OCR pipeline v2: implemented in production form
-- Remaining work: mostly fixture expansion, post-release measurement, and small test-tooling cleanup
+- Compare flow MVP: complete
+- Shopping List MVP: complete
+- Remaining work: mostly fixture expansion, post-release measurement, small test-tooling cleanup, and a few post-MVP product refinements
 
 ## Actually Incomplete
 
@@ -61,6 +63,16 @@ What still needs to happen after release:
 - decide what reporting or dashboarding should consume parser review metadata
 - revisit Foundation Models coverage only if production evidence shows a justified gap
 - promote or expand the ship-gate suite if real regressions prove the current gate is too small
+
+### 5. Compare And Shopping Post-MVP Polish
+Status: Deferred
+
+The core Compare and Shopping List flows now exist, but a few deliberate MVP cuts remain:
+
+- Compare item detail is delete-only; entry editing is still deferred
+- Shopping List supports one visible default list even though the data model is multi-list-ready
+- Shopping List row distance is not yet surfaced end to end
+- the scanner prefill loop is wired, but broader trip-plan breakdown UI is still deferred
 
 ## Not In Scope Unless Evidence Demands It
 
