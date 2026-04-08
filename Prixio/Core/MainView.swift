@@ -18,10 +18,7 @@ struct MainView: View {
                     Label("Scan", systemImage: "viewfinder")
                 }
 
-            PlaceholderTabView(
-                title: "Compare",
-                subtitle: "Browse tracked items, compare store prices, and inspect stale entries here."
-            )
+            CompareRootView()
             .tag(AppTab.compare)
             .tabItem {
                 Label("Compare", systemImage: "basket")
