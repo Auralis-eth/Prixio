@@ -97,6 +97,7 @@
 				6F3C58C32E81A60300D362D9 /* PrixioTests */,
 				6F3C58CD2E81A60300D362D9 /* PrixioUITests */,
 				6F3C58B02E81A60100D362D9 /* Products */,
+				6FDA1CEA2F870872001C2395 /* Compare */,
 			);
 			sourceTree = "<group>";
 		};
@@ -108,6 +109,13 @@
 				6F3C58CA2E81A60300D362D9 /* PrixioUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		6FDA1CEA2F870872001C2395 /* Compare */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Compare;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
