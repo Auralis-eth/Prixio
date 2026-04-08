@@ -57,6 +57,10 @@ enum ImageFixtureTestSupport {
         try await extractObservationResult(from: image).observations
     }
 
+    static func extractOCRResult(from image: UIImage) async -> OCRResult {
+        await OCRService().extractOCR(from: image)
+    }
+
     private static func loadImageFromBundles(
         named name: String,
         fileExtension: String

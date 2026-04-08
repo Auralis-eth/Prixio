@@ -138,6 +138,17 @@ struct OCRReview: Codable, Equatable, Sendable {
     }
 }
 
+struct OCRQualityReport: Codable, Equatable, Sendable {
+    let selectedVariant: String
+    let attemptedFallback: Bool
+    let observationCount: Int
+    let priceSignalCount: Int
+    let descriptorCount: Int
+    let averageConfidence: Float
+    let confidenceSpread: Float
+    let selectedVariantScore: Float
+}
+
 struct OCRResult {
     var rawText: String
     var itemNameHint: String?
@@ -147,6 +158,7 @@ struct OCRResult {
     var confidence: Float?
     var priceCandidates: [PriceCandidate]
     var review: OCRReview = .clean
+    var ocrQualityReport: OCRQualityReport? = nil
     /// Evidence for the selected parse result. Deterministic inputs may pin this exactly,
     /// while live OCR or model-assisted paths should only rely on stable invariants.
     let supportingLines: [String]

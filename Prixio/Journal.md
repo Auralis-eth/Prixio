@@ -258,6 +258,13 @@ The fix was not to pretend the flaky path was fine. The fix was to carve out a s
 
 That same pass also added a lightweight evaluation suite over realistic fixtures. Not an academic benchmark, not a dashboard, just a compact “tell me how this parser behaves on the shelf-tag shapes we actually care about” loop. The summary now covers price, unit, quantity, item name, review state, and Foundation Models usage. In other words, we finally promoted the parser from “tested” to “measurable.”
 
+### War Story: OCR Needed a Report Card, Not Just a Vibe
+Phase 3 of the V2 roadmap finally made OCR explain itself. Before this pass, `OCRService` could tell the parser “here are the observations” and, in `DEBUG`, mutter a few console stats on the way out. That was fine for gut checks and bad for engineering. If a high-contrast fallback quietly won, or if OCR scraped by with one price-like token and a prayer, the parser had no structured way to know that history.
+
+So OCR got a report card. `OCRResult` now carries an `OCRQualityReport` with the selected variant, whether fallback ran, how many observations survived, how many looked price-like, how much descriptive text was recovered, and how coherent the confidence distribution looked. That turns OCR from a black box into a witness with notes.
+
+The important part is not the extra struct. The important part is the contract change. Preprocessing quality is now something the rest of the pipeline can inspect, test, and eventually use for review behavior or evaluation metrics. The fixture suite also picked up a narrow quality-report assertion so this does not regress back into “someone forgot to wire the metadata through, but the parser still kind of works.”
+
 The satisfying part is the result: the targeted ship-gate run passed cleanly in the current harness, six tests passed, zero failed, and the build stayed green. That does not mean the parser is done learning. It means release quality now has a smaller, sharper definition than “it seems pretty good on my machine,” which is how adults avoid shipping folklore.
 
 ### War Story: The Shelf Tag Was Split in Two, So the Parser Fell for the Candy Bag

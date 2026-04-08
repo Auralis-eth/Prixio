@@ -32,6 +32,7 @@ struct OCRService {
         let observations: [OCRTextObservation]
         let preprocessing: PreprocessingResult
         let attemptedFallback: Bool
+        let qualityReport: OCRQualityReport
     }
 
     private let configuration: Configuration
@@ -55,7 +56,17 @@ struct OCRService {
                     contrastEnhanced: false,
                     imageSize: image.size
                 ),
-                attemptedFallback: false
+                attemptedFallback: false,
+                qualityReport: OCRQualityReport(
+                    selectedVariant: ImageVariant.normalized.rawValue,
+                    attemptedFallback: false,
+                    observationCount: 0,
+                    priceSignalCount: 0,
+                    descriptorCount: 0,
+                    averageConfidence: 0,
+                    confidenceSpread: 0,
+                    selectedVariantScore: 0
+                )
             )
         }
 
@@ -64,10 +75,14 @@ struct OCRService {
 #endif
 
         if observationResult.observations.isEmpty {
-            return await PriceParsingService.extract(from: [OCRTextObservation(string: "", confidence: 0)])
+            var result = await PriceParsingService.extract(from: [OCRTextObservation(string: "", confidence: 0)])
+            result.ocrQualityReport = observationResult.qualityReport
+            return result
         }
 
-        return await PriceParsingService.extract(from: observationResult.observations)
+        var result = await PriceParsingService.extract(from: observationResult.observations)
+        result.ocrQualityReport = observationResult.qualityReport
+        return result
     }
 
     func extractObservations(from image: UIImage) async throws -> ObservationResult {
@@ -78,7 +93,12 @@ struct OCRService {
             return ObservationResult(
                 observations: primaryObservations,
                 preprocessing: primaryVariant.preprocessing,
-                attemptedFallback: false
+                attemptedFallback: false,
+                qualityReport: buildQualityReport(
+                    observations: primaryObservations,
+                    preprocessing: primaryVariant.preprocessing,
+                    attemptedFallback: false
+                )
             )
         }
 
@@ -86,7 +106,12 @@ struct OCRService {
             return ObservationResult(
                 observations: primaryObservations,
                 preprocessing: primaryVariant.preprocessing,
-                attemptedFallback: false
+                attemptedFallback: false,
+                qualityReport: buildQualityReport(
+                    observations: primaryObservations,
+                    preprocessing: primaryVariant.preprocessing,
+                    attemptedFallback: false
+                )
             )
         }
 
@@ -100,7 +125,12 @@ struct OCRService {
         return ObservationResult(
             observations: preferredResult.0,
             preprocessing: preferredResult.1,
-            attemptedFallback: true
+            attemptedFallback: true,
+            qualityReport: buildQualityReport(
+                observations: preferredResult.0,
+                preprocessing: preferredResult.1,
+                attemptedFallback: true
+            )
         )
     }
 
@@ -244,18 +274,59 @@ struct OCRService {
     }
 
     private func score(_ observations: [OCRTextObservation]) -> Float {
+        qualityMetrics(for: observations).score
+    }
+
+    private func buildQualityReport(
+        observations: [OCRTextObservation],
+        preprocessing: PreprocessingResult,
+        attemptedFallback: Bool
+    ) -> OCRQualityReport {
+        let metrics = qualityMetrics(for: observations)
+        return OCRQualityReport(
+            selectedVariant: preprocessing.variant.rawValue,
+            attemptedFallback: attemptedFallback,
+            observationCount: observations.count,
+            priceSignalCount: metrics.priceSignalCount,
+            descriptorCount: metrics.descriptorCount,
+            averageConfidence: metrics.averageConfidence,
+            confidenceSpread: metrics.confidenceSpread,
+            selectedVariantScore: metrics.score
+        )
+    }
+
+    private func qualityMetrics(for observations: [OCRTextObservation]) -> (
+        averageConfidence: Float,
+        confidenceSpread: Float,
+        priceSignalCount: Int,
+        descriptorCount: Int,
+        score: Float
+    ) {
         guard !observations.isEmpty else {
-            return 0
+            return (0, 0, 0, 0, 0)
         }
 
-        let averageConfidence = observations.reduce(Float.zero) { $0 + $1.confidence } / Float(observations.count)
+        let confidences = observations.map(\.confidence)
+        let averageConfidence = confidences.reduce(Float.zero, +) / Float(observations.count)
+        let minimumConfidence = confidences.min() ?? 0
+        let maximumConfidence = confidences.max() ?? 0
         let priceSignalCount = observations.reduce(into: 0) { count, observation in
             if isLikelyPriceSignal(in: observation.string) {
                 count += 1
             }
         }
+        let descriptorCount = observations.reduce(into: 0) { count, observation in
+            if isLikelyDescriptor(in: observation.string) {
+                count += 1
+            }
+        }
+        let confidenceSpread = maximumConfidence - minimumConfidence
+        let score = averageConfidence
+            + Float(observations.count) * 0.04
+            + Float(priceSignalCount) * 0.3
+            + Float(descriptorCount) * 0.06
 
-        return averageConfidence + Float(observations.count) * 0.04 + Float(priceSignalCount) * 0.3
+        return (averageConfidence, confidenceSpread, priceSignalCount, descriptorCount, score)
     }
 
     private func isLikelyPriceSignal(in text: String) -> Bool {
@@ -270,6 +341,21 @@ struct OCRService {
 
         let compactPricePattern = #"^\$?\d{3,4}$"#
         return trimmed.range(of: compactPricePattern, options: .regularExpression) != nil
+    }
+
+    private func isLikelyDescriptor(in text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+
+        let tokenCount = trimmed.split(whereSeparator: \.isWhitespace).count
+        if tokenCount >= 2 {
+            return true
+        }
+
+        let alphaCount = trimmed.unicodeScalars.filter(CharacterSet.letters.contains).count
+        return alphaCount >= 6
     }
 
     private func alternateStrings(
@@ -299,6 +385,11 @@ struct OCRService {
         print("contrastEnhanced: \(result.preprocessing.contrastEnhanced)")
         print("imageSize: \(Int(result.preprocessing.imageSize.width))x\(Int(result.preprocessing.imageSize.height))")
         print("observationCount: \(result.observations.count)")
+        print("priceSignalCount: \(result.qualityReport.priceSignalCount)")
+        print("descriptorCount: \(result.qualityReport.descriptorCount)")
+        print("averageConfidence: \(result.qualityReport.averageConfidence)")
+        print("confidenceSpread: \(result.qualityReport.confidenceSpread)")
+        print("selectedVariantScore: \(result.qualityReport.selectedVariantScore)")
         print("preview: \(summary)")
         print("===============================")
     }

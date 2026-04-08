@@ -471,4 +471,20 @@ struct ImageFixtureParsingTests {
     func strictLiveFixtureContracts(case contract: FixtureContractCase) async throws {
         try await assertStrictFixtureContract(contract)
     }
+
+    @Test(
+        .tags(.ocr, .evaluation),
+        arguments: ["IMG_0477", "IMG_0483"]
+    )
+    func fixtureOCRQualityReportIsPopulated(fixtureName: String) async throws {
+        let image = try ImageFixtureTestSupport.loadImage(named: fixtureName)
+        let result = await ImageFixtureTestSupport.extractOCRResult(from: image)
+
+        let qualityReport = try #require(result.ocrQualityReport)
+        #expect(qualityReport.selectedVariant.isEmpty == false, Comment(rawValue: fixtureName))
+        #expect(qualityReport.observationCount > 0, Comment(rawValue: fixtureName))
+        #expect(qualityReport.selectedVariantScore > 0, Comment(rawValue: fixtureName))
+        #expect(qualityReport.priceSignalCount >= 0, Comment(rawValue: fixtureName))
+        #expect(qualityReport.descriptorCount >= 0, Comment(rawValue: fixtureName))
+    }
 }
