@@ -414,6 +414,23 @@ That is why the OCR refactor plan now starts with image preprocessing instead of
 
 This is the practical lesson from older OCR stacks that still applies on iOS: the best regex in the world cannot recover text that the recognizer never saw clearly. If the image hits Vision already straightened and easier to read, every downstream parser stage gets to be less desperate and more honest.
 
+### War Story: The First OCR Refactor Needed a Leash
+Phase 1 of the OCR plan finally landed, and the main engineering challenge was not "how do we preprocess images?" It was "how do we avoid building a tiny research lab inside `OCRService.swift`?"
+
+The old setup was intentionally simple: `UIImage.extractOCR()` built one Vision request, took the top candidate for each observation, and handed the lines to the parser. That was fine for the first version, but it gave the app no disciplined place to try orientation cleanup, no room for controlled fallback behavior, and no shared seam for fixture tests to exercise the same OCR path as production.
+
+The new shape is more adult without being dramatically more ambitious:
+- `UIImage.extractOCR()` still exists, so the rest of the app did not need surgery
+- a real `OCRService` now owns preprocessing, Vision execution, and parser hand-off
+- the primary OCR pass uses a normalized image
+- one fallback pass can try a high-contrast variant when the first pass looks weak
+- the pass budget is hard-capped at two total OCR attempts
+- debug logging reports which variant won, whether fallback ran, and how many observations came back
+
+That last rule matters more than it sounds. OCR experimentation has a natural tendency to metastasize: "just add grayscale," then "just add another contrast curve," then "maybe one more retry if the tag is yellow." Pretty soon the app is running a small roulette wheel before it even starts parsing. The hard cap keeps Phase 1 honest.
+
+Another good cleanup happened in the tests. The fixture helper no longer carries its own shadow OCR pipeline. It now calls into `OCRService`, which means fixture coverage and production behavior share the same seam. That is the sort of boring alignment work that saves a lot of future confusion.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

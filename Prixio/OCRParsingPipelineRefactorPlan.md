@@ -133,6 +133,7 @@ Likely home:
 Why:
 - this is the parser equivalent of choosing the right page-segmentation mode
 - multi-tag and promo-card scans should not be scored like clean single tags
+- `unclear` should be the conservative default until the observed evidence strongly supports a narrower class
 
 ### 2. Evidence Clusters
 
@@ -154,6 +155,7 @@ Likely home:
 Why:
 - the parser currently has the ingredients for this but not the explicit contract
 - making clusters real simplifies downstream reasoning and tests
+- scene classification and cluster structure should be sketched together even if they land in separate implementation phases
 
 ### 3. OCR Risk Buckets
 
@@ -203,6 +205,7 @@ Scope:
 - keep Vision as the recognizer
 - improve the image handed to Vision
 - keep preprocessing modular and measurable
+- keep the first implementation tightly time-boxed
 
 Concrete implementation tasks for `OCRService.swift`:
 - stop putting the full OCR pipeline directly inside `UIImage.extractOCR()`
@@ -235,7 +238,8 @@ Concrete implementation tasks for `OCRService.swift`:
   - confidence distribution far below normal expectations
 - keep fallback behavior bounded:
   - no unbounded retry ladder
-  - at most a small fixed set of variants per image
+  - start with a hard maximum of two total OCR passes per image
+  - Phase 1 is not complete if it requires more than one fallback variant to look useful
 - preserve observation geometry correctly for whichever image variant was recognized
 - avoid mixing preprocessing heuristics into parser logic
 
@@ -266,6 +270,7 @@ Definition of done:
 - OCR can run through a documented preprocessing path before Vision
 - preprocessing choices are inspectable in debug runs
 - the fixture suite can measure whether preprocessing improved or harmed recognition
+- the implementation stays within the initial pass budget of one primary pass plus at most one fallback pass
 
 ## Phase 2: Baseline And Instrumentation
 
@@ -275,6 +280,8 @@ Goal:
 Tasks:
 - add a short snapshot debug description for scene type, cluster count, and chosen cluster
 - document current ambiguity triggers and where they are calculated
+- formalize the `supportingLines` contract for deterministic vs model-assisted paths
+- update unstable live model-path tests to assert stable invariants instead of exact breadcrumb arrays
 - add or strengthen fixture coverage for:
   - single clean tag
   - multi-tag confusion
@@ -284,11 +291,13 @@ Tasks:
 Target files:
 - `Prixio/Scanning/Price/PriceParsingService.swift`
 - `Prixio/Scanning/Price/Parsing/PriceParsingSnapshotBuilder.swift`
+- `Prixio/Scanning/Price/Parsing/PriceParsingAssistedExtraction.swift`
 - `PrixioTests/PriceParsingServiceCapturedOCRTests.swift`
 - `PrixioTests/ParserEvaluationTests.swift`
 
 Definition of done:
 - current decisions are inspectable without stepping through the whole parser manually
+- the test suite no longer pins live model randomness where the contract should only pin stable invariants
 
 ## Phase 3: Add Scene Classification
 
@@ -402,6 +411,7 @@ Tasks:
 - prefer cluster-scoped line indexes over raw global line selection
 - keep FM merge behavior deterministic where inputs are deterministic
 - update tests so exact evidence arrays are only pinned in deterministic merge cases
+- add an explicit guardrail that skips FM escalation when the heuristic path already produced a complete result with high cluster confidence and no severe ambiguity
 
 Target files:
 - `Prixio/Scanning/Price/Parsing/PriceParsingAssistedExtraction.swift`
@@ -410,6 +420,7 @@ Target files:
 
 Definition of done:
 - the model works as a tie-breaker inside a structured search space instead of a rescue rope for fuzzy context
+- at least one targeted test proves the FM path is not invoked for a high-confidence, single-cluster heuristic result
 
 ## Phase 9: Optional OCR Enrichment Experiments
 
@@ -468,9 +479,17 @@ This order matters. Better OCR input should land before parser-quality judgments
 ## Risks
 
 - Overfitting to current fixtures instead of general shelf-tag behavior
+- Detection:
+  review failures by scene type and regularly add fixtures from newly observed failure classes
 - Making clustering too rigid for sparse scans
+- Detection:
+  keep sparse-fixture coverage and verify that fallback behavior still produces reviewable results instead of collapsing to nil fields
 - Adding too many new abstractions before the tests prove they help
+- Detection:
+  each phase should land with targeted tests and measurable debug output before the next abstraction is added
 - Confusing review-state changes with parser-quality improvements when the difference is only stricter honesty
+- Detection:
+  compare field-level correctness and review-state distribution separately in fixture evaluation
 
 ## Execution Rules
 

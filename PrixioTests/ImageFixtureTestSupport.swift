@@ -1,6 +1,5 @@
 import Foundation
 import UIKit
-import Vision
 @testable import Prixio
 
 private final class ImageFixtureBundleToken: NSObject {}
@@ -48,48 +47,14 @@ enum ImageFixtureTestSupport {
         throw FixtureError.missingImage(candidateURLs.map(\.path).joined(separator: ", "))
     }
 
+    static func extractObservationResult(
+        from image: UIImage
+    ) async throws -> OCRService.ObservationResult {
+        try await OCRService().extractObservations(from: image)
+    }
+
     static func extractObservations(from image: UIImage) async throws -> [OCRTextObservation] {
-        let cgImage: CGImage
-        if let existingCGImage = image.cgImage {
-            cgImage = existingCGImage
-        } else {
-            guard let renderedImage = image.preparingForDisplay(),
-                  let preparedCGImage = renderedImage.cgImage else {
-                throw FixtureError.unreadableImage
-            }
-            cgImage = preparedCGImage
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                let observations = (request.results as? [VNRecognizedTextObservation] ?? []).compactMap { observation in
-                    observation.topCandidates(1).first.map { candidate in
-                        OCRTextObservation(
-                            string: candidate.string,
-                            confidence: candidate.confidence,
-                            boundingBox: observation.boundingBox
-                        )
-                    }
-                }
-                continuation.resume(returning: observations)
-            }
-
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["en-US", "en-CA", "fr-CA"]
-
-            let handler = VNImageRequestHandler(cgImage: cgImage)
-            do {
-                try handler.perform([request])
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
+        try await extractObservationResult(from: image).observations
     }
 
     private static func loadImageFromBundles(
