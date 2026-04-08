@@ -36,32 +36,55 @@ struct PriceParsingAssistedExtractor {
         snapshot: PriceParsingService.HeuristicExtractionSnapshot,
         ambiguity: PriceParsingService.ExtractionAmbiguityReport
     ) -> String {
-        let lineContext = snapshot.consolidatedObservations.enumerated().map { index, observation in
-            PriceParsingService.PromptLineContext(index: index, text: observation.string, confidence: observation.confidence)
+        let searchSpaceClusterIndexes = promptClusterIndexes(for: snapshot)
+        let searchSpaceLineIndexes = promptLineIndexes(for: searchSpaceClusterIndexes, snapshot: snapshot)
+        let lineContext = searchSpaceLineIndexes.compactMap { index -> PriceParsingService.PromptLineContext? in
+            guard snapshot.consolidatedObservations.indices.contains(index) else {
+                return nil
+            }
+            let observation = snapshot.consolidatedObservations[index]
+            return PriceParsingService.PromptLineContext(index: index, text: observation.string, confidence: observation.confidence)
         }
-        let candidateContext = snapshot.priceCandidates.enumerated().map { index, candidate in
-            PriceParsingService.PromptPriceCandidateContext(
+        let candidateContext = snapshot.priceCandidates.enumerated().compactMap { index, candidate -> PriceParsingService.PromptPriceCandidateContext? in
+            let sourceLineIndexes = PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: snapshot)
+            let intersectsSearchSpace = sourceLineIndexes.isEmpty || !Set(sourceLineIndexes).isDisjoint(with: searchSpaceLineIndexes)
+            guard intersectsSearchSpace else {
+                return nil
+            }
+            return PriceParsingService.PromptPriceCandidateContext(
                 index: index,
                 value: "\(candidate.value)",
                 quantity: candidate.quantity.map { "\($0)" },
                 confidence: candidate.confidence,
                 priority: candidate.priority,
                 label: candidate.label,
+                kind: candidate.kind.rawValue,
                 sourceText: candidate.sourceText,
-                sourceLineIndexes: PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: snapshot)
+                sourceLineIndexes: sourceLineIndexes
             )
         }
-        let clusterContext = snapshot.evidenceClusters.enumerated().map { index, cluster in
-            PriceParsingService.PromptClusterContext(
+        let clusterContext = searchSpaceClusterIndexes.compactMap { index -> PriceParsingService.PromptClusterContext? in
+            guard snapshot.evidenceClusters.indices.contains(index) else {
+                return nil
+            }
+            let cluster = snapshot.evidenceClusters[index]
+            return PriceParsingService.PromptClusterContext(
                 index: index,
                 role: cluster.role.rawValue,
                 score: cluster.score,
+                ownershipConfidence: cluster.ownershipConfidence,
+                linkedClusterIndexes: cluster.linkedClusterIndexes,
+                itemNameEvidence: cluster.itemNameEvidence,
                 itemNameHint: cluster.itemNameHint,
                 lineIndexes: sourceLineIndexes(for: cluster, in: snapshot),
                 lines: cluster.lines,
                 priceCandidateValues: cluster.priceCandidates.map { "\($0.value)" }
             )
         }
+        let heuristicResult = PriceParsingConfidenceResolver().makeOCRResult(from: snapshot)
+        let decisionReasons = heuristicResult.parserDecisionReport?.reasons.map {
+            "\($0.category.rawValue):\($0.code)"
+        }.joined(separator: ", ") ?? "none"
 
         let encodedLines = encodeForPrompt(lineContext)
         let encodedCandidates = encodeForPrompt(candidateContext)
@@ -69,6 +92,10 @@ struct PriceParsingAssistedExtractor {
         let weaknessList = ambiguity.weaknesses.map(\.rawValue).joined(separator: ", ")
 
         return """
+        Structured search space:
+        - cluster indexes: \(searchSpaceClusterIndexes.map(String.init).joined(separator: ", "))
+        - line indexes: \(searchSpaceLineIndexes.map(String.init).joined(separator: ", "))
+
         OCR lines:
         \(encodedLines)
 
@@ -79,12 +106,14 @@ struct PriceParsingAssistedExtractor {
         \(encodedClusters)
 
         Current heuristic item name hint: \(snapshot.itemNameHint ?? "nil")
+        Current heuristic item name evidence: \(snapshot.itemNameEvidence ?? "nil")
         Current heuristic unit: \(snapshot.detectedUnit?.rawValue ?? "nil")
         Current heuristic quantity: \(snapshot.resolvedQuantity.map { "\($0)" } ?? "nil")
         Current heuristic confidence: \(snapshot.heuristicConfidence)
         Scene classification: \(snapshot.sceneClassification.rawValue)
         Winning cluster index: \(snapshot.winningClusterIndex.map(String.init) ?? "nil")
         Ambiguity reasons: \(weaknessList.isEmpty ? "none" : weaknessList)
+        Heuristic decision reasons: \(decisionReasons)
 
         Response contract:
         - `targetLineIndexes` must be existing OCR line indexes only, sorted ascending, and limited to lines for one product.
@@ -125,14 +154,22 @@ struct PriceParsingAssistedExtractor {
         guard snapshot.evidenceClusters[winningClusterIndex].role == .productText else {
             return false
         }
+        guard PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) == false else {
+            return false
+        }
+        guard let topKind = snapshot.priceCandidates.first?.kind,
+              [.shelf, .sale, .member, .unit].contains(topKind) else {
+            return false
+        }
 
-        let confidence = PriceParsingConfidenceResolver().assembleHeuristicConfidence(
+        let confidenceResolver = PriceParsingConfidenceResolver()
+        let confidence = confidenceResolver.assembleHeuristicConfidence(
             snapshot: snapshot,
             ambiguity: ambiguity,
-            ocrConfidence: PriceParsingConfidenceResolver().ocrEvidenceConfidence(snapshot: snapshot),
-            parseConfidence: PriceParsingConfidenceResolver().parseStructureConfidence(snapshot: snapshot)
+            ocrConfidence: confidenceResolver.ocrEvidenceConfidence(snapshot: snapshot),
+            parseConfidence: confidenceResolver.parseStructureConfidence(snapshot: snapshot)
         )
-        return confidence >= 0.8
+        return confidence >= 0.82
     }
 
     func mergeAssistedExtraction(
@@ -293,6 +330,43 @@ struct PriceParsingAssistedExtractor {
         cluster.lines.compactMap { line in
             snapshot.consolidatedObservations.firstIndex { $0.string == line }
         }
+    }
+
+    func promptClusterIndexes(
+        for snapshot: PriceParsingService.HeuristicExtractionSnapshot
+    ) -> [Int] {
+        guard let winningClusterIndex = snapshot.winningClusterIndex,
+              snapshot.evidenceClusters.indices.contains(winningClusterIndex) else {
+            return Array(snapshot.evidenceClusters.indices.prefix(2))
+        }
+
+        var indexes = Set([winningClusterIndex])
+        let winningCluster = snapshot.evidenceClusters[winningClusterIndex]
+        indexes.formUnion(winningCluster.linkedClusterIndexes)
+
+        if indexes.count < 3 {
+            let alternates = snapshot.evidenceClusters.indices.filter {
+                $0 != winningClusterIndex && !indexes.contains($0)
+            }
+            for index in alternates.prefix(2) {
+                indexes.insert(index)
+            }
+        }
+
+        return indexes.sorted()
+    }
+
+    func promptLineIndexes(
+        for clusterIndexes: [Int],
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot
+    ) -> Set<Int> {
+        let indexes = clusterIndexes.flatMap { index in
+            guard snapshot.evidenceClusters.indices.contains(index) else {
+                return [Int]()
+            }
+            return sourceLineIndexes(for: snapshot.evidenceClusters[index], in: snapshot)
+        }
+        return Set(indexes)
     }
 
     func mergedConfidence(
@@ -604,6 +678,7 @@ extension PriceParsingService {
         let confidence: Float
         let priority: Int
         let label: String
+        let kind: String
         let sourceText: String
         let sourceLineIndexes: [Int]
     }
@@ -612,6 +687,9 @@ extension PriceParsingService {
         let index: Int
         let role: String
         let score: Float
+        let ownershipConfidence: Float
+        let linkedClusterIndexes: [Int]
+        let itemNameEvidence: String?
         let itemNameHint: String?
         let lineIndexes: [Int]
         let lines: [String]

@@ -281,6 +281,13 @@ So the parser now leaves breadcrumbs. `OCRResult` carries a compact `ParserDecis
 
 That sounds like extra metadata because it is. But it is the good kind of extra metadata. The evaluation tests can now say more than “passed” or “failed.” Review-state tests can verify that the parser got to the right answer for the right reasons. And future regressions have a fighting chance of being diagnosed without dropping into snippets and asking the codebase to explain its childhood.
 
+### War Story: Foundation Models Needed a Smaller Stage
+Phase 6 was not about making the model smarter. It was about making the problem smaller before the model ever shows up. The old assist prompt still had a little too much “here is the whole scene, good luck” energy. That wastes tokens, widens the search space, and invites the model to be creative in places where creativity is exactly the wrong personality trait.
+
+So the hand-off got tighter. The prompt now focuses on a structured search space: the winning cluster, its linked evidence, and only a few nearby alternates that still matter. Price candidates now carry their typed kind into the prompt. Cluster context now includes ownership confidence and linked cluster indexes. And the prompt explicitly includes the heuristic decision reasons, which means the model is stepping into a conversation that already has minutes, not walking into a room mid-argument.
+
+The skip rule also got stricter in the right direction. If the deterministic parser already has a strong single-tag result, a product-text winning cluster, a non-competing top candidate, and a trusted winning price kind, the model does not get invited just because it happens to be available. That is an important maturity marker for this pipeline. Good use of Foundation Models is not “always ask for a second opinion.” Good use is “ask only when the first opinion can explain why it is still genuinely unsure.”
+
 The satisfying part is the result: the targeted ship-gate run passed cleanly in the current harness, six tests passed, zero failed, and the build stayed green. That does not mean the parser is done learning. It means release quality now has a smaller, sharper definition than “it seems pretty good on my machine,” which is how adults avoid shipping folklore.
 
 ### War Story: The Shelf Tag Was Split in Two, So the Parser Fell for the Candy Bag

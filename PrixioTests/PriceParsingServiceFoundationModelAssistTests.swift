@@ -276,9 +276,12 @@ struct PriceParsingServiceFoundationModelAssistTests {
         #expect(prompt.contains("Response contract:"))
         #expect(prompt.contains("`selectedPriceCandidateIndex` must be an existing candidate index or `nil`"))
         #expect(prompt.contains("`targetLineIndexes` must be existing OCR line indexes only"))
+        #expect(prompt.contains("Structured search space:"))
         #expect(prompt.contains("Evidence clusters:"))
         #expect(prompt.contains("Scene classification:"))
         #expect(prompt.contains("Winning cluster index:"))
+        #expect(prompt.contains("Heuristic decision reasons:"))
+        #expect(prompt.contains("\"kind\""))
         #expect(prompt.contains("Never invent missing values."))
     }
 
@@ -295,6 +298,7 @@ struct PriceParsingServiceFoundationModelAssistTests {
 
         #expect(result.review.usedFoundationModel == false)
         #expect(result.review.state == .clean)
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.code == "stable_parse" }) == true)
     }
 
     @Test(.tags(.ocr, .product, .shipGate))

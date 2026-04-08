@@ -16,6 +16,8 @@ struct ParserShipGateTests {
         #expect(result.unit == .lb)
         #expect(result.review.state == .clean)
         #expect((result.confidence ?? 0) >= 0.85)
+        #expect(result.review.usedFoundationModel == false)
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.code == "stable_parse" }) == true)
     }
 
     @Test(.tags(.ocr, .product, .shipGate))
