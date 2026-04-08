@@ -86,6 +86,11 @@ struct PriceCandidateScorer {
                     sourceLineIndexes: sourceIndexes,
                     observations: observations
                 )
+                - compactNumericRiskPenalty(
+                    candidate: candidate,
+                    sourceLineIndexes: sourceIndexes,
+                    observations: observations
+                )
                 - regularPricePenalty(for: candidate.sourceText)
                 - depositPenalty(for: candidate.sourceText)
 
@@ -307,7 +312,8 @@ struct PriceCandidateScorer {
     }
 
     func unitLabelPriorityBoost(for text: String) -> Int {
-        matchesContextPattern(PriceParsingService.unitLabelPattern, in: text) ? 1 : 0
+        matchesContextPattern(PriceParsingService.unitLabelPattern, in: text)
+            || PriceParsingService.containsExplicitSizeToken(in: text) ? 1 : 0
     }
 
     func regularPricePenalty(for text: String) -> Int {
@@ -344,6 +350,42 @@ struct PriceCandidateScorer {
             && !matchesContextPattern(PriceParsingService.unitLabelPattern, in: candidate.sourceText)
             && candidate.quantity == nil
         return isLikelyPrimaryShelfPrice ? 0 : 3
+    }
+
+    func compactNumericRiskPenalty(
+        candidate: PriceCandidate,
+        sourceLineIndexes: [Int],
+        observations: [OCRTextObservation]
+    ) -> Int {
+        let trimmed = candidate.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isCompactNumericCandidate = trimmed.range(of: #"^\$?\d{3,4}$"#, options: .regularExpression) != nil
+            || (trimmed.range(of: #"\b\d{3,4}\b"#, options: .regularExpression) != nil
+                && !PriceParsingService.containsPriceSignal(in: trimmed))
+        guard isCompactNumericCandidate else {
+            return 0
+        }
+
+        let lowered = trimmed.lowercased()
+        if lowered.contains("plu") {
+            return 6
+        }
+
+        if trimmed.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) })
+            && !matchesContextPattern(PriceParsingService.unitLabelPattern, in: trimmed)
+            && !PriceParsingService.containsExplicitSizeToken(in: trimmed) {
+            return 4
+        }
+
+        let neighboringLines = sourceLineIndexes.flatMap { index in
+            [index - 1, index + 1]
+                .filter { observations.indices.contains($0) }
+                .map { observations[$0].string }
+        }
+        let hasNearbyDescriptor = neighboringLines.contains { line in
+            PriceParsingConfidenceResolver().isProductDescriptor(line)
+        }
+
+        return hasNearbyDescriptor ? 0 : 2
     }
 
     func matchesContextPattern(_ pattern: String, in text: String) -> Bool {

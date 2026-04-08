@@ -224,7 +224,7 @@ struct PriceParsingServiceCapturedOCRTests {
     }
 
     @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))
-    func capturedBananasStage4OCRPinsWrongWinnerContract() async throws {
+    func capturedBananasStage4OCRUsesUnitBearingPriceInsteadOfPLUFragment() async throws {
         let snapshot = PriceParsingService._test_buildHeuristicSnapshot(
             CapturedOCRFixtures.bananasStage4Observations()
         )
@@ -239,22 +239,17 @@ struct PriceParsingServiceCapturedOCRTests {
             "Bananas Stage 4 PLU 4011",
             ".79.-"
         ])
-        #expect(snapshot.priceCandidates.map(\.value) == [
-            Decimal(string: "40.11")!,
-            Decimal(string: "5.45")!,
-            Decimal(string: "2.47")!
-        ])
+        #expect(snapshot.winningClusterIndex == 0)
+        #expect(snapshot.priceCandidates.map(\.value) == [Decimal(string: "5.45")!])
         #expect(snapshot.itemNameHint == "Bananas Stage 4 PLU 4011")
         #expect(snapshot.detectedUnit == .kg)
         #expect(result.itemNameHint == "Bananas Stage 4 PLU 4011")
-        #expect(result.price == Decimal(string: "40.11"))
+        #expect(result.price == Decimal(string: "5.45"))
         #expect(result.unit == .kg)
         #expect(result.quantity == Decimal(1))
-        #expect(result.review.state == .reviewRequired)
-        #expect(result.review.usedFoundationModel == true)
-        #expect(result.supportingLines.contains("Bananas Stage 4 PLU 4011"))
-        #expect(result.supportingLines.isEmpty == false)
-        #expect(result.supportingLines.allSatisfy(snapshot.consolidatedObservations.map(\.string).contains))
+        #expect(result.review.state == .clean)
+        #expect(result.review.usedFoundationModel == false)
+        #expect(result.supportingLines == snapshot.consolidatedObservations.map(\.string))
     }
 
     @Test(.tags(.ocr, .product, .evaluation, .realWorldOCR))

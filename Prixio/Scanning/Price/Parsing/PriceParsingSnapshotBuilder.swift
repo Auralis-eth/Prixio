@@ -35,12 +35,17 @@ struct PriceParsingSnapshotBuilder {
         let extractedPriceCandidates = consolidatedPriceCandidates.isEmpty
             ? candidateScorer.extractPriceCandidates(from: normalizedObservations)
             : consolidatedPriceCandidates
-        let priceCandidates = candidateScorer.scorePriceCandidates(
+        let globallyScoredPriceCandidates = candidateScorer.scorePriceCandidates(
             extractedPriceCandidates,
             in: supportedLines
         )
         let evidenceClusters = buildEvidenceClusters(from: spatialGroups)
         let winningClusterIndex = winningClusterIndex(in: evidenceClusters)
+        let priceCandidates = winningClusterIndex.flatMap { index in
+            evidenceClusters.indices.contains(index) && !evidenceClusters[index].priceCandidates.isEmpty
+                ? evidenceClusters[index].priceCandidates
+                : nil
+        } ?? globallyScoredPriceCandidates
         let sceneClassification = classifyScene(
             spatialGroups: spatialGroups,
             lines: supportedLines.map(\.string),
@@ -217,10 +222,18 @@ struct PriceParsingSnapshotBuilder {
     func winningClusterIndex(
         in clusters: [PriceParsingService.EvidenceCluster]
     ) -> Int? {
-        clusters.enumerated()
+        let productCluster = clusters.enumerated()
             .filter { cluster in
                 cluster.element.role == .primaryProduct || cluster.element.role == .secondaryProduct
             }
+            .max { lhs, rhs in lhs.element.score < rhs.element.score }?
+            .offset
+        if let productCluster {
+            return productCluster
+        }
+
+        return clusters.enumerated()
+            .filter { !$0.element.priceCandidates.isEmpty }
             .max { lhs, rhs in lhs.element.score < rhs.element.score }?
             .offset
     }
