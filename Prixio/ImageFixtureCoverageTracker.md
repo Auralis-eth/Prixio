@@ -15,6 +15,30 @@ Tighten `PrixioTests/ImageFixtureParsingTests.swift` so every real image fixture
 - Loose batch tests have been removed.
 - Captured OCR coverage now includes Cadbury, mini cucumber, banana wrong-winner, and sparse grower cases.
 
+## V2 Failure-Class Map
+- `promoOwnership`
+  - `Screenshot 2026-04-02 at 3.53.44 PM`
+  - `IMG_0480`
+- `depositNoise`
+  - `IMG_0482`
+- `flyerNoise`
+  - `IMG_0476`
+  - `IMG_0478`
+- `multiProductOwnership`
+  - `IMG_0472`
+  - `IMG_0483`
+- `compactNumericPLUTrap`
+  - `IMG_0477`
+- `sparseOCR`
+  - `IMG_0479`
+
+## Obvious Missing Fixture Classes
+- bilingual promo card with side-by-side regular and member prices
+- severe glare / washout shelf tag
+- rotated or perspective-skewed produce sign
+- dense beverage shelf edge with repeated deposit lines
+- split title across three lines with package size on a fourth line
+
 ## Small Steps
 
 ### 1. Lock the last missing live-image contract

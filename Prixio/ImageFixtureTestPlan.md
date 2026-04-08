@@ -4,6 +4,18 @@
 - Build two real-image fixture tests that exercise the OCR-to-parser pipeline end to end.
 - Freeze the intermediate parser stages so regressions are fast to localize.
 
+## V2 Acquisition Priorities
+- `compactNumericPLUTrap`
+  - prioritize blurry produce tags where PLU digits can masquerade as price
+- `depositNoise`
+  - prioritize beverage shelf edges with deposit lines close to the winning price
+- `multiProductOwnership`
+  - prioritize side-by-side shelf labels with prices in a separate column
+- `promoOwnership`
+  - prioritize member/sale/regular stacks where one price should clearly win
+- `nameRepair`
+  - prioritize OCR-hostile branded packaging with digit-for-letter drift
+
 ## Status Legend
 - `[x]` done
 - `[ ]` not done yet

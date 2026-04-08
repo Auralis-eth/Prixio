@@ -16,7 +16,7 @@ For each phase:
 ## Phase Checklist
 
 ### Phase 1. Evidence Cluster Model V2
-Status: Pending
+Status: Done
 
 Coding tasks by file:
 - `Prixio/Scanning/Price/PriceParsingService.swift`
@@ -43,7 +43,7 @@ Ship gate:
 - at least one captured or synthetic cross-column ownership fixture
 
 ### Phase 2. Price Ownership And Price-Kind Modeling V2
-Status: Pending
+Status: Done
 
 Coding tasks by file:
 - `Prixio/Core/Models/PriceCandidate.swift`
@@ -71,7 +71,7 @@ Ship gate:
 - at least one PLU trap, one promo/save trap, one cross-column shelf-price case
 
 ### Phase 3. OCR Quality And Preprocessing V2
-Status: Pending
+Status: Done
 
 Coding tasks by file:
 - `Prixio/Scanning/OCR/OCRResult.swift`
@@ -95,7 +95,7 @@ Ship gate:
 - targeted fixture support proving OCR quality output is populated and stable
 
 ### Phase 4. Item Name Composition And Repair V2
-Status: Pending
+Status: Done
 
 Coding tasks by file:
 - `Prixio/Scanning/Price/Parsing/PriceParsingItemNameResolver.swift`
@@ -117,7 +117,7 @@ Ship gate:
 - at least one packaging-noise and one split-title fixture
 
 ### Phase 5. Confidence, Review, And Diagnostics V2
-Status: Pending
+Status: Done
 
 Coding tasks by file:
 - `Prixio/Scanning/Price/PriceParsingService.swift`
@@ -137,7 +137,7 @@ Ship gate:
 - `ParserEvaluationTests`
 
 ### Phase 6. FM Hand-Off V2
-Status: Pending
+Status: Done
 
 Coding tasks by file:
 - `Prixio/Scanning/Price/Parsing/PriceParsingAssistedExtraction.swift`
@@ -157,7 +157,7 @@ Ship gate:
 - at least one case proving FM is skipped for a stable deterministic parse
 
 ### Phase 7. Evaluation And Ship Gates V2
-Status: Pending
+Status: Done
 
 Coding tasks by file:
 - `Prixio/PrixioTests/ParserEvaluationTests.swift`

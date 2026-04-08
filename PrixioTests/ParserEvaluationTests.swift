@@ -4,8 +4,16 @@ import Testing
 
 @MainActor
 struct ParserEvaluationTests {
+    enum FailureClass: String, CaseIterable {
+        case promoOwnership
+        case depositNoise
+        case flyerNoise
+        case multiProductOwnership
+    }
+
     struct EvaluationCase {
         let name: String
+        let failureClass: FailureClass
         let observations: [OCRTextObservation]
         let expectedItemName: String
         let expectedPrice: Decimal
@@ -20,6 +28,7 @@ struct ParserEvaluationTests {
         let cases = [
             EvaluationCase(
                 name: "member promo beverage tag",
+                failureClass: .promoOwnership,
                 observations: [
                     OCRTextObservation(string: "MBR PRICE", confidence: 0.79),
                     OCRTextObservation(string: "Dr Pepper Zero 12 PK", confidence: 0.88),
@@ -36,6 +45,7 @@ struct ParserEvaluationTests {
             ),
             EvaluationCase(
                 name: "deposit heavy beverage tag",
+                failureClass: .depositNoise,
                 observations: [
                     OCRTextObservation(string: "Sparkling Water 12 PK", confidence: 0.93),
                     OCRTextObservation(string: "$5.99", confidence: 0.91),
@@ -51,6 +61,7 @@ struct ParserEvaluationTests {
             ),
             EvaluationCase(
                 name: "flyer noise shelf tag",
+                failureClass: .flyerNoise,
                 observations: [
                     OCRTextObservation(string: "WEEKLY SPECIAL", confidence: 0.73),
                     OCRTextObservation(string: "Organic Raspberries", confidence: 0.92),
@@ -67,6 +78,7 @@ struct ParserEvaluationTests {
             ),
             EvaluationCase(
                 name: "side by side products still require review",
+                failureClass: .multiProductOwnership,
                 observations: [
                     OCRTextObservation(string: "Coke Zero", confidence: 0.93),
                     OCRTextObservation(string: "$2.99", confidence: 0.91),
@@ -90,9 +102,21 @@ struct ParserEvaluationTests {
         var foundationModelCount = 0
         var decisionReportCount = 0
         var reviewReasonCount = 0
+        var categoryResults: [FailureClass: (passed: Int, total: Int)] = [:]
 
         for evaluationCase in cases {
             let result = await PriceParsingService.extract(from: evaluationCase.observations)
+            let passedCase = result.itemNameHint == evaluationCase.expectedItemName
+                && result.price == evaluationCase.expectedPrice
+                && result.unit == evaluationCase.expectedUnit
+                && result.quantity == evaluationCase.expectedQuantity
+                && result.review.state == evaluationCase.expectedReviewState
+                && result.review.usedFoundationModel == evaluationCase.expectsFoundationModel
+            let currentCategory = categoryResults[evaluationCase.failureClass] ?? (0, 0)
+            categoryResults[evaluationCase.failureClass] = (
+                passed: currentCategory.passed + (passedCase ? 1 : 0),
+                total: currentCategory.total + 1
+            )
 
             if result.price == evaluationCase.expectedPrice { matchedPriceCount += 1 }
             if result.unit == evaluationCase.expectedUnit { matchedUnitCount += 1 }
@@ -113,6 +137,10 @@ struct ParserEvaluationTests {
         }
 
         let total = cases.count
+        let categorySummary = FailureClass.allCases.map { failureClass in
+            let result = categoryResults[failureClass] ?? (0, 0)
+            return "- \(failureClass.rawValue): \(result.passed)/\(result.total)"
+        }.joined(separator: "\n")
         print(
             """
             Parser evaluation summary:
@@ -125,6 +153,8 @@ struct ParserEvaluationTests {
             - FM-assisted cases observed: \(foundationModelCount)
             - decision reports emitted: \(decisionReportCount)/\(total)
             - review reasons observed: \(reviewReasonCount)
+            Category summary:
+            \(categorySummary)
             """
         )
     }

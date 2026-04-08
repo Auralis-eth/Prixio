@@ -12,7 +12,7 @@ V2 is not another broad rewrite. It is the pass where the pragmatic shortcuts fr
 
 ## Status
 
-Proposed.
+Implemented in pragmatic production form.
 
 Prerequisite:
 - the v1 parser pipeline is in production-ready shape and the current test suite is green

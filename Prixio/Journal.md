@@ -288,6 +288,13 @@ So the hand-off got tighter. The prompt now focuses on a structured search space
 
 The skip rule also got stricter in the right direction. If the deterministic parser already has a strong single-tag result, a product-text winning cluster, a non-competing top candidate, and a trusted winning price kind, the model does not get invited just because it happens to be available. That is an important maturity marker for this pipeline. Good use of Foundation Models is not “always ask for a second opinion.” Good use is “ask only when the first opinion can explain why it is still genuinely unsure.”
 
+### War Story: Benchmarks Only Count If They Explain the Misses
+Phase 7 closed the loop by making the evaluation and ship-gate story a lot less mushy. The parser already had tests. What it needed was a better scoreboard. “Four fixtures passed” is nice. “Promo ownership is solid, but multi-product ownership is still where regressions would hurt us first” is engineering.
+
+So the evaluation suite now reports by failure class instead of acting like every test case is a little island. The ship gate also picked up an explicit compact-numeric PLU trap, which matters because grocery OCR loves turning a produce label into a fake price election when you are not looking. The fixture docs were updated to map current images to failure classes and, just as importantly, to admit what is still missing.
+
+That last part is underrated. A coverage tracker that only celebrates what you have is a brag sheet. A coverage tracker that also points at the empty corners is a roadmap. That is where v2 stops feeling like a heroic refactor and starts feeling like a maintainable system with a memory.
+
 The satisfying part is the result: the targeted ship-gate run passed cleanly in the current harness, six tests passed, zero failed, and the build stayed green. That does not mean the parser is done learning. It means release quality now has a smaller, sharper definition than “it seems pretty good on my machine,” which is how adults avoid shipping folklore.
 
 ### War Story: The Shelf Tag Was Split in Two, So the Parser Fell for the Candy Bag

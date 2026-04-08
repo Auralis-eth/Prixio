@@ -86,4 +86,17 @@ struct ParserShipGateTests {
         #expect((agreeing.confidence ?? 0) > (weak.confidence ?? 0))
         #expect(agreeing.review.usedFoundationModel)
     }
+
+    @Test(.tags(.ocr, .product, .shipGate, .realWorldOCR))
+    func compactNumericPLUTrapStaysOnUnitPriceWithoutFM() async throws {
+        let result = await PriceParsingService.extract(
+            from: CapturedOCRFixtures.bananasStage4Observations()
+        )
+
+        #expect(result.itemNameHint == "Bananas Stage 4 PLU 4011")
+        #expect(result.price == Decimal(string: "5.45"))
+        #expect(result.unit == .kg)
+        #expect(result.review.usedFoundationModel == false)
+        #expect(result.parserDecisionReport?.reasons.contains(where: { $0.code == "winning_price_kind_unit" }) == true)
+    }
 }
