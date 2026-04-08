@@ -121,6 +121,19 @@ final class ScanViewModel: ObservableObject {
         isShowingImagePicker = true
     }
 
+    func applyLaunchRequest(_ request: ScanLaunchRequest) {
+        guard !isShowingConfirmationSheet, !isProcessingOCR else {
+            return
+        }
+
+        draft.itemName = request.itemName
+
+        if let preferredChainName = request.preferredChainName {
+            draft.storeChainName = preferredChainName
+            draft.storeChainExplicitlySelected = true
+        }
+    }
+
     func toggleFlash() {
         isFlashEnabled.toggle()
     }

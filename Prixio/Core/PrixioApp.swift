@@ -3,9 +3,12 @@ import SwiftUI
 
 @main
 struct PrixioApp: App {
+    @StateObject private var navigationModel = AppNavigationModel()
+
     var body: some Scene {
         WindowGroup {
             MainView()
+                .environmentObject(navigationModel)
         }
         .modelContainer(
             for: [

@@ -12,6 +12,7 @@ import SwiftUI
 
 struct ScanRootView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var navigationModel: AppNavigationModel
     @Query(sort: \PriceEntry.createdAt, order: .reverse) private var entries: [PriceEntry]
 
     @StateObject private var cameraController = CameraController()
@@ -74,6 +75,9 @@ struct ScanRootView: View {
             Task {
                 await handleSelectedPhotoItem(item)
             }
+        }
+        .onChange(of: navigationModel.pendingScanLaunchRequest) { _, request in
+            applyPendingScanLaunchRequest(request)
         }
         .sheet(isPresented: $viewModel.isShowingConfirmationSheet, onDismiss: {
             viewModel.handleConfirmationSheetDismissed()
@@ -335,5 +339,13 @@ struct ScanRootView: View {
             currentLocation: locationManager.currentLocation,
             source: .photoLibrary
         )
+    }
+
+    private func applyPendingScanLaunchRequest(_ request: ScanLaunchRequest?) {
+        guard request != nil, let consumedRequest = navigationModel.consumePendingScanLaunchRequest() else {
+            return
+        }
+
+        viewModel.applyLaunchRequest(consumedRequest)
     }
 }
