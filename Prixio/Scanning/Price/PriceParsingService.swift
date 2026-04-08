@@ -5,6 +5,7 @@
 //  Created by Daniel Bell on 3/1/26.
 //
 
+import CoreGraphics
 import Foundation
 
 enum PriceParsingService {
@@ -17,9 +18,10 @@ enum PriceParsingService {
     }
 
     enum EvidenceClusterRole: String, Sendable {
-        case primaryProduct
-        case secondaryProduct
-        case promoCopy
+        case productText
+        case priceColumn
+        case promoBanner
+        case unitDetail
         case noise
     }
 
@@ -52,6 +54,10 @@ enum PriceParsingService {
         let itemNameHint: String?
         let detectedUnit: UnitType?
         let resolvedQuantity: Decimal?
+        let frame: CGRect?
+        let centroid: CGPoint?
+        let linkedClusterIndexes: [Int]
+        let ownershipConfidence: Float
         let role: EvidenceClusterRole
         let score: Float
     }

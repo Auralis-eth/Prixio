@@ -122,7 +122,7 @@ struct PriceParsingAssistedExtractor {
               snapshot.evidenceClusters.indices.contains(winningClusterIndex) else {
             return false
         }
-        guard snapshot.evidenceClusters[winningClusterIndex].role == .primaryProduct else {
+        guard snapshot.evidenceClusters[winningClusterIndex].role == .productText else {
             return false
         }
 

@@ -169,7 +169,7 @@ struct PriceParsingConfidenceResolver {
         }
         if let winningClusterIndex = snapshot.winningClusterIndex,
            snapshot.evidenceClusters.indices.contains(winningClusterIndex),
-           snapshot.evidenceClusters[winningClusterIndex].role == .primaryProduct {
+           snapshot.evidenceClusters[winningClusterIndex].role == .productText {
             confidence += 0.08
         }
         if !PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) {

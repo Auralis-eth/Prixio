@@ -13,13 +13,53 @@ This plan borrows the useful ideas from systems like EasyOCR, Tesseract, and Pad
 
 ## Status
 
-Proposed.
+V1 implemented.
 
-No implementation work from this document should be considered complete until:
-- the relevant tests exist first
-- the affected parser path is updated
-- targeted parser tests pass
-- `Journal.md` is updated with what actually changed
+This document is now a record of the first parser pipeline expansion, not the active proposal for new work.
+
+Verification status:
+- targeted parser suites passed during implementation
+- the full local suite later passed end to end
+- `Journal.md` was updated throughout the rollout
+
+The active next-step planning now lives in:
+- [OCRParsingPipelineV2Plan.md](/Users/danielbell/Dev/Prixio/Prixio/OCRParsingPipelineV2Plan.md)
+- [OCRParsingPipelineV2Checklist.md](/Users/danielbell/Dev/Prixio/Prixio/OCRParsingPipelineV2Checklist.md)
+
+## V1 Outcome Summary
+
+The first parser pipeline refactor landed in pragmatic form.
+
+What shipped:
+- a real `OCRService` seam with bounded preprocessing and fallback OCR behavior
+- explicit scene classification
+- first-class evidence clusters
+- stronger price ownership scoring
+- cluster-aware item-name selection
+- clearer OCR-vs-parse confidence behavior
+- tighter Foundation Models hand-off rules
+- alternate OCR hypothesis preservation for risky numeric tokens
+- stronger captured-fixture coverage and less brittle live OCR contracts
+
+What v1 intentionally left shallow:
+- full perspective rectification and richer preprocessing benchmarks
+- stronger cross-column cluster ownership
+- earlier price-kind modeling
+- canonical item-name repair beyond heuristic line selection
+- richer parser diagnostics and benchmark reporting
+
+## V1 Architectural Takeaway
+
+The biggest change in v1 was not "more OCR." It was better traffic control.
+
+The pipeline now has clearer contracts:
+- OCR can be preprocessed and retried in a bounded way before parsing
+- the scene gets classified before downstream ambiguity logic has to guess
+- prices can be judged with more local ownership context
+- evidence can be grouped into clusters instead of drifting around as loose lines
+- Foundation Models get narrower, better-scoped work
+
+That means v2 should deepen these same ideas instead of reopening the whole parser shape.
 
 ## Why This Refactor Exists
 
@@ -509,3 +549,20 @@ This refactor is working if:
 - item names stay tied to the winning product block
 - Foundation Models get used for narrower, better-scoped ambiguity
 - test failures localize to a parser stage instead of "something changed somewhere"
+## Where V2 Starts
+
+V1 proved that the parser benefits from explicit stages, scene awareness, and cluster-aware reasoning.
+
+V2 should focus on the places where v1 is still pragmatic rather than complete:
+- richer cluster topology and price ownership across columns
+- deeper preprocessing and OCR quality scoring
+- stronger price-kind modeling for sale, regular, member, unit, and save amounts
+- canonical item-name composition and repair
+- more inspectable confidence and review diagnostics
+- narrower and cheaper FM usage
+- benchmark and ship-gate expansion
+
+The active v2 documents are:
+- [OCRParsingPipelineV2Plan.md](/Users/danielbell/Dev/Prixio/Prixio/OCRParsingPipelineV2Plan.md)
+- [OCRParsingPipelineV2Checklist.md](/Users/danielbell/Dev/Prixio/Prixio/OCRParsingPipelineV2Checklist.md)
+

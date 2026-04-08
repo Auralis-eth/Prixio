@@ -42,7 +42,7 @@ struct PriceParsingSnapshotBuilder {
         let evidenceClusters = buildEvidenceClusters(from: spatialGroups)
         let winningClusterIndex = winningClusterIndex(in: evidenceClusters)
         let sceneClassification = classifyScene(
-            spatialGroups: spatialGroups,
+            evidenceClusters: evidenceClusters,
             lines: supportedLines.map(\.string),
             priceCandidates: priceCandidates,
             rawText: rawText
@@ -95,17 +95,11 @@ struct PriceParsingSnapshotBuilder {
         from spatialGroups: [PriceParsingService.SpatialObservationGroup]
     ) -> [PriceParsingService.EvidenceCluster] {
         let baseClusters = spatialGroups.map(makeEvidenceCluster)
-        let productIndexes = baseClusters.enumerated()
-            .filter { $0.element.role == .primaryProduct }
-            .sorted { lhs, rhs in lhs.element.score > rhs.element.score }
-            .map(\.offset)
+        let links = clusterLinks(for: baseClusters)
 
         return baseClusters.enumerated().map { index, cluster in
-            guard let productRank = productIndexes.firstIndex(of: index) else {
-                return cluster
-            }
-
-            let adjustedRole: PriceParsingService.EvidenceClusterRole = productRank == 0 ? .primaryProduct : .secondaryProduct
+            let linkedIndexes = links[index]?.indexes ?? []
+            let ownershipConfidence = links[index]?.ownershipConfidence ?? defaultOwnershipConfidence(for: cluster)
             return PriceParsingService.EvidenceCluster(
                 observations: cluster.observations,
                 lines: cluster.lines,
@@ -113,7 +107,11 @@ struct PriceParsingSnapshotBuilder {
                 itemNameHint: cluster.itemNameHint,
                 detectedUnit: cluster.detectedUnit,
                 resolvedQuantity: cluster.resolvedQuantity,
-                role: adjustedRole,
+                frame: cluster.frame,
+                centroid: cluster.centroid,
+                linkedClusterIndexes: linkedIndexes,
+                ownershipConfidence: ownershipConfidence,
+                role: cluster.role,
                 score: cluster.score
             )
         }
@@ -162,6 +160,13 @@ struct PriceParsingSnapshotBuilder {
             itemNameHint: itemNameHint,
             detectedUnit: detectedUnit,
             resolvedQuantity: resolvedQuantity,
+            frame: PriceParsingService.spatialFrame(for: ordered),
+            centroid: clusterCentroid(for: ordered),
+            linkedClusterIndexes: [],
+            ownershipConfidence: defaultOwnershipConfidence(
+                for: role,
+                hasPriceCandidates: !priceCandidates.isEmpty
+            ),
             role: role,
             score: score
         )
@@ -173,19 +178,30 @@ struct PriceParsingSnapshotBuilder {
         itemNameHint: String?
     ) -> PriceParsingService.EvidenceClusterRole {
         let confidenceResolver = PriceParsingConfidenceResolver()
+        let joined = lines.joined(separator: " ")
         let promoLineCount = lines.filter { line in
             line.range(of: PriceParsingService.promoMarkerPattern, options: [.regularExpression, .caseInsensitive]) != nil
                 || line.localizedCaseInsensitiveContains("save")
                 || confidenceResolver.looksLikeDateLine(line)
         }.count
         let descriptiveLineCount = lines.filter(confidenceResolver.isProductDescriptor).count
+        let hasUnitSignal = PriceParsingUnitResolver().detectUnit(in: joined) != nil
+        let hasPriceCandidates = !priceCandidates.isEmpty
 
-        if descriptiveLineCount >= 1 && !priceCandidates.isEmpty && itemNameHint?.isEmpty == false {
-            return .primaryProduct
+        if descriptiveLineCount >= 1 {
+            return .productText
         }
 
-        if promoLineCount >= 1 && descriptiveLineCount >= 1 {
-            return .promoCopy
+        if promoLineCount >= 1 {
+            return .promoBanner
+        }
+
+        if hasPriceCandidates {
+            return .priceColumn
+        }
+
+        if hasUnitSignal {
+            return .unitDetail
         }
 
         return .noise
@@ -206,17 +222,132 @@ struct PriceParsingSnapshotBuilder {
         }
 
         switch role {
-        case .primaryProduct:
+        case .productText:
             score += 3
-        case .secondaryProduct:
-            score += 1
-        case .promoCopy:
+        case .priceColumn:
+            score += 2
+        case .promoBanner:
             score -= 1
+        case .unitDetail:
+            score += 0.5
         case .noise:
             score -= 3
         }
 
         return score
+    }
+
+    func clusterLinks(
+        for clusters: [PriceParsingService.EvidenceCluster]
+    ) -> [Int: (indexes: [Int], ownershipConfidence: Float)] {
+        var links: [Int: (indexes: [Int], ownershipConfidence: Float)] = [:]
+        let productIndexes = clusters.indices.filter { clusters[$0].role == .productText }
+        let priceIndexes = clusters.indices.filter { clusters[$0].role == .priceColumn }
+
+        for productIndex in productIndexes {
+            let candidates = priceIndexes.compactMap { priceIndex -> (Int, Float)? in
+                let confidence = ownershipConfidence(
+                    productCluster: clusters[productIndex],
+                    priceCluster: clusters[priceIndex]
+                )
+                return confidence > 0 ? (priceIndex, confidence) : nil
+            }
+            .sorted { lhs, rhs in lhs.1 > rhs.1 }
+
+            guard let best = candidates.first else {
+                continue
+            }
+
+            links[productIndex] = ([best.0], best.1)
+            let existing = links[best.0]
+            if let existing {
+                let mergedIndexes = Array(Set(existing.indexes + [productIndex])).sorted()
+                links[best.0] = (mergedIndexes, max(existing.ownershipConfidence, best.1))
+            } else {
+                links[best.0] = ([productIndex], best.1)
+            }
+        }
+
+        return links
+    }
+
+    func ownershipConfidence(
+        productCluster: PriceParsingService.EvidenceCluster,
+        priceCluster: PriceParsingService.EvidenceCluster
+    ) -> Float {
+        guard
+            let productFrame = productCluster.frame,
+            let priceFrame = priceCluster.frame
+        else {
+            return 0
+        }
+
+        let verticalOverlap = productFrame.intersection(priceFrame).height
+        let minimumHeight = min(productFrame.height, priceFrame.height)
+        let verticalOverlapRatio = minimumHeight > 0 ? verticalOverlap / minimumHeight : 0
+        let centerDistance = abs(productFrame.midY - priceFrame.midY)
+        let verticalReach = max(productFrame.height, priceFrame.height) * 0.95
+        let horizontalGap = max(0, priceFrame.minX - productFrame.maxX, productFrame.minX - priceFrame.maxX)
+        let sameRow = verticalOverlapRatio >= 0.2 || centerDistance <= verticalReach
+        let closeEnough = horizontalGap <= 0.32
+
+        guard sameRow && closeEnough else {
+            return 0
+        }
+
+        let rowScore = Float(max(min(1, verticalOverlapRatio), max(0, 1 - (centerDistance / max(verticalReach, 0.001)))))
+        let gapScore = Float(max(0, 1 - (horizontalGap / 0.32)))
+        return max(0.1, (rowScore * 0.6) + (gapScore * 0.4))
+    }
+
+    func effectiveWinningScore(
+        for cluster: PriceParsingService.EvidenceCluster
+    ) -> Float {
+        guard cluster.role == .productText else {
+            return cluster.score
+        }
+
+        let ownershipBoost = Float(cluster.linkedClusterIndexes.count) * 4 * cluster.ownershipConfidence
+        return cluster.score + ownershipBoost
+    }
+
+    func clusterCentroid(for observations: [OCRTextObservation]) -> CGPoint? {
+        let frames = observations.compactMap(\.boundingBox)
+        guard !frames.isEmpty else {
+            return nil
+        }
+
+        let totalMidX = frames.reduce(CGFloat.zero) { $0 + $1.midX }
+        let totalMidY = frames.reduce(CGFloat.zero) { $0 + $1.midY }
+        let count = CGFloat(frames.count)
+        return CGPoint(x: totalMidX / count, y: totalMidY / count)
+    }
+
+    func defaultOwnershipConfidence(
+        for cluster: PriceParsingService.EvidenceCluster
+    ) -> Float {
+        defaultOwnershipConfidence(
+            for: cluster.role,
+            hasPriceCandidates: !cluster.priceCandidates.isEmpty
+        )
+    }
+
+    func defaultOwnershipConfidence(
+        for role: PriceParsingService.EvidenceClusterRole,
+        hasPriceCandidates: Bool
+    ) -> Float {
+        switch role {
+        case .productText:
+            return hasPriceCandidates ? 1 : 0.4
+        case .priceColumn:
+            return hasPriceCandidates ? 0.9 : 0.2
+        case .promoBanner:
+            return 0.1
+        case .unitDetail:
+            return 0.25
+        case .noise:
+            return 0
+        }
     }
 
     func preferredItemNameHint(
@@ -253,23 +384,23 @@ struct PriceParsingSnapshotBuilder {
         in clusters: [PriceParsingService.EvidenceCluster]
     ) -> Int? {
         let productCluster = clusters.enumerated()
-            .filter { cluster in
-                cluster.element.role == .primaryProduct || cluster.element.role == .secondaryProduct
-            }
-            .max { lhs, rhs in lhs.element.score < rhs.element.score }?
+            .filter { $0.element.role == .productText }
+            .max { lhs, rhs in
+                effectiveWinningScore(for: lhs.element) < effectiveWinningScore(for: rhs.element)
+            }?
             .offset
         if let productCluster {
             return productCluster
         }
 
         return clusters.enumerated()
-            .filter { !$0.element.priceCandidates.isEmpty }
+            .filter { $0.element.role == .priceColumn || !$0.element.priceCandidates.isEmpty }
             .max { lhs, rhs in lhs.element.score < rhs.element.score }?
             .offset
     }
 
     func classifyScene(
-        spatialGroups: [PriceParsingService.SpatialObservationGroup],
+        evidenceClusters: [PriceParsingService.EvidenceCluster],
         lines: [String],
         priceCandidates: [PriceCandidate],
         rawText: String
@@ -278,7 +409,7 @@ struct PriceParsingSnapshotBuilder {
             return .receiptLike
         }
 
-        let meaningfulGroups = meaningfulProductGroups(in: spatialGroups)
+        let meaningfulGroups = meaningfulProductClusters(in: evidenceClusters)
         if meaningfulGroups.count >= 2 {
             return .multiTag
         }
@@ -302,16 +433,14 @@ struct PriceParsingSnapshotBuilder {
         return .unclear
     }
 
-    func meaningfulProductGroups(
-        in spatialGroups: [PriceParsingService.SpatialObservationGroup]
-    ) -> [PriceParsingService.SpatialObservationGroup] {
-        let confidenceResolver = PriceParsingConfidenceResolver()
-        return spatialGroups.filter { group in
-            let hasPrice = group.observations.contains { PriceParsingService.containsPriceSignal(in: $0.string) }
-            let hasDescription = group.observations.contains { observation in
-                confidenceResolver.isProductDescriptor(observation.string)
+    func meaningfulProductClusters(
+        in evidenceClusters: [PriceParsingService.EvidenceCluster]
+    ) -> [PriceParsingService.EvidenceCluster] {
+        evidenceClusters.filter { cluster in
+            guard cluster.role == .productText else {
+                return false
             }
-            return group.observations.count >= 2 && hasPrice && hasDescription
+            return !cluster.priceCandidates.isEmpty || !cluster.linkedClusterIndexes.isEmpty
         }
     }
 

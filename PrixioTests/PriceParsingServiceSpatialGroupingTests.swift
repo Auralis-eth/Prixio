@@ -30,8 +30,8 @@ struct PriceParsingServiceSpatialGroupingTests {
         #expect(snapshot.spatialGroups.count == 2)
         #expect(snapshot.evidenceClusters.count == 2)
         #expect(snapshot.winningClusterIndex == 0)
-        #expect(snapshot.evidenceClusters[safe: 0]?.role == .primaryProduct)
-        #expect(snapshot.evidenceClusters[safe: 1]?.role == .secondaryProduct)
+        #expect(snapshot.evidenceClusters[safe: 0]?.role == .productText)
+        #expect(snapshot.evidenceClusters[safe: 1]?.role == .productText)
     }
 
     @Test(.tags(.ocr, .product))
@@ -117,11 +117,11 @@ struct PriceParsingServiceSpatialGroupingTests {
 
         #expect(snapshot.evidenceClusters.count == 2)
         #expect(snapshot.evidenceClusters.contains(where: {
-            $0.role != .primaryProduct && $0.itemNameHint == nil && $0.priceCandidates.isEmpty
+            $0.role == .promoBanner
         }))
         #expect(snapshot.winningClusterIndex != nil)
         #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Organic Bananas")
-        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.role == .primaryProduct)
+        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.role == .productText)
     }
 
     @Test(.tags(.ocr, .product))
@@ -149,9 +149,41 @@ struct PriceParsingServiceSpatialGroupingTests {
 
         #expect(snapshot.itemNameHint == "Fresh Blueberries")
         #expect(snapshot.evidenceClusters.contains(where: {
-            $0.role != .primaryProduct && $0.itemNameHint == nil && $0.priceCandidates.isEmpty
+            $0.role == .promoBanner
         }))
         #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Fresh Blueberries")
+    }
+
+    @Test(.tags(.ocr, .product))
+    func crossColumnPriceClusterLinksToProductTextCluster() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            observation("Cadbury Chocolate Mini Eggs", confidence: 0.94, x: 0.08, y: 0.74, width: 0.34, height: 0.08),
+            observation("875 g", confidence: 0.89, x: 0.10, y: 0.66, width: 0.10, height: 0.05),
+            observation("$17.99", confidence: 0.95, x: 0.70, y: 0.73, width: 0.14, height: 0.08),
+            observation("SAVE THIS WEEK", confidence: 0.88, x: 0.08, y: 0.54, width: 0.24, height: 0.05)
+        ])
+
+        #expect(snapshot.evidenceClusters.count >= 2)
+        let winningCluster = snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]
+        #expect(winningCluster?.role == .productText)
+        #expect(winningCluster?.linkedClusterIndexes.isEmpty == false)
+
+        if let linkedIndex = winningCluster?.linkedClusterIndexes.first {
+            #expect(snapshot.evidenceClusters[safe: linkedIndex]?.role == .priceColumn)
+        }
+    }
+
+    @Test(.tags(.ocr, .product))
+    func unitDetailClusterDoesNotBeatLinkedProductOwnership() async throws {
+        let snapshot = PriceParsingService._test_buildHeuristicSnapshot([
+            observation("Organic Bananas", confidence: 0.95, x: 0.08, y: 0.78, width: 0.24, height: 0.07),
+            observation("/lb", confidence: 0.82, x: 0.45, y: 0.52, width: 0.05, height: 0.04),
+            observation("$1.29", confidence: 0.93, x: 0.72, y: 0.74, width: 0.10, height: 0.07)
+        ])
+
+        #expect(snapshot.evidenceClusters.contains(where: { $0.role == .unitDetail }))
+        #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.role == .productText)
+        #expect(snapshot.itemNameHint == "Organic Bananas")
     }
 
     private func observation(

@@ -594,6 +594,30 @@ So the live fixture suite got demoted from "exact transcript" to "stable evidenc
 
 That keeps the suite useful without forcing the parser backward just to preserve a specific OCR typo. Good tests should guard behavior, not nostalgia.
 
+### Aha! Moment: V1 Proved the Shape, V2 Has to Earn the Depth
+Once the suite was green again, the tempting move would have been to keep patching the parser wherever the next fixture complained. That is how OCR systems slowly turn into junk drawers with excellent intentions.
+
+Instead, the roadmap got split cleanly:
+- the old OCR refactor plan is now a v1 record
+- v2 has its own concrete plan
+- v2 has its own execution checklist and ship gates
+
+That sounds bureaucratic until you remember what parser work feels like without it. Without a phase boundary, every bug fix tries to become architecture, every architecture note tries to become immediate code, and eventually nobody can tell whether the pipeline is getting deeper or just more crowded.
+
+The v2 takeaway is simple: the next gains are not going to come from random new heuristics. They are going to come from making the cluster model, price ownership model, preprocessing quality signals, and evaluation surface more explicit than they are today.
+
+### Aha! Moment: Good Roadmaps Need File Addresses
+There is a big difference between a phase plan and a coding plan. "Improve cluster ownership" sounds good in a document. It is much less useful when someone sits down to code and has to ask, "Does this belong in `PriceParsingSnapshotBuilder`, `PriceCandidateScorer`, `PriceParsingService`, or all three?"
+
+So the v2 docs now carry file ownership maps, per-phase implementation sequences, and startup assumptions. That sounds administrative, but it saves real engineering time. The best parser roadmap is not the one with the most insights. It is the one that leaves the fewest excuses for accidental scope creep and wandering edits.
+
+### War Story: Product Text and Price Columns Needed Different Jobs
+V1 clusters were already helpful, but they still treated a shelf tag a little too much like a stack of lines and not enough like a layout. That becomes a problem the moment the product title lives on the left and the price lives on the right. Humans see one tag. A shallow grouping model sees two suspicious blobs.
+
+Phase 1 of the v2 pass fixed that by teaching clusters to have roles and relationships instead of just scores. A cluster can now be product text, a price column, a promo banner, a unit-detail fragment, or plain noise. More importantly, product-text clusters can link to neighboring price-column clusters with an ownership confidence instead of pretending the price must physically live inside the same group to count.
+
+That is a quiet architectural win, but it matters. It means the parser can start reasoning about shelf-tag layout instead of only reading OCR like a poem with too many dollar signs.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
