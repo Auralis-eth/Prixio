@@ -8,6 +8,12 @@ import Foundation
 struct PriceParsingConfidenceResolver {
     func analyzeAmbiguity(in snapshot: PriceParsingService.HeuristicExtractionSnapshot) -> PriceParsingService.ExtractionAmbiguityReport {
         var weaknesses: [PriceParsingService.ExtractionWeakness] = []
+        let ocrConfidence = ocrEvidenceConfidence(snapshot: snapshot)
+        let parseConfidence = parseStructureConfidence(snapshot: snapshot)
+        let combinedConfidence = combinedConfidence(
+            ocrConfidence: ocrConfidence,
+            parseConfidence: parseConfidence
+        )
 
         if snapshot.priceCandidates.isEmpty {
             weaknesses.append(.noPriceCandidates)
@@ -29,7 +35,7 @@ struct PriceParsingConfidenceResolver {
             weaknesses.append(.missingQuantity)
         }
 
-        if snapshot.heuristicConfidence < 0.45 {
+        if ocrConfidence < 0.45 || parseConfidence < 0.45 || combinedConfidence < 0.5 {
             weaknesses.append(.lowConfidence)
         }
 
@@ -52,7 +58,12 @@ struct PriceParsingConfidenceResolver {
             price: snapshot.priceCandidates.first?.value,
             unit: snapshot.detectedUnit,
             quantity: snapshot.resolvedQuantity,
-            confidence: assembleHeuristicConfidence(snapshot: snapshot, ambiguity: ambiguity),
+            confidence: assembleHeuristicConfidence(
+                snapshot: snapshot,
+                ambiguity: ambiguity,
+                ocrConfidence: ocrEvidenceConfidence(snapshot: snapshot),
+                parseConfidence: parseStructureConfidence(snapshot: snapshot)
+            ),
             priceCandidates: snapshot.priceCandidates,
             review: OCRReview(ambiguity: ambiguity, usedFoundationModel: false),
             supportingLines: snapshot.consolidatedObservations.map(\.string)
@@ -98,37 +109,94 @@ struct PriceParsingConfidenceResolver {
 
     func assembleHeuristicConfidence(
         snapshot: PriceParsingService.HeuristicExtractionSnapshot,
-        ambiguity: PriceParsingService.ExtractionAmbiguityReport
+        ambiguity: PriceParsingService.ExtractionAmbiguityReport,
+        ocrConfidence: Float,
+        parseConfidence: Float
     ) -> Float {
-        var confidence = max(0.15, snapshot.heuristicConfidence)
-
-        if !snapshot.priceCandidates.isEmpty {
-            confidence += 0.06
-        }
-        if snapshot.itemNameHint?.isEmpty == false {
-            confidence += 0.06
-        }
-        if snapshot.detectedUnit != nil {
-            confidence += 0.05
-        }
-        if snapshot.resolvedQuantity != nil || snapshot.detectedUnit == .each {
-            confidence += 0.05
-        }
-        if snapshot.cleanedObservations.count >= 2 && snapshot.lines.count >= 2 {
-            confidence += 0.04
-        }
-        if !PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) {
-            confidence += 0.04
-        }
-        if snapshot.sceneClassification != .multiTag && !looksLikeMultiProductScan(snapshot) {
-            confidence += 0.03
-        }
+        var confidence = combinedConfidence(
+            ocrConfidence: ocrConfidence,
+            parseConfidence: parseConfidence
+        )
 
         for weakness in ambiguity.weaknesses {
             confidence -= confidencePenalty(for: weakness)
         }
 
         return min(0.99, max(0.1, confidence))
+    }
+
+    func ocrEvidenceConfidence(
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot
+    ) -> Float {
+        let averageConfidence = PriceParsingService.averageConfidence(in: snapshot.supportedObservations)
+            ?? PriceParsingService.averageConfidence(in: snapshot.cleanedObservations)
+            ?? snapshot.heuristicConfidence
+        var confidence = max(0.1, averageConfidence)
+
+        if snapshot.supportedObservations.count >= 2 && snapshot.lines.count >= 2 {
+            confidence += 0.08
+        }
+        if snapshot.cleanedObservations.count >= 3 {
+            confidence += 0.04
+        }
+        if snapshot.cleanedObservations.count <= 1 || snapshot.lines.count <= 1 {
+            confidence -= 0.12
+        }
+
+        return min(0.95, max(0.1, confidence))
+    }
+
+    func parseStructureConfidence(
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot
+    ) -> Float {
+        var confidence: Float = 0.15
+
+        if !snapshot.priceCandidates.isEmpty {
+            confidence += 0.30
+        }
+        if snapshot.itemNameHint?.isEmpty == false {
+            confidence += 0.18
+        } else {
+            confidence -= 0.08
+        }
+        if snapshot.detectedUnit != nil {
+            confidence += 0.12
+        } else {
+            confidence -= 0.08
+        }
+        if snapshot.resolvedQuantity != nil || snapshot.detectedUnit == .each {
+            confidence += 0.08
+        }
+        if let winningClusterIndex = snapshot.winningClusterIndex,
+           snapshot.evidenceClusters.indices.contains(winningClusterIndex),
+           snapshot.evidenceClusters[winningClusterIndex].role == .primaryProduct {
+            confidence += 0.08
+        }
+        if !PriceCandidateScorer().hasCompetingTopCandidates(snapshot.priceCandidates) {
+            confidence += 0.05
+        }
+
+        switch snapshot.sceneClassification {
+        case .singleTag:
+            confidence += 0.04
+        case .multiTag:
+            confidence -= 0.10
+        case .promoCard:
+            confidence -= 0.05
+        case .receiptLike:
+            confidence -= 0.12
+        case .unclear:
+            confidence -= 0.06
+        }
+
+        return min(0.95, max(0.1, confidence))
+    }
+
+    func combinedConfidence(
+        ocrConfidence: Float,
+        parseConfidence: Float
+    ) -> Float {
+        (ocrConfidence * 0.45) + (parseConfidence * 0.55)
     }
 
     func confidencePenalty(for weakness: PriceParsingService.ExtractionWeakness) -> Float {

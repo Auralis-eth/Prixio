@@ -501,6 +501,25 @@ That changes the behavior in the direction you would want:
 
 This is one of those changes that feels small in code and large in meaning. Once you introduce first-class product blocks, the final item name should come from the winning block by default. Otherwise the parser is basically announcing, "I know which tag won, but I am still going to ask the aisle for opinions."
 
+### War Story: Confidence Finally Had to Explain Itself
+Phase 6 was about a quiet but important lie in the old parser: there was one final confidence number, but it was blending together two very different questions.
+
+1. Did OCR recover decent evidence?
+2. Did the parser assemble a believable product-price result from that evidence?
+
+Those are not the same problem. A scan can have pretty healthy OCR and still be structurally ambiguous because two products are fighting in frame. It can also have a simple parse shape with weak OCR evidence that should still make everyone nervous. The old confidence path blurred those into one bucket, which meant `lowConfidence` sometimes described the wrong failure mode.
+
+The new pass splits the logic into:
+- OCR evidence confidence
+- parse structure confidence
+- a weighted combined confidence used for the final score
+
+That does two useful things:
+- weak sparse scans can now earn a real `lowConfidence` signal for the right reason
+- promo-card or unusual-but-readable scenes do not automatically get treated like OCR disasters just because the layout is a little weird
+
+This is one of those refactors that makes future debugging much saner. When a result looks risky now, the parser is closer to saying whether the problem was "the eyes were blurry" or "the reasoning was shaky." Those are different bugs, and good systems stop pretending they are the same.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
