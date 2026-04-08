@@ -147,6 +147,8 @@ struct OCRResult {
     var confidence: Float?
     var priceCandidates: [PriceCandidate]
     var review: OCRReview = .clean
+    /// Evidence for the selected parse result. Deterministic inputs may pin this exactly,
+    /// while live OCR or model-assisted paths should only rely on stable invariants.
     let supportingLines: [String]
 }
 

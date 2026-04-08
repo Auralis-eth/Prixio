@@ -261,6 +261,7 @@ enum PriceParsingService {
         print("cleaned observations: \(snapshot.cleanedObservations.map(\.string))")
         print("normalized observations: \(snapshot.normalizedObservations.map(\.string))")
         print("consolidated observations: \(snapshot.consolidatedObservations.map(\.string))")
+        print("heuristic confidence: \(snapshot.heuristicConfidence)")
         print("price candidates (\(snapshot.priceCandidates.count)):")
         for (index, candidate) in snapshot.priceCandidates.enumerated() {
             print(
@@ -274,6 +275,7 @@ enum PriceParsingService {
         print("detected unit: \(snapshot.detectedUnit?.rawValue ?? "nil")")
         print("resolved quantity: \(snapshot.resolvedQuantity.map { "\($0)" } ?? "nil")")
         print("ambiguity weaknesses: \(ambiguity.weaknesses.map(\.rawValue))")
+        print("should use foundation model: \(ambiguity.shouldUseFoundationModel)")
         print("result item: \(result.itemNameHint ?? "nil")")
         print("result price: \(result.price.map { "\($0)" } ?? "nil")")
         print("result review: \(result.review.issues.map(\.rawValue)) usedFM=\(result.review.usedFoundationModel)")

@@ -431,6 +431,20 @@ That last rule matters more than it sounds. OCR experimentation has a natural te
 
 Another good cleanup happened in the tests. The fixture helper no longer carries its own shadow OCR pipeline. It now calls into `OCRService`, which means fixture coverage and production behavior share the same seam. That is the sort of boring alignment work that saves a lot of future confusion.
 
+### War Story: Phase 2 Was Mostly About Telling the Truth
+Phase 2 sounded modest on paper: baseline and instrumentation. In reality it was a cleanup pass on the stories the test suite was telling about the system.
+
+The biggest lie was in the live image fixture tests. They were still behaving like a notarized record of Vision OCR output, down to exact line arrays and exact `supportingLines` slices. That worked right up until OCR preprocessing improved, a line got recognized slightly differently, or the model-assisted path chose a different but still valid evidence breadcrumb trail. At that point the tests were no longer protecting correctness. They were protecting yesterday's weather.
+
+So the contract got corrected:
+- captured OCR tests still pin exact deterministic parser-stage behavior
+- live image tests now assert stable invariants instead of full OCR snapshots
+- `supportingLines` is explicitly documented as exact only for deterministic inputs, not as a promise that live OCR or model-assisted paths will always leave the same footprints
+
+The debug story got better too. Parser debug output now reports heuristic confidence and whether the ambiguity layer thinks Foundation Models should even be involved. That sounds small, but it makes a big difference when you are trying to answer the real engineering question: "Did the parser fail because it was weak, because the scene was ambiguous, or because we escalated when we should not have?"
+
+This was one of those phases that feels less glamorous than shipping a new heuristic, but it raises the technical bar. A parser team that cannot distinguish deterministic contracts from live-system invariants eventually starts fighting randomness and calling it quality work.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 
