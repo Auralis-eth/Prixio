@@ -111,7 +111,7 @@ struct PriceParsingServiceDataSanitation {
         ])
 
         #expect(snapshot.detectedUnit == .each)
-        #expect(snapshot.resolvedQuantity == nil)
+        #expect(snapshot.resolvedQuantity == Decimal(12))
     }
 
     @Test(.tags(.ocr, .product))

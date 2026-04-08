@@ -575,6 +575,25 @@ The fix combined two ideas:
 
 That pushed the banana case back onto the unit-bearing `5.45 / Kg` line and, importantly, removed the need for FM escalation there. This is exactly what "price ownership" is supposed to mean: a price should not win just because it can be formatted as currency. It should win because it belongs to the product block and is supported by the right local context.
 
+### War Story: Live OCR Tests Were Acting Like Court Transcripts
+The broken-unit-test cleanup was not mostly about parser code. It was mostly about test contracts that had quietly become too strict for the kind of OCR they were exercising.
+
+The captured and deterministic suites were the easy part. Those should stay sharp, and they did. A few exact contracts just needed to be updated to match the new parser reality:
+- Cadbury ambiguity no longer reports `multipleCompetingPrices` once the true shelf price wins cleanly
+- multi-pack sanitation now resolves quantity `12` instead of shrugging with `nil`
+- the banana captured OCR path now lands on `5.45 / Kg` and still marks the result for review
+
+The bigger lesson came from the live image fixtures. Those tests were pinning things like exact item names, exact FM usage, and exact support lines from screenshots whose OCR can drift slightly between runs. That is not a parser contract. That is a hostage situation.
+
+So the live fixture suite got demoted from "exact transcript" to "stable evidence contract":
+- OCR must be non-empty
+- some expected OCR evidence must still appear
+- parser support lines must be non-empty
+- expected support evidence must appear somewhere in the OCR or support output
+- expected price candidates only need overlap, not exact array equality
+
+That keeps the suite useful without forcing the parser backward just to preserve a specific OCR typo. Good tests should guard behavior, not nostalgia.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

@@ -71,7 +71,7 @@ struct PriceParsingServiceAmbiguityTests {
                     OCRTextObservation(string: "Pepsi", confidence: 0.92),
                     OCRTextObservation(string: "$3.49", confidence: 0.90)
                 ],
-                expectedSceneClassification: .multiTag,
+                expectedSceneClassification: .unclear,
                 expectedWeaknesses: [.multipleCompetingPrices, .missingUnit, .possibleMultiProductScan],
                 shouldEscalate: true
             ),

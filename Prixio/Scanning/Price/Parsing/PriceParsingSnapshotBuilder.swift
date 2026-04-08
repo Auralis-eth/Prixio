@@ -35,17 +35,12 @@ struct PriceParsingSnapshotBuilder {
         let extractedPriceCandidates = consolidatedPriceCandidates.isEmpty
             ? candidateScorer.extractPriceCandidates(from: normalizedObservations)
             : consolidatedPriceCandidates
-        let globallyScoredPriceCandidates = candidateScorer.scorePriceCandidates(
+        let priceCandidates = candidateScorer.scorePriceCandidates(
             extractedPriceCandidates,
             in: supportedLines
         )
         let evidenceClusters = buildEvidenceClusters(from: spatialGroups)
         let winningClusterIndex = winningClusterIndex(in: evidenceClusters)
-        let priceCandidates = winningClusterIndex.flatMap { index in
-            evidenceClusters.indices.contains(index) && !evidenceClusters[index].priceCandidates.isEmpty
-                ? evidenceClusters[index].priceCandidates
-                : nil
-        } ?? globallyScoredPriceCandidates
         let sceneClassification = classifyScene(
             spatialGroups: spatialGroups,
             lines: supportedLines.map(\.string),
@@ -57,11 +52,16 @@ struct PriceParsingSnapshotBuilder {
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let itemNameHint = winningClusterIndex.flatMap { index in
-            evidenceClusters.indices.contains(index) ? evidenceClusters[index].itemNameHint : nil
-        } ?? itemNameResolver.extractItemNameHint(
+        let globalItemNameHint = itemNameResolver.extractItemNameHint(
             from: supportedLines,
             priceCandidates: priceCandidates
+        )
+        let winningClusterItemNameHint = winningClusterIndex.flatMap { index in
+            evidenceClusters.indices.contains(index) ? evidenceClusters[index].itemNameHint : nil
+        }
+        let itemNameHint = preferredItemNameHint(
+            winningClusterHint: winningClusterItemNameHint,
+            globalHint: globalItemNameHint
         )
         let resolvedQuantity = unitResolver.inferResolvedQuantity(
             from: supportedLines,
@@ -217,6 +217,36 @@ struct PriceParsingSnapshotBuilder {
         }
 
         return score
+    }
+
+    func preferredItemNameHint(
+        winningClusterHint: String?,
+        globalHint: String?
+    ) -> String? {
+        guard let winningClusterHint, !winningClusterHint.isEmpty else {
+            return globalHint
+        }
+        guard let globalHint, !globalHint.isEmpty else {
+            return winningClusterHint
+        }
+
+        if itemNameHintStrength(globalHint) > itemNameHintStrength(winningClusterHint) {
+            return globalHint
+        }
+
+        return winningClusterHint
+    }
+
+    func itemNameHintStrength(_ hint: String) -> Int {
+        let tokens = hint
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        let descriptiveTokens = tokens.filter { token in
+            token.rangeOfCharacter(from: .letters) != nil
+        }
+
+        return descriptiveTokens.count * 10 + hint.count
     }
 
     func winningClusterIndex(

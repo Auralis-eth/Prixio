@@ -81,6 +81,11 @@ struct PriceCandidateScorer {
                 )
                 + promotionalPriorityBoost(for: candidate.sourceText)
                 + unitLabelPriorityBoost(for: candidate.sourceText)
+                + standaloneShelfPriceBoost(
+                    candidate: candidate,
+                    sourceLineIndexes: sourceIndexes,
+                    observations: observations
+                )
                 - nearbySavePenalty(
                     candidate: candidate,
                     sourceLineIndexes: sourceIndexes,
@@ -229,7 +234,8 @@ struct PriceCandidateScorer {
         guard
             text.count >= 3,
             let integerValue = Int(text),
-            !looksLikeExplicitSizeContext(sourceText, token: text)
+            !looksLikeExplicitSizeContext(sourceText, token: text),
+            sourceText.localizedCaseInsensitiveContains("plu") == false
         else {
             return nil
         }
@@ -313,7 +319,7 @@ struct PriceCandidateScorer {
 
     func unitLabelPriorityBoost(for text: String) -> Int {
         matchesContextPattern(PriceParsingService.unitLabelPattern, in: text)
-            || PriceParsingService.containsExplicitSizeToken(in: text) ? 1 : 0
+            || PriceParsingService.containsExplicitSizeToken(in: text) ? 2 : 0
     }
 
     func regularPricePenalty(for text: String) -> Int {
@@ -349,7 +355,31 @@ struct PriceCandidateScorer {
         let isLikelyPrimaryShelfPrice = candidate.value >= 10
             && !matchesContextPattern(PriceParsingService.unitLabelPattern, in: candidate.sourceText)
             && candidate.quantity == nil
-        return isLikelyPrimaryShelfPrice ? 0 : 3
+        return isLikelyPrimaryShelfPrice ? 0 : 4
+    }
+
+    func standaloneShelfPriceBoost(
+        candidate: PriceCandidate,
+        sourceLineIndexes: [Int],
+        observations: [OCRTextObservation]
+    ) -> Int {
+        let neighboringLines = sourceLineIndexes.flatMap { index in
+            [index - 2, index - 1, index + 1, index + 2]
+                .filter { observations.indices.contains($0) }
+                .map { observations[$0].string }
+        }
+
+        let hasStandaloneSaveMarker = neighboringLines.contains { line in
+            line.range(of: #"(?i)^\W*save\b"#, options: .regularExpression) != nil
+                || line.range(of: #"(?i)^\W*-\s*save\b"#, options: .regularExpression) != nil
+        }
+        guard hasStandaloneSaveMarker else {
+            return 0
+        }
+
+        let trimmed = candidate.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isCompactNumericCandidate = trimmed.range(of: #"^\$?\d{3,4}$"#, options: .regularExpression) != nil
+        return isCompactNumericCandidate && candidate.value >= 10 ? 6 : 0
     }
 
     func compactNumericRiskPenalty(
@@ -385,7 +415,15 @@ struct PriceCandidateScorer {
             PriceParsingConfidenceResolver().isProductDescriptor(line)
         }
 
-        return hasNearbyDescriptor ? 0 : 2
+        if hasNearbyDescriptor {
+            return 0
+        }
+
+        let hasNearbyUnitSignal = neighboringLines.contains { line in
+            matchesContextPattern(PriceParsingService.unitLabelPattern, in: line)
+                || PriceParsingService.containsExplicitSizeToken(in: line)
+        }
+        return hasNearbyUnitSignal ? 4 : 3
     }
 
     func matchesContextPattern(_ pattern: String, in text: String) -> Bool {

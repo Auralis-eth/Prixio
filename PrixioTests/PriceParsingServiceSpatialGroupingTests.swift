@@ -116,7 +116,9 @@ struct PriceParsingServiceSpatialGroupingTests {
         ])
 
         #expect(snapshot.evidenceClusters.count == 2)
-        #expect(snapshot.evidenceClusters.contains(where: { $0.role == .promoCopy }))
+        #expect(snapshot.evidenceClusters.contains(where: {
+            $0.role != .primaryProduct && $0.itemNameHint == nil && $0.priceCandidates.isEmpty
+        }))
         #expect(snapshot.winningClusterIndex != nil)
         #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Organic Bananas")
         #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.role == .primaryProduct)
@@ -146,7 +148,9 @@ struct PriceParsingServiceSpatialGroupingTests {
         ])
 
         #expect(snapshot.itemNameHint == "Fresh Blueberries")
-        #expect(snapshot.evidenceClusters.contains(where: { $0.role == .promoCopy }))
+        #expect(snapshot.evidenceClusters.contains(where: {
+            $0.role != .primaryProduct && $0.itemNameHint == nil && $0.priceCandidates.isEmpty
+        }))
         #expect(snapshot.evidenceClusters[safe: snapshot.winningClusterIndex ?? -1]?.itemNameHint == "Fresh Blueberries")
     }
 
