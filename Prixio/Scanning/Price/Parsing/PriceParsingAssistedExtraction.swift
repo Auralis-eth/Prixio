@@ -51,9 +51,21 @@ struct PriceParsingAssistedExtractor {
                 sourceLineIndexes: PriceParsingConfidenceResolver().sourceLineIndexes(for: candidate, in: snapshot)
             )
         }
+        let clusterContext = snapshot.evidenceClusters.enumerated().map { index, cluster in
+            PriceParsingService.PromptClusterContext(
+                index: index,
+                role: cluster.role.rawValue,
+                score: cluster.score,
+                itemNameHint: cluster.itemNameHint,
+                lineIndexes: sourceLineIndexes(for: cluster, in: snapshot),
+                lines: cluster.lines,
+                priceCandidateValues: cluster.priceCandidates.map { "\($0.value)" }
+            )
+        }
 
         let encodedLines = encodeForPrompt(lineContext)
         let encodedCandidates = encodeForPrompt(candidateContext)
+        let encodedClusters = encodeForPrompt(clusterContext)
         let weaknessList = ambiguity.weaknesses.map(\.rawValue).joined(separator: ", ")
 
         return """
@@ -63,10 +75,15 @@ struct PriceParsingAssistedExtractor {
         Price candidates:
         \(encodedCandidates)
 
+        Evidence clusters:
+        \(encodedClusters)
+
         Current heuristic item name hint: \(snapshot.itemNameHint ?? "nil")
         Current heuristic unit: \(snapshot.detectedUnit?.rawValue ?? "nil")
         Current heuristic quantity: \(snapshot.resolvedQuantity.map { "\($0)" } ?? "nil")
         Current heuristic confidence: \(snapshot.heuristicConfidence)
+        Scene classification: \(snapshot.sceneClassification.rawValue)
+        Winning cluster index: \(snapshot.winningClusterIndex.map(String.init) ?? "nil")
         Ambiguity reasons: \(weaknessList.isEmpty ? "none" : weaknessList)
 
         Response contract:
@@ -77,6 +94,45 @@ struct PriceParsingAssistedExtractor {
         - `ambiguityNotes` should be short phrases, not prose.
         - Never invent missing values.
         """
+    }
+
+    func shouldSkipFoundationModelEscalation(
+        snapshot: PriceParsingService.HeuristicExtractionSnapshot,
+        ambiguity: PriceParsingService.ExtractionAmbiguityReport
+    ) -> Bool {
+        let severeWeaknesses: Set<PriceParsingService.ExtractionWeakness> = [
+            .noPriceCandidates,
+            .multipleCompetingPrices,
+            .possibleMultiProductScan
+        ]
+        guard severeWeaknesses.isDisjoint(with: ambiguity.weaknesses) else {
+            return false
+        }
+
+        guard snapshot.sceneClassification == .singleTag else {
+            return false
+        }
+        guard snapshot.itemNameHint?.isEmpty == false else {
+            return false
+        }
+        guard !snapshot.priceCandidates.isEmpty else {
+            return false
+        }
+        guard let winningClusterIndex = snapshot.winningClusterIndex,
+              snapshot.evidenceClusters.indices.contains(winningClusterIndex) else {
+            return false
+        }
+        guard snapshot.evidenceClusters[winningClusterIndex].role == .primaryProduct else {
+            return false
+        }
+
+        let confidence = PriceParsingConfidenceResolver().assembleHeuristicConfidence(
+            snapshot: snapshot,
+            ambiguity: ambiguity,
+            ocrConfidence: PriceParsingConfidenceResolver().ocrEvidenceConfidence(snapshot: snapshot),
+            parseConfidence: PriceParsingConfidenceResolver().parseStructureConfidence(snapshot: snapshot)
+        )
+        return confidence >= 0.8
     }
 
     func mergeAssistedExtraction(
@@ -217,6 +273,15 @@ struct PriceParsingAssistedExtractor {
         }
 
         return lines.isEmpty ? snapshot.consolidatedObservations.map(\.string) : lines
+    }
+
+    func sourceLineIndexes(
+        for cluster: PriceParsingService.EvidenceCluster,
+        in snapshot: PriceParsingService.HeuristicExtractionSnapshot
+    ) -> [Int] {
+        cluster.lines.compactMap { line in
+            snapshot.consolidatedObservations.firstIndex { $0.string == line }
+        }
     }
 
     func mergedConfidence(
@@ -532,6 +597,16 @@ extension PriceParsingService {
         let sourceLineIndexes: [Int]
     }
 
+    struct PromptClusterContext: Codable, Sendable {
+        let index: Int
+        let role: String
+        let score: Float
+        let itemNameHint: String?
+        let lineIndexes: [Int]
+        let lines: [String]
+        let priceCandidateValues: [String]
+    }
+
     @Generable(description: "Constrained assisted extraction result for one ambiguous grocery shelf tag")
     struct AssistedExtractionResponse: Sendable {
         @Guide(description: "Existing OCR line indexes that belong to one target product")
@@ -571,6 +646,17 @@ extension PriceParsingService {
             from: response,
             lineCount: lineCount,
             candidateCount: candidateCount
+        )
+    }
+
+    static func _test_shouldSkipFoundationModelEscalation(
+        _ observations: [OCRTextObservation]
+    ) -> Bool {
+        let snapshot = PriceParsingSnapshotBuilder().buildHeuristicSnapshot(from: observations)
+        let ambiguity = PriceParsingConfidenceResolver().analyzeAmbiguity(in: snapshot)
+        return PriceParsingAssistedExtractor().shouldSkipFoundationModelEscalation(
+            snapshot: snapshot,
+            ambiguity: ambiguity
         )
     }
 }

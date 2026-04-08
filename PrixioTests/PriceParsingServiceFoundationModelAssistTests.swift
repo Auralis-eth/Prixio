@@ -276,7 +276,25 @@ struct PriceParsingServiceFoundationModelAssistTests {
         #expect(prompt.contains("Response contract:"))
         #expect(prompt.contains("`selectedPriceCandidateIndex` must be an existing candidate index or `nil`"))
         #expect(prompt.contains("`targetLineIndexes` must be existing OCR line indexes only"))
+        #expect(prompt.contains("Evidence clusters:"))
+        #expect(prompt.contains("Scene classification:"))
+        #expect(prompt.contains("Winning cluster index:"))
         #expect(prompt.contains("Never invent missing values."))
+    }
+
+    @Test(.tags(.ocr, .product, .shipGate))
+    func strongSingleClusterHeuristicResultSkipsFoundationModelEscalation() async throws {
+        let observations = [
+            OCRTextObservation(string: "Fresh Bananas", confidence: 0.94),
+            OCRTextObservation(string: "$1.29 /lb", confidence: 0.93)
+        ]
+
+        #expect(PriceParsingService._test_shouldSkipFoundationModelEscalation(observations))
+
+        let result = await PriceParsingService.extract(from: observations)
+
+        #expect(result.review.usedFoundationModel == false)
+        #expect(result.review.state == .clean)
     }
 
     @Test(.tags(.ocr, .product, .shipGate))

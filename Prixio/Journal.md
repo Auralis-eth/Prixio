@@ -520,6 +520,33 @@ That does two useful things:
 
 This is one of those refactors that makes future debugging much saner. When a result looks risky now, the parser is closer to saying whether the problem was "the eyes were blurry" or "the reasoning was shaky." Those are different bugs, and good systems stop pretending they are the same.
 
+### War Story: Foundation Models Stopped Getting Summoned for Work the Heuristic Path Had Already Finished
+Phase 7 finally put some manners around the Foundation Models hand-off.
+
+Before this pass, the FM path knew a lot less than it should have, and the deterministic parser sometimes asked for help in situations where it had already done the job. That is a bad deal in both directions:
+- the prompt is noisier than it needs to be
+- the model gets invited into cases where it adds latency and variability without adding value
+
+The fix had two parts.
+
+First, the prompt got better context:
+- scene classification
+- evidence clusters
+- winning cluster index
+
+That means the model is now looking at something closer to "here are the candidate product blocks and the likely winner" instead of a generic bag of OCR lines plus price candidates. It narrows the search space in a way that is legible to both the code and the tests.
+
+Second, the parser got a proper skip guard. If the heuristic path already has:
+- a strong single-tag scene
+- a winning primary product cluster
+- a complete enough result
+- no severe ambiguity
+- high heuristic confidence
+
+then the FM path is skipped. That is exactly how this should behave. A model should be a tie-breaker or escalation tool, not a ceremonial consultant who gets called into meetings after the decision is already obvious.
+
+This is another good example of raising the bar by reducing unnecessary cleverness. The best model call is often the one you did not need to make.
+
 ## Engineer's Wisdom
 Good parser work is less about cleverness than about preserving evidence. Every time you add a filter, ask: "What legitimate OCR junk am I about to throw away?" Grocery text is noisy by nature, and prices often appear on lines that look sparse or symbol-heavy. If the pipeline drops those lines too early, later stages cannot recover with confidence because the evidence is gone.
 

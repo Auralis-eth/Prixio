@@ -206,18 +206,24 @@ enum PriceParsingService {
         )
 #endif
 
+        let assistedExtractor = PriceParsingAssistedExtractor()
+
         guard ambiguity.shouldUseFoundationModel else {
             return heuristicResult
         }
 
-        guard let assisted = try? await PriceParsingAssistedExtractor().resolveWithFoundationModel(
+        guard !assistedExtractor.shouldSkipFoundationModelEscalation(snapshot: snapshot, ambiguity: ambiguity) else {
+            return heuristicResult
+        }
+
+        guard let assisted = try? await assistedExtractor.resolveWithFoundationModel(
             snapshot: snapshot,
             ambiguity: ambiguity
         ) else {
             return heuristicResult
         }
 
-        let mergedResult = PriceParsingAssistedExtractor().mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
+        let mergedResult = assistedExtractor.mergeAssistedExtraction(snapshot: snapshot, assisted: assisted)
 
 #if DEBUG
         debugLogPipeline(
