@@ -24,10 +24,7 @@ struct MainView: View {
                 Label("Compare", systemImage: "basket")
             }
 
-            PlaceholderTabView(
-                title: "Shopping List",
-                subtitle: "Build a trip list, see the best store per item, and route back into Scan from here."
-            )
+            ShoppingListRootView()
             .tag(AppTab.shopping)
             .tabItem {
                 Label("Shopping List", systemImage: "checklist")
