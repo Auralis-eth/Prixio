@@ -18,6 +18,22 @@ Main user flow:
 4. Let the user confirm or adjust the result.
 5. Save a normalized price record, optionally tied to a store and location.
 
+The app now has three connected user-facing product flows:
+
+1. `Scan`
+   - capture or import a shelf-tag image
+   - run OCR and parsing
+   - confirm and save a structured `PriceEntry`
+2. `Compare`
+   - browse tracked items
+   - search saved product history
+   - inspect per-store ranked prices with staleness cues
+3. `Shopping List`
+   - build a trip checklist
+   - surface best-store suggestions per item
+   - recommend a likely winner store for the trip
+   - route back into `Scan` when stale or missing data should be refreshed
+
 The app is trying to turn messy retail signage into defensible grocery price data, not just extract text.
 
 ## Product Priorities
@@ -36,11 +52,47 @@ The app is trying to turn messy retail signage into defensible grocery price dat
   - owns the SwiftData container
   - registers the core persisted models
 - `MainView.swift`
-  - app shell and top-level navigation
+  - app shell and top-level tab navigation
+- `AppNavigationModel.swift`
+  - shared app-level navigation coordinator
+  - owns selected tab state
+  - carries pending scan-launch requests from Shopping List back into Scan
 - `ScanRootView.swift`
   - scanner entry point and scan experience shell
 - `ScanViewModel.swift`
   - orchestrates image capture/import, OCR, parsing, review state, and save flow
+
+### Compare Flow
+
+- `CompareRootView.swift`
+  - root browse/search/recent-comparisons screen
+- `CompareViewModel.swift`
+  - derives search results, recent captures, browse rows, suggestion cards, and item-detail comparison rows
+- `ItemDetailView.swift`
+  - ranked per-store price view for one item
+- `EntryDetailSheet.swift`
+  - bottom-sheet-style detail for a selected saved entry
+- `StoreComparisonRow.swift`
+  - compare-side derived row model
+
+### Shopping List Flow
+
+- `ShoppingListRootView.swift`
+  - list shell, trip card, checklist, completed section, and nudge routing
+- `ShoppingListViewModel.swift`
+  - derives active rows, completed rows, nudge eligibility, and trip recommendation
+- `ShoppingListRepository.swift`
+  - fetch/create/update/delete layer for shopping lists and items
+- `TripRecommendation.swift`
+  - derived trip-optimizer outcome enum
+- `ShoppingListRowData.swift`
+  - derived row model for checklist presentation
+- `AddShoppingListItemSheet.swift`
+  - add known or freeform shopping-list item
+- `ShoppingListItemDetailSheet.swift`
+  - top store options for one list item plus scan/delete actions
+- `ScanNudgeSheet.swift`
+  - refresh-data prompt shown after checking off stale or missing-price items
 
 ### Core Domain Models
 
@@ -59,6 +111,25 @@ The app is trying to turn messy retail signage into defensible grocery price dat
   - candidate store match during detection
 - `UnitType`
   - normalized measurement and unit enum
+- `ShoppingList`
+  - persisted shopping-list container
+  - model is multi-list-ready even though the UI exposes one visible default list today
+- `ShoppingListItem`
+  - persisted checklist row model
+- `StalenessBucket`
+  - shared freshness vocabulary used in Compare and Shopping List
+
+### Shared Derived Domain
+
+- `ItemKeyNormalizer.swift`
+  - one shared normalization rule for item grouping and lookup
+- `PriceInsightEngine.swift`
+  - shared pure pricing logic
+  - owns best-store selection
+  - owns staleness bucket logic
+  - owns trip winner aggregation
+
+This shared domain matters because Compare and Shopping List intentionally do not each invent their own pricing truth.
 
 ### OCR Layer
 
@@ -203,16 +274,34 @@ If ambiguity is severe enough, the result should be reviewed before save.
 6. The user reviews the result in `ConfirmationSheet`.
 7. `PriceEntryRepository` persists the normalized draft into SwiftData.
 
+Compare-side data flow:
+
+1. `CompareRootView` reads `PriceEntry` records through SwiftData.
+2. `CompareViewModel` groups entries by normalized item key.
+3. Browse rows, recent captures, and suggested comparison cards are derived in memory.
+4. `ItemDetailView` builds ranked per-store rows for the selected item.
+
+Shopping List data flow:
+
+1. `ShoppingListRepository` fetches or creates the default visible list.
+2. `ShoppingListRootView` reads both `ShoppingList` and `PriceEntry`.
+3. `ShoppingListViewModel` derives row suggestions and trip recommendation from shared `PriceInsightEngine` logic.
+4. When a stale or missing-data item is checked off, the app may show `ScanNudgeSheet`.
+5. `AppNavigationModel` routes the user back into `Scan` with item and optional store prefilled.
+
 ## Persistence
 
 SwiftData entities:
 - `PriceEntry`
 - `StoreChain`
 - `StoreLocation`
+- `ShoppingList`
+- `ShoppingListItem`
 
 Persistence ownership:
 - `PrixioApp` creates the model container
 - `PriceEntryRepository` translates reviewable parser output into saved records
+- `ShoppingListRepository` owns shopping-list persistence operations
 
 ## Testing Map
 
@@ -238,6 +327,21 @@ Important test files and what they guard:
   - compact release-critical parser gate
 - `ScanViewModelTests.swift`
   - scan workflow orchestration
+- `AppNavigationModelTests.swift`
+  - cross-tab scan routing and prefill request handling
+- `ShoppingListDomainTests.swift`
+  - shared shopping/price insight logic and normalization reuse
+- `CompareFlowViewModelTests.swift`
+  - compare-side derivation logic
+- `TripRecommendationTests.swift`
+  - trip optimizer rules
+- `ShoppingListViewModelTests.swift`
+  - checklist derivation, repository behavior, and freshness-loop behavior
+
+Manual QA / release-facing docs:
+
+- `PhysicalDeviceQATestPlan.md`
+  - manual physical-device test checklist across Scan, Compare, Shopping List, permissions, routing, and resilience
 
 ## Known Gotchas
 
@@ -245,6 +349,10 @@ Important test files and what they guard:
 - Live OCR can drift slightly between runs; exact assertions should be reserved for deterministic frozen inputs.
 - Store detection can be indirectly affected by parser changes, because OCR-derived hints feed store inference.
 - The parser is the densest area of the codebase. Tight, phase-specific edits are safer than broad rewrites.
+- Compare and Shopping List read price intelligence from `PriceEntry`; do not persist duplicate “best price” state.
+- Shopping List defaults to the visible `"This trip"` list, but the persistence model is already multi-list-ready.
+- Shopping List scan launches prefer the row’s best-store name first, then fall back to the trip winner if needed.
+- Shopping List row distance now depends on real saved store coordinates; rows without coordinates should omit distance instead of showing placeholders.
 
 ## Guidance For Future LLM Sessions
 
@@ -253,3 +361,5 @@ Important test files and what they guard:
 - Prefer real-image fixtures when geometry or OCR quality is part of the bug.
 - Do not widen Foundation Models scope unless deterministic parsing has already been tightened first.
 - Keep changes local to the pipeline stage that owns the problem.
+- Reuse `PriceInsightEngine` and `ItemKeyNormalizer` rather than adding flow-specific copies of pricing or grouping logic.
+- If editing Compare or Shopping List behavior, verify both build cleanly because they now share derived price logic.
