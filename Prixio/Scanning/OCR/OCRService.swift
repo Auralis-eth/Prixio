@@ -401,8 +401,181 @@ enum OCRServiceError: Error {
     case preprocessingFailed
 }
 
+import FoundationModels
+import Vision
+
+@Generable
+struct LLMOCRResult {
+    // 1. Reading pass — first, so every field below conditions on it.
+    @Guide(description: "Transcribe only text relevant to product identity and pricing. Skip slogans, barcode digits, and legal fine print.")
+    var relevantText: String
+
+    // 2. Scene assessment before extraction.
+    @Guide(description: "What kind of signage the source shows.")
+    var scene: LLMSceneKind
+
+    // 3. Enumerate all evidence before resolving anything.
+    @Guide(description: "Every distinct price present, with its verbatim label context. Include regular, sale, member/loyalty, unit-comparison prices, deposits, and multi-buy offers.", .count(1...8), .maximumCount(10))
+    var priceCandidates: [LLMPriceCandidate]
+
+    // 4. Resolution — conditioned on the full candidate list.
+    @Guide(description: "The most specific product name legible, e.g. 'Organic Honeycrisp Apples' not 'Apples'. Exclude store brand prefixes unless they are the only identifier. Null if no product name is legible.")
+    var itemName: String?
+
+    @Guide(description: "Brand name if distinct from the product name, e.g. 'Compliments', 'PC'. Null otherwise.")
+    var brand: String?
+
+    @Guide(description: "The price a shopper pays today for the primary product. If both a sale and regular price appear, the sale price.", .minimum(0))
+    var price: Decimal?
+
+    @Guide(description: "Unit the price applies to. Most produce is per lb or per kg; packaged goods are usually each. Null only if genuinely undeterminable.")
+    var unit: UnitType?
+
+    @Guide(description: "Quantity the price covers, e.g. 3 for '3 for $5'. Usually 1.", .minimum(0))
+    var quantity: Decimal?
+
+    @Guide(description: "Sale expiry date if printed, formatted YYYY-MM-DD. Null if absent.")//,  .pattern(/^\d{4}-\d{2}-\d{2}$/))
+    var saleEndsOn: String?
+
+    // 5. Honesty pass — last, after all commitments above.
+    @Guide(description: "Every problem that applies to this extraction. Empty only if the tag is clean, complete, and unambiguous.", .maximumCount(10))
+    var issues: [LLMExtractionIssue]
+}
+
+@Generable
+enum LLMSceneKind: String, Codable {
+    case singleTag, multiTag, promoCard, produceSign, receiptLike, unclear
+}
+
+@Generable
+struct LLMPriceCandidate {
+    @Guide(description: "Verbatim label or context attached to this price, e.g. 'Club Price', 'was', 'per 100g'. Empty string if unlabeled.")
+    var label: String
+
+    @Guide(description: "The price value.", .minimum(0))
+    var value: Decimal
+
+    @Guide(description: "Quantity this price covers if a multi-buy, e.g. 2 for '2 for $7'. Null for single-item prices.", .minimum(0))
+    var quantity: Decimal?
+
+    var kind: PriceKind
+
+    @Guide(description: "The exact source text this price came from.")
+    var sourceText: String
+}
+
+@Generable
+enum LLMExtractionIssue: String, Codable {
+    case multipleCompetingPrices
+    case priceOwnershipUncertain   // price may belong to a neighboring product
+    case unitAmbiguous
+    case noLegibleItemName
+    case expiredOrDatedSaleTag
+    // Visual-only — image path emits these; merge policy ignores them from the text path.
+    case partiallyObscuredTag
+    case handwrittenText
+    case blurOrGlare
+}
+
 extension UIImage {
     func extractOCR() async -> OCRResult {
         await OCRService().extractOCR(from: self)
+    }
+    
+    
+    
+    
+    @available(iOS 27.0, *)
+    func extractPriceInformation(context: ScanPromptContext = .none) async -> LLMOCRResult? {
+        switch SystemLanguageModel.default.availability {
+        case .available:
+            do {
+                let prompt = Prompt {
+                    "Extract the product and pricing information from this photo of grocery store signage."
+                    
+                    if let storeName = context.storeName {
+                        "The photo was taken at \(storeName)."
+                    }
+
+                    if let expectedItem = context.expectedItemName {
+                        """
+                        The shopper was trying to capture a price for "\(expectedItem)". \
+                        Use this only to disambiguate between multiple tags — if the dominant \
+                        tag is clearly a different product, extract that product instead.
+                        """
+                    }
+                    
+                    Attachment(self)
+                        .label("shelf_tag_photo")
+                }
+
+                let session: LanguageModelSession
+//                    let model = PrivateCloudComputeLanguageModel()
+//
+//                    switch model.availability {
+//                    case .available:
+//                        // Show your intelligence UI.
+//                        session = LanguageModelSession(model: model, instructions: nil)//, tools:[OCRTool()])
+//                    case .unavailable(.deviceNotEligible):
+//                        // Show an alternative UI.
+                session = LanguageModelSession(instructions: {
+                    """
+                    You are a price extraction assistant for a grocery price tracking app. \
+                    You analyse photos of shelf tags, price labels, produce signs, and promo \
+                    cards from grocery stores and farmers markets, mostly in Canada.
+
+                    Work in this order:
+                    1. Transcribe the pricing-relevant text first. Everything else depends on it.
+                    2. Classify the scene. A photo may contain several tags; identify whether \
+                       one tag clearly dominates.
+                    3. List every distinct price as a candidate with its verbatim label before \
+                       deciding anything. Regular, sale, member/loyalty, per-unit comparison \
+                       prices, deposits, and multi-buy tiers are all separate candidates.
+                    4. Only then resolve the primary fields, using your candidate list.
+                    5. Finish by reporting every issue that applies. Use the issue flags to \
+                       express doubt — never compensate for uncertainty by guessing a value.
+
+                    Resolution rules:
+                    - The primary price is what a shopper pays today: sale or member price \
+                      beats regular price.
+                    - Per-unit comparison prices (e.g. "$1.10 / 100 g") and bottle deposits \
+                      are candidates, never the primary price.
+                    - For multi-buy deals like "3 for $5", set price 5, quantity 3.
+                    - Price ownership matters most. On crowded shelves a price often belongs \
+                      to the neighbouring product. Extract from the single dominant tag only, \
+                      and if the pairing between name and price is not visually certain, \
+                      report priceOwnershipUncertain.
+                    - Tags are often bilingual English/French. The French text is the same \
+                      product, not a second one. Prefer the English name.
+                    - Prefer specificity: "Organic Fuji Apples" over "Apples". But never \
+                      invent detail that is not legible — when in doubt, leave a field nil.
+                    - Most produce is priced per lb or per kg; packaged goods are usually each.
+                    """
+                })//, tools:[OCRTool()])
+//                    case .unavailable(.systemNotReady):
+//                        // PCC isn't ready to serve requests.
+//                        session = LanguageModelSession(instructions: nil)//, tools:[OCRTool()])
+//                    case .unavailable(_):
+//                        // The model is unavailable for an unknown reason.
+//                        session = LanguageModelSession(instructions: nil)//, tools:[OCRTool()])
+//                    }
+                
+                let response = try await session.respond(to: prompt, generating: LLMOCRResult.self)
+                print(session.usage.totalTokenCount)
+                print(response.usage.totalTokenCount)
+                let caption = response.content
+                print("========================")
+                print(caption)
+                print("========================")
+                return caption
+            } catch {
+                print("========================")
+                print(error)
+                print("========================")
+                return nil
+            }
+        case .unavailable:
+            return nil//await OCRService().extractOCR(from: self)
+        }
     }
 }

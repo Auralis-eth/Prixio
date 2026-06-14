@@ -2,6 +2,16 @@
 
 This file is the compact, durable app brief for future LLM sessions.
 
+## Short LLM Brief
+
+Prixio is an iOS app for turning messy grocery shelf-tag photos into useful price intelligence. The user captures or imports a photo of a product label, shelf tag, produce sign, or sale card. The app runs OCR, parses the noisy text into an item name, price, unit, quantity, confidence, and review state, lets the user confirm or correct the result, then saves a normalized `PriceEntry` in SwiftData with optional store and location context.
+
+The larger product goal is not just text extraction. Prixio is building a personal grocery price memory: scan prices in the store, compare historical prices across stores, and use that history to make shopping-list and trip decisions. The app currently has three connected flows: `Scan` for capture and confirmation, `Compare` for browsing saved item history and ranked store prices, and `Shopping List` for checklist planning with best-store suggestions and scan-refresh nudges when data is missing or stale.
+
+Technically, Prixio is SwiftUI-first, SwiftData-backed, and heuristic-first in its parsing strategy. Vision/OCR produces raw observations; deterministic parser phases clean, group, score, and resolve the result; Foundation Models are reserved as a narrow assist path for ambiguous cases rather than the default parser. The core engineering theme is honesty under uncertainty: OCR is noisy, grocery signage is inconsistent, and the app should surface ambiguity instead of pretending every filled field is trustworthy.
+
+Future LLM work should preserve these priorities: keep scanner and parser edits tightly scoped, reuse shared pricing logic in `PriceInsightEngine`, reuse item grouping in `ItemKeyNormalizer`, avoid duplicating best-price state outside saved `PriceEntry` records, and add or update parser tests whenever OCR or price heuristics change.
+
 ## What The App Is
 
 Prixio is an iOS grocery price capture app.

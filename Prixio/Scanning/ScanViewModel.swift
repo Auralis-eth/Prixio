@@ -195,6 +195,80 @@ final class ScanViewModel: ObservableObject {
         applyInferredStore(from: inferredStoreCandidate, ocrText: result.rawText, nearbyCandidates: sessionStore.nearbyCandidates)
         isProcessingOCR = false
     }
+    
+    @available(iOS 27.0, *)
+    func processPickedImage(
+        _ image: UIImage?,
+        sessionStore: ScanSessionStore,
+        currentLocation: CLLocation?,
+        source: ScanInputSource = .photoLibrary
+    ) async {
+        guard let image else {
+            return
+        }
+
+        let scanID = UUID()
+        activeScanID = scanID
+        beginImageReview(image, source: source)
+
+        let result = await image.extractPriceInformation(context: ScanPromptContext(storeName: sessionStore.lastStoreCandidate?.chainName))
+        guard activeScanID == scanID else {
+            return
+        }
+        guard let result else {
+            isProcessingOCR = false
+            return
+        }
+        draft.ocrText = result.relevantText
+        draft.priceText = result.price.map(CurrencyFormatter.shared.string) ?? ""
+        draft.selectedUnit = result.unit
+        draft.quantity = result.quantity
+        // Map the LLM's candidates into PriceCandidate. The model doesn't supply
+        // priority/confidence/sourceLineIndexes, so default them: priority follows
+        // list order, confidence is 1.0 (LLM-asserted), and there are no source line indexes.
+        draft.priceCandidates = result.priceCandidates.enumerated().map { index, candidate in
+            PriceCandidate(
+                label: candidate.label,
+                value: candidate.value,
+                quantity: candidate.quantity,
+                priority: index,
+                sourceText: candidate.sourceText,
+                kind: candidate.kind,
+                sourceLineIndexes: [],
+                confidence: 1.0
+            )
+        }
+        draft.itemName = result.itemName ?? ""
+
+#if DEBUG
+        print("========== SCAN RESULT ==========")
+        print("itemName: \(result.itemName ?? "nil")")
+        print("price: \(result.price.map { "\($0)" } ?? "nil")")
+        print("unit: \(result.unit?.rawValue ?? "nil")")
+        print("quantity: \(result.quantity.map { "\($0)" } ?? "nil")")
+        print("priceCandidates: \(result.priceCandidates.map { "\($0.value) src=\($0.sourceText)" })")
+         print("relevantText: \(result.relevantText)")
+        print("===============================")
+#endif
+
+        if sessionStore.nearbyCandidates.isEmpty {
+            let stores = await storeService.fetchNearbyStores(location: currentLocation)
+            guard activeScanID == scanID else {
+                return
+            }
+            sessionStore.updateCandidates(stores)
+        }
+
+        let isReceiptCapture = PriceParsingService.looksLikeReceipt(text: result.relevantText)
+        let matchedCandidate = matchStoreCandidate(
+            from: sessionStore.nearbyCandidates,
+            ocrText: result.relevantText,
+            currentLocation: currentLocation
+        )
+        inferredStoreCandidate = isReceiptCapture ? nil : (matchedCandidate ?? sessionStore.lastStoreCandidate)
+        applyInferredStore(from: inferredStoreCandidate, ocrText: result.relevantText, nearbyCandidates: sessionStore.nearbyCandidates)
+        isProcessingOCR = false
+    }
 
     func applyPriceCandidate(_ candidate: PriceCandidate) {
         draft.priceText = CurrencyFormatter.shared.string(candidate.value)

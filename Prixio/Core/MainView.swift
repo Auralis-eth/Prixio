@@ -30,10 +30,7 @@ struct MainView: View {
                 Label("Shopping List", systemImage: "checklist")
             }
 
-            PlaceholderTabView(
-                title: "Settings",
-                subtitle: "Preferences, store management, and scanner defaults belong in this tab."
-            )
+            SettingsView()
             .tag(AppTab.settings)
             .tabItem {
                 Label("Settings", systemImage: "gearshape")

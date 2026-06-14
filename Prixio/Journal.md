@@ -267,6 +267,20 @@ The next lesson is more specific: once the app targets the iOS 26 SDK, `AVCaptur
 
 The mental model is a restaurant opening for breakfast. Turn the lights on and unlock the front door first. Do not make the customer wait outside while someone alphabetizes the spice rack. For Prixio, that means live preview first, OCR/store/UI extras second, and physical-device measurement before declaring the scanner fast.
 
+### Aha! Moment: Future LLMs Need a North Star, Not a Treasure Map
+A useful app brief for an LLM is not a mini encyclopedia. It is the note you would hand to a sharp engineer walking into the room five minutes before standup: what are we building, what matters, where are the sharp edges, and what should they avoid breaking while trying to help.
+
+That is why `LLMAppContext.md` now starts with a short prompt-ready brief. It says Prixio is not merely an OCR demo; it is a grocery price memory system built around scanning, comparing, and shopping-list decisions. It also plants the important guardrails early: deterministic parser first, Foundation Models only as a narrow assist path, `PriceEntry` as the source of saved truth, and shared derived logic instead of copy-pasted best-price math.
+
+The lesson is simple: project context should compress the why before listing the what. A future LLM can always inspect files for details, but it needs the product shape upfront or it will optimize the wrong thing with impressive confidence.
+
+### Aha! Moment: Test Data Needs a Cleanup Handle
+The Compare tab is only interesting when it has a pantry full of price history. Testing it one scan at a time is like evaluating a spreadsheet by entering cells with a toothbrush: technically possible, spiritually punishing.
+
+So Settings now has a small Compare test-data station. It creates exactly 100 marked `PriceEntry` records: 10 grocery items across 5 stores, with 2 captures per store. That gives Compare enough shape to show suggestions, browse rows, store ranking, staleness behavior, distance labels, and trend badges without requiring a grocery-store field trip.
+
+The important engineering detail is the cleanup handle. Every generated row carries an internal seed marker, and the delete action removes only rows with that marker. Fake data should behave like temporary scaffolding: sturdy enough to stand on, brightly tagged, and easy to take down without smashing the building.
+
 ## Engineer's Wisdom
 Good engineers protect the first useful moment. In a camera app, the first useful moment is not “SwiftUI finished drawing the screen” and it is not “all capture outputs are warmed up.” It is “the user can see the live thing they are trying to capture.”
 

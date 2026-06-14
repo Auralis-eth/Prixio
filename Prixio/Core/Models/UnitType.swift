@@ -6,7 +6,9 @@
 //
 
 import Foundation
+import FoundationModels
 
+@Generable
 enum UnitType: String, Codable, CaseIterable, Identifiable {
     case each
     case lb

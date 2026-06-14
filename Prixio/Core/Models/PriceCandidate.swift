@@ -6,7 +6,9 @@
 //
 
 import Foundation
+import FoundationModels
 
+@Generable
 enum PriceKind: String, Codable, Sendable {
     case shelf
     case sale
