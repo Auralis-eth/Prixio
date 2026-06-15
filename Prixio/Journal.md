@@ -281,6 +281,22 @@ So Settings now has a small Compare test-data station. It creates exactly 100 ma
 
 The important engineering detail is the cleanup handle. Every generated row carries an internal seed marker, and the delete action removes only rows with that marker. Fake data should behave like temporary scaffolding: sturdy enough to stand on, brightly tagged, and easy to take down without smashing the building.
 
+### Aha! Moment: A Button Should Control the Thing Users Think It Controls
+
+The scanner flash defect is a tiny vocabulary trap with a real UX cost. The app has a bolt button, users expect light in the live camera preview, but the current implementation only toggles still-photo flash settings at capture time. That is like flipping a kitchen light switch and discovering it only makes the oven glow for half a second when dinner is done.
+
+The shopping empty-state bug has the same shape in SwiftUI clothing. Two automatic-style buttons living inside a `List` row can stop behaving like two independent controls. One tap can set add-sheet state and also navigate to Scanner, leaving Shopping List with a sheet waiting under the tab bar like a half-open drawer.
+
+The lesson for future fixes is simple: bind controls to the real owner of the state. Camera light should come from `CameraController` and the physical torch state. Empty-state actions should be explicit, isolated controls so SwiftUI does not turn a friendly choice into a row-level surprise.
+
+### War Story: Flash Is Not a Vibe, It Is Hardware
+
+The scanner fix finished the job that the bug report was really asking for: the bolt button now talks to the camera device instead of just updating a hopeful Boolean. `CameraController` keeps a handle to the real capture device, publishes whether the torch exists, and reports whether it is actually on. That makes the UI more honest. If the phone has no torch, the button dims. If the torch fails to turn on, the icon does not fake confidence.
+
+The cleanup rule is just as important. A flashlight left on after a sheet appears is the kind of bug that makes an app feel haunted by its own state. `ScanRootView` now has one `extinguishTorch()` path for capture, gallery import, retake, discard, save, sheet dismissal, and tab switching. One door, one light switch.
+
+The shopping-list empty state got the same treatment in a quieter corner of the app. The two choices are now explicit buttons with separate styles and separate intent helpers: add means add, scan means scan, and scan clears sheet state before leaving. Stable UI identifiers were added too, because future automation should test the contract directly instead of squinting at screen text like it is reading tea leaves.
+
 ## Engineer's Wisdom
 Good engineers protect the first useful moment. In a camera app, the first useful moment is not “SwiftUI finished drawing the screen” and it is not “all capture outputs are warmed up.” It is “the user can see the live thing they are trying to capture.”
 

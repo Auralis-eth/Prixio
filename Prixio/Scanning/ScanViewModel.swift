@@ -313,6 +313,9 @@ final class ScanViewModel: ObservableObject {
     }
 
     func beginImageReview(_ image: UIImage, source: ScanInputSource) {
+        // The torch is extinguished by the capture flow once review begins; clear the still-capture
+        // preference so the flash button (bound to real torch state) and the next capture start off.
+        isFlashEnabled = false
         currentScanSource = source
         previewImage = image
         capturedImage = image
@@ -455,6 +458,7 @@ final class ScanViewModel: ObservableObject {
 
     private func resetCaptureState() {
         invalidateActiveScan()
+        isFlashEnabled = false
         isShowingConfirmationSheet = false
         capturedImage = nil
         previewImage = nil

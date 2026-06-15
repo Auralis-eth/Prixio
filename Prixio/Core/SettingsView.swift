@@ -15,7 +15,9 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \PriceEntry.capturedAt, order: .reverse) private var entries: [PriceEntry]
 
+    #if DEBUG
     @State private var seedOperationError: String?
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -28,6 +30,9 @@ struct SettingsView: View {
                     Text("Prixio uses Apple Intelligence to read and parse price tags. Private Cloud Compute applies a daily usage limit per person.")
                 }
 
+                #if DEBUG
+                // Developer-only test-data seeder. Gated out of release builds so end users can
+                // never inject fixture records into their real price database.
                 Section {
                     LabeledContent("Seeded records", value: "\(seededRecordCount)")
 
@@ -44,16 +49,20 @@ struct SettingsView: View {
                 } footer: {
                     Text("Adds 100 marked grocery price records for Compare testing. Delete removes only records created by this tool.")
                 }
+                #endif
             }
             .navigationTitle("Settings")
+            #if DEBUG
             .alert("Test data update failed", isPresented: isShowingSeedOperationError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(seedOperationError ?? "Unknown error")
             }
+            #endif
         }
     }
 
+    #if DEBUG
     private var seededRecordCount: Int {
         TestPriceEntrySeeder.seededCount(in: entries)
     }
@@ -89,6 +98,7 @@ struct SettingsView: View {
             seedOperationError = error.localizedDescription
         }
     }
+    #endif
 }
 
 /// Displays the Private Cloud Compute language model's quota status, keeping a

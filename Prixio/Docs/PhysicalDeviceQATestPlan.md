@@ -392,6 +392,79 @@ Expected:
 - app reports success
 - image appears in Photos
 
+### QA-025 Scanner torch toggles the live preview on physical hardware
+
+Setup:
+
+- physical iPhone with a torch
+- camera permission granted
+- dim shelf-tag or printed-label target
+
+Steps:
+
+1. Open `Scan`
+2. Tap the flash button once
+3. Tap the flash button again
+
+Expected:
+
+- first tap visibly illuminates the live camera preview
+- flash icon changes only when the torch is actually enabled
+- second tap turns the torch off and the preview returns to ambient light
+
+### QA-026 Scanner torch is unavailable-safe
+
+Setup:
+
+- Simulator, or hardware/run destination where torch is unavailable
+
+Steps:
+
+1. Open `Scan`
+2. Inspect the flash button
+
+Expected:
+
+- flash button is disabled and dimmed
+- tapping the button does not claim the torch is on
+- app remains responsive
+
+### QA-027 Scanner torch turns off on every preview exit path
+
+Setup:
+
+- physical iPhone with torch
+- camera permission granted
+- flash button currently on
+
+Steps:
+
+1. Capture a photo and wait for the confirmation sheet
+2. Repeat with flash on, then tap `Retake`
+3. Repeat with flash on, then tap `Discard`
+4. Repeat with flash on, then tap `Save`
+5. Repeat with flash on, then dismiss the confirmation sheet
+6. Turn flash on, tap the gallery button, and pick a photo
+7. Turn flash on, then switch away from the `Scan` tab
+
+Expected:
+
+- torch turns off for every listed path
+- returning to `Scan` shows the flash button in the off state
+- captured shelf-tag image is not blown out by glare; if glare is unacceptable, revisit still-photo flash behavior
+
+### Torch validation results (2026-06-14)
+
+Build: `BuildProject` succeeds with 0 errors; the target links cleanly. The current build was installed and launched on a physical iPhone ("iPhone (2)", iOS 27.0) and is ready for the manual torch pass.
+
+| Case | Result | Notes |
+|------|--------|-------|
+| QA-025 (torch illuminates live preview) | ✅ PASS (physical device) | Manual pass on iPhone (iOS 27.0): tapping flash visibly illuminates the live preview; tapping again returns to ambient light. Icon tracks real torch state. |
+| QA-026 (torch unavailable-safe) | ✅ PASS (automated, Simulator) | iPhone 17 Pro Max (27.0). "Flash toggle" reports `enabled = false` (Disabled) and is visibly dimmed (0.4 opacity). Tapping it does not flip the icon to `bolt.fill`; app stays responsive, no crash. |
+| QA-027 (torch off on every exit path) | ✅ PASS (physical device) | Manual pass on iPhone: torch turns off on capture, retake, discard, save, sheet dismiss, gallery pick, and tab switch; flash button returns to off state each time. Captured shelf-tag image acceptable — no blown-out glare, so the Step 5 still-flash decision (keep flash tied to `isFlashEnabled`) stands. |
+
+All three torch cases pass. QA-025/QA-027 were validated manually on the physical device (the device-interaction harness only drives Simulators, which have no torch).
+
 ## 3. Compare Flow
 
 ### QA-030 Compare empty state appears when no entries exist
@@ -717,8 +790,10 @@ Steps:
 Expected:
 
 - add-item sheet opens
+- app stays on `Shopping List`
+- scanner UI is not shown
 
-### QA-062 Empty-state scan CTA routes to Scan tab
+### QA-062 Empty-state scan CTA routes to Scan tab without stale sheet state
 
 Setup:
 
@@ -727,10 +802,13 @@ Setup:
 Steps:
 
 1. Tap `Scan items as you shop`
+2. Return to `Shopping List`
 
 Expected:
 
 - app switches to `Scan`
+- add-item sheet does not open before navigation
+- returning to `Shopping List` does not present the add-item sheet
 
 ### QA-063 Add known tracked item through typeahead
 

@@ -62,6 +62,7 @@ struct AddShoppingListItemSheet: View {
                 }
             }
         }
+        .accessibilityIdentifier("addItemSheet")
     }
 
     private var filteredSuggestions: [KnownItemSuggestion] {

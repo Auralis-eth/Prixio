@@ -45,6 +45,9 @@ struct ScanRootView: View {
             }
             .navigationBarHidden(true)
         }
+        .onDisappear {
+            extinguishTorch()
+        }
         .task {
             viewModel.configureRecentItems(with: entries)
             try? PriceEntryRepository(context: modelContext).seedChainsIfNeeded()
@@ -81,6 +84,7 @@ struct ScanRootView: View {
         }
         .sheet(isPresented: $viewModel.isShowingConfirmationSheet, onDismiss: {
             viewModel.handleConfirmationSheetDismissed()
+            extinguishTorch()
             Task {
                 await cameraController.resumePreview()
             }
@@ -95,16 +99,21 @@ struct ScanRootView: View {
                 onOpenStoreSelection: { viewModel.isShowingStoreSheet = true },
                 onRetake: {
                     viewModel.dismissConfirmationForRetake()
+                    extinguishTorch()
                     Task {
                         await cameraController.resumePreview()
                     }
                 },
-                onDiscard: viewModel.discardCapture,
+                onDiscard: {
+                    viewModel.discardCapture()
+                    extinguishTorch()
+                },
                 onSavePhotoReference: {
                     await viewModel.saveCurrentImageToPhotoLibrary()
                 },
                 onSave: {
                     viewModel.save(context: modelContext)
+                    extinguishTorch()
                     Task {
                         await cameraController.resumePreview()
                     }
@@ -215,6 +224,7 @@ struct ScanRootView: View {
             Text("Point at the price tag.")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.white.opacity(0.74))
+                .accessibilityIdentifier("scannerPrompt")
         }
     }
 
@@ -230,13 +240,15 @@ struct ScanRootView: View {
             }
 
             HStack(alignment: .center) {
-                Button(action: viewModel.toggleFlash) {
-                    Image(systemName: viewModel.isFlashEnabled ? "bolt.fill" : "bolt.slash")
+                Button(action: toggleTorch) {
+                    Image(systemName: cameraController.isTorchEnabled ? "bolt.fill" : "bolt.slash")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(width: 52, height: 52)
                         .background(.ultraThinMaterial, in: Circle())
                 }
+                .disabled(!cameraController.isTorchAvailable)
+                .opacity(cameraController.isTorchAvailable ? 1 : 0.4)
                 .accessibilityLabel("Flash toggle")
 
                 Spacer()
@@ -256,6 +268,7 @@ struct ScanRootView: View {
                 Spacer()
 
                 Button(action: {
+                    extinguishTorch()
                     viewModel.openPhotoLibraryFallback()
                 }) {
                     Group {
@@ -309,7 +322,13 @@ struct ScanRootView: View {
 
         Haptics.impact()
         Task {
-            if let image = try? await cameraController.capturePhoto(flashEnabled: viewModel.isFlashEnabled) {
+            let image = try? await cameraController.capturePhoto(flashEnabled: viewModel.isFlashEnabled)
+            // The still flash (if enabled) has already fired during capture; the live preview is
+            // about to be replaced by the captured image and confirmation sheet, so the torch must
+            // not stay lit.
+            viewModel.isFlashEnabled = false
+            await cameraController.setTorch(false)
+            if let image {
                 if #available(iOS 27.0, *) {
                     await viewModel.processPickedImage(
                         image,
@@ -343,7 +362,10 @@ struct ScanRootView: View {
             return
         }
 
-        
+        // Reviewing a library image replaces the live preview, so the torch must not stay lit.
+        viewModel.isFlashEnabled = false
+        await cameraController.setTorch(false)
+
         if #available(iOS 27.0, *) {
             await viewModel.processPickedImage(
                 image,
@@ -368,5 +390,15 @@ struct ScanRootView: View {
         }
 
         viewModel.applyLaunchRequest(consumedRequest)
+    }
+
+    private func toggleTorch() {
+        viewModel.toggleFlash()
+        Task { await cameraController.setTorch(viewModel.isFlashEnabled) }
+    }
+
+    private func extinguishTorch() {
+        viewModel.isFlashEnabled = false
+        Task { await cameraController.setTorch(false) }
     }
 }

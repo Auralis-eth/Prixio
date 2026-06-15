@@ -117,19 +117,37 @@ struct ShoppingListRootView: View {
 
     private var emptyStateSection: some View {
         Section {
-            ContentUnavailableView {
-                Label("No items yet", systemImage: "checklist")
-            } description: {
-                Text("Add your first item or jump back into Scan while you shop.")
-            } actions: {
-                Button("Add your first item") {
-                    isShowingAddSheet = true
-                }
+            VStack(spacing: 16) {
+                Image(systemName: "checklist")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
 
-                Button("Scan items as you shop") {
-                    navigationModel.selectedTab = .scan
+                Text("No items yet")
+                    .font(.headline)
+
+                Text("Add your first item or jump back into Scan while you shop.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+
+                VStack(spacing: 12) {
+                    Button("Add your first item") {
+                        showAddItemSheet()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("shoppingEmptyAddItemButton")
+
+                    Button("Scan items as you shop") {
+                        startScanningFromEmptyState()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("shoppingEmptyScanButton")
                 }
+                .padding(.top, 4)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -179,6 +197,19 @@ struct ShoppingListRootView: View {
                 displayName: entry.itemNameRaw
             )
         }
+    }
+
+    private func showAddItemSheet() {
+        // Stay on the Shopping tab; a defensive no-op that guards against any stray navigation.
+        navigationModel.selectedTab = .shopping
+        isShowingAddSheet = true
+    }
+
+    private func startScanningFromEmptyState() {
+        // Clear any stale modal state before navigating so the add sheet cannot survive into the
+        // next visit to this tab, regardless of how the tap was routed.
+        isShowingAddSheet = false
+        navigationModel.selectedTab = .scan
     }
 
     private func recompute() {

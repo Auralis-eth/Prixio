@@ -18,12 +18,25 @@ final class CameraController: NSObject, ObservableObject {
     /// responsive capture buffers taps that arrive before the photo output is ready.
     @Published private(set) var isCaptureReady = false
 
+    /// Reflects whether the active capture device has a usable torch. The flash button binds to
+    /// this to disable itself on hardware without a torch (e.g. front-only configurations or the
+    /// Simulator).
+    @Published private(set) var isTorchAvailable = false
+
+    /// The real, hardware-confirmed torch state. The flash button icon binds to this rather than an
+    /// optimistic view-model boolean so the UI never claims the torch is on when it isn't.
+    @Published private(set) var isTorchEnabled = false
+
     let session = AVCaptureSession()
 
     private let sessionQueue = DispatchQueue(label: "Prixio.CameraSession")
     private let photoOutput = AVCapturePhotoOutput()
     private var isConfigured = false
     private var captureContinuation: CheckedContinuation<UIImage?, Error>?
+
+    /// Retained so torch control can lock and configure the physical device. The session keeps its
+    /// own reference via the input, but the torch APIs live on the device itself.
+    private var captureDevice: AVCaptureDevice?
 
     func prepare() async {
         if authorizationStatus == .notDetermined {
@@ -63,6 +76,38 @@ final class CameraController: NSObject, ObservableObject {
                 settings.photoQualityPrioritization = .quality
                 self.captureContinuation = continuation
                 self.photoOutput.capturePhoto(with: settings, delegate: self)
+            }
+        }
+    }
+
+    /// Turns the live preview torch on or off. Runs the device lock on `sessionQueue` to stay
+    /// serialized with capture and configuration, then publishes the resulting hardware state on the
+    /// main actor. If the device has no usable torch, the request is a no-op and `isTorchEnabled`
+    /// stays `false`.
+    func setTorch(_ on: Bool) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            sessionQueue.async {
+                defer { continuation.resume() }
+                guard
+                    let device = self.captureDevice,
+                    device.hasTorch,
+                    device.isTorchAvailable
+                else {
+                    Task { @MainActor in self.isTorchEnabled = false }
+                    return
+                }
+
+                do {
+                    try device.lockForConfiguration()
+                    // Use `.on` rather than setTorchModeOn(level:) to avoid over-bright glare on
+                    // close shelf tags. Switch to a reduced level here if device testing shows it is
+                    // too dim.
+                    device.torchMode = on ? .on : .off
+                    device.unlockForConfiguration()
+                    Task { @MainActor in self.isTorchEnabled = on }
+                } catch {
+                    Task { @MainActor in self.isTorchEnabled = false }
+                }
             }
         }
     }
@@ -108,8 +153,17 @@ final class CameraController: NSObject, ObservableObject {
                     return
                 }
 
+                self.captureDevice = device
                 self.session.addInput(input)
                 self.session.addOutput(self.photoOutput)
+
+                // Publish torch availability so the flash button can disable itself on hardware
+                // without a torch. The torch is initially off; the published state already reflects
+                // that default.
+                let torchSupported = device.hasTorch && device.isTorchAvailable
+                Task { @MainActor in
+                    self.isTorchAvailable = torchSupported
+                }
 
                 // Defer the photo output so it does not block the first preview frame. The
                 // *Supported flags are only valid once the output is attached to the session.
