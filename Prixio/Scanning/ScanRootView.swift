@@ -329,22 +329,12 @@ struct ScanRootView: View {
             viewModel.isFlashEnabled = false
             await cameraController.setTorch(false)
             if let image {
-                if #available(iOS 27.0, *) {
-                    await viewModel.processPickedImage(
-                        image,
-                        sessionStore: sessionStore,
-                        currentLocation: locationManager.currentLocation,
-                        source: .camera
-                    )
-                } else {
-                    // Fallback on earlier versions
-                    await viewModel.handlePickedImage(
-                        image,
-                        sessionStore: sessionStore,
-                        currentLocation: locationManager.currentLocation,
-                        source: .camera
-                    )
-                }
+                await viewModel.processPickedImage(
+                    image,
+                    sessionStore: sessionStore,
+                    currentLocation: locationManager.currentLocation,
+                    source: .camera
+                )
             }
         }
     }
@@ -366,22 +356,12 @@ struct ScanRootView: View {
         viewModel.isFlashEnabled = false
         await cameraController.setTorch(false)
 
-        if #available(iOS 27.0, *) {
-            await viewModel.processPickedImage(
-                image,
-                sessionStore: sessionStore,
-                currentLocation: locationManager.currentLocation,
-                source: .photoLibrary
-            )
-        } else {
-            // Fallback on earlier versions
-            await viewModel.handlePickedImage(
-                image,
-                sessionStore: sessionStore,
-                currentLocation: locationManager.currentLocation,
-                source: .photoLibrary
-            )
-        }
+        await viewModel.processPickedImage(
+            image,
+            sessionStore: sessionStore,
+            currentLocation: locationManager.currentLocation,
+            source: .photoLibrary
+        )
     }
 
     private func applyPendingScanLaunchRequest(_ request: ScanLaunchRequest?) {

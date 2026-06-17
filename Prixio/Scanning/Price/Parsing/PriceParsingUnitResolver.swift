@@ -79,7 +79,7 @@ struct PriceParsingUnitResolver {
     }
 
     func inferResolvedQuantity(
-        from observations: [OCRTextObservation],
+        from observations: [any TextObservation],
         priceCandidates: [PriceCandidate],
         detectedUnit: UnitType?,
         fallbackText: String
@@ -113,7 +113,7 @@ struct PriceParsingUnitResolver {
 
     func quantityContextText(
         for candidate: PriceCandidate?,
-        observations: [OCRTextObservation],
+        observations: [any TextObservation],
         fallbackText: String
     ) -> String {
         guard let candidate else {
@@ -137,7 +137,7 @@ struct PriceParsingUnitResolver {
 
     func packQuantityContextText(
         for candidate: PriceCandidate?,
-        observations: [OCRTextObservation],
+        observations: [any TextObservation],
         fallbackText: String
     ) -> String {
         guard let candidate else {

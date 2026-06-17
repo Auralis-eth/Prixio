@@ -6,14 +6,12 @@
 import Foundation
 
 struct PriceCandidateScorer {
-    func extractPriceCandidates(from observations: [OCRTextObservation]) -> [PriceCandidate] {
+    func extractPriceCandidates(from observations: [any TextObservation]) -> [PriceCandidate] {
         var candidates: [PriceCandidate] = []
-        let normalizedObservations = observations.map { observation in
-            OCRTextObservation(
+        let normalizedObservations: [any TextObservation] = observations.map { observation in
+            PlainTextObservation(
                 string: observation.string.replacingOccurrences(of: ",", with: "."),
-                confidence: observation.confidence,
-                boundingBox: observation.boundingBox,
-                alternateStrings: observation.alternateStrings
+                confidence: observation.confidence
             )
         }
 
@@ -22,12 +20,10 @@ struct PriceCandidateScorer {
         }
 
         if let regex = try? NSRegularExpression(pattern: PriceParsingService.splitCurrencyPattern) {
-            let combinedObservations = zip(normalizedObservations, normalizedObservations.dropFirst()).map { lhs, rhs in
-                OCRTextObservation(
+            let combinedObservations: [any TextObservation] = zip(normalizedObservations, normalizedObservations.dropFirst()).map { lhs, rhs in
+                PlainTextObservation(
                     string: "\(lhs.string)\n\(rhs.string)",
-                    confidence: min(lhs.confidence, rhs.confidence),
-                    boundingBox: nil,
-                    alternateStrings: lhs.alternateStrings + rhs.alternateStrings
+                    confidence: min(lhs.confidence, rhs.confidence)
                 )
             }
 
@@ -62,7 +58,7 @@ struct PriceCandidateScorer {
 
     func scorePriceCandidates(
         _ candidates: [PriceCandidate],
-        in observations: [OCRTextObservation]
+        in observations: [any TextObservation]
     ) -> [PriceCandidate] {
         guard !candidates.isEmpty else {
             return []
@@ -120,7 +116,7 @@ struct PriceCandidateScorer {
         return scoredCandidates.sorted(by: comparePriceCandidates)
     }
 
-    func extractInlinePriceCandidates(from observation: OCRTextObservation) -> [PriceCandidate] {
+    func extractInlinePriceCandidates(from observation: any TextObservation) -> [PriceCandidate] {
         var candidates: [PriceCandidate] = []
         let text = observation.string
 
@@ -372,7 +368,7 @@ struct PriceCandidateScorer {
     func nearbySavePenalty(
         candidate: PriceCandidate,
         sourceLineIndexes: [Int],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> Int {
         let neighboringLines = sourceLineIndexes.flatMap { index in
             [index - 1, index + 1]
@@ -400,7 +396,7 @@ struct PriceCandidateScorer {
     func standaloneShelfPriceBoost(
         candidate: PriceCandidate,
         sourceLineIndexes: [Int],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> Int {
         let neighboringLines = sourceLineIndexes.flatMap { index in
             [index - 2, index - 1, index + 1, index + 2]
@@ -424,7 +420,7 @@ struct PriceCandidateScorer {
     func compactNumericRiskPenalty(
         candidate: PriceCandidate,
         sourceLineIndexes: [Int],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> Int {
         let trimmed = candidate.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let isCompactNumericCandidate = trimmed.range(of: #"^\$?\d{3,4}$"#, options: .regularExpression) != nil
@@ -539,7 +535,7 @@ struct PriceCandidateScorer {
     func inferPriceKind(
         candidate: PriceCandidate,
         sourceLineIndexes: [Int],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> PriceKind {
         let sourceText = candidate.sourceText.lowercased()
         let neighboringText = sourceLineIndexes.flatMap { index in

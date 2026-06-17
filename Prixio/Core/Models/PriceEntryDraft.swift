@@ -36,7 +36,8 @@ struct PriceEntryDraft {
             let parsedPrice,
             parsedPrice > 0,
             selectedUnit != nil,
-            storeChainExplicitlySelected
+            storeChainExplicitlySelected,
+            !review.issues.contains(.receiptCapture)
         else {
             return false
         }

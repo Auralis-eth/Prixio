@@ -4,9 +4,12 @@ import UIKit
 
 private final class ImageFixtureBundleToken: NSObject {}
 
+/// Image fixture loading retained for manual / device QA of the image-AI flow.
+/// The Vision OCR extraction helpers were removed in the OCR → image-AI migration;
+/// automated tests use fixed `LLMOCRResult` fixtures instead of live extraction.
 enum ImageFixtureTestSupport {
     static let allFixtureNames = [
-        "Screenshot 2026-04-02 at 3.53.44 PM",
+        "Screenshot 2026-04-02 at 3.53.44 PM",
         "IMG_0472",
         "IMG_0473",
         "IMG_0474",
@@ -45,20 +48,6 @@ enum ImageFixtureTestSupport {
         }
 
         throw FixtureError.missingImage(candidateURLs.map(\.path).joined(separator: ", "))
-    }
-
-    static func extractObservationResult(
-        from image: UIImage
-    ) async throws -> OCRService.ObservationResult {
-        try await OCRService().extractObservations(from: image)
-    }
-
-    static func extractObservations(from image: UIImage) async throws -> [OCRTextObservation] {
-        try await extractObservationResult(from: image).observations
-    }
-
-    static func extractOCRResult(from image: UIImage) async -> OCRResult {
-        await OCRService().extractOCR(from: image)
     }
 
     private static func loadImageFromBundles(

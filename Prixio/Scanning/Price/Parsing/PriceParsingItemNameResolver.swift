@@ -15,7 +15,7 @@ struct PriceParsingItemNameResolver {
     ]
 
     func resolveItemName(
-        from observations: [OCRTextObservation],
+        from observations: [any TextObservation],
         priceCandidates: [PriceCandidate]
     ) -> PriceParsingService.ItemNameResolution {
         let candidateLineIndexes = observations.enumerated().compactMap { index, observation in
@@ -54,7 +54,7 @@ struct PriceParsingItemNameResolver {
     }
 
     func extractItemNameHint(
-        from observations: [OCRTextObservation],
+        from observations: [any TextObservation],
         priceCandidates: [PriceCandidate]
     ) -> String? {
         resolveItemName(from: observations, priceCandidates: priceCandidates).canonicalName
@@ -64,7 +64,7 @@ struct PriceParsingItemNameResolver {
         for line: String,
         lineIndex: Int,
         priceCandidates: [PriceCandidate],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> PriceParsingService.ItemNameCandidate? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -145,7 +145,7 @@ struct PriceParsingItemNameResolver {
     func topCandidateProximityBoost(
         lineIndex: Int,
         priceCandidates: [PriceCandidate],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> Int {
         guard let topCandidate = priceCandidates.first else {
             return 0
@@ -263,7 +263,7 @@ struct PriceParsingItemNameResolver {
     func mergedItemName(
         around bestCandidate: PriceParsingService.ItemNameCandidate,
         candidates: [PriceParsingService.ItemNameCandidate],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> String? {
         let candidateMap = Dictionary(uniqueKeysWithValues: candidates.map { ($0.lineIndex, $0) })
         let nearbyIndexes = candidates
@@ -303,7 +303,7 @@ struct PriceParsingItemNameResolver {
     func mergedEvidenceItemName(
         around bestCandidate: PriceParsingService.ItemNameCandidate,
         candidates: [PriceParsingService.ItemNameCandidate],
-        observations: [OCRTextObservation]
+        observations: [any TextObservation]
     ) -> String? {
         let candidateMap = Dictionary(uniqueKeysWithValues: candidates.map { ($0.lineIndex, $0) })
         let nearbyIndexes = candidates

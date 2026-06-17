@@ -94,6 +94,19 @@ struct PriceNormalization {
         #expect(draft.canSave == false)
     }
 
+    @Test(.tags(.shipGate))
+    func draftRejectsReceiptCapturesEvenWhenFieldsAreFilled() async throws {
+        var draft = PriceEntryDraft()
+        draft.itemName = "Receipt total"
+        draft.priceText = "13.64"
+        draft.selectedUnit = .each
+        draft.storeChainName = "Walmart"
+        draft.storeChainExplicitlySelected = true
+        draft.review = OCRReview(issues: [.receiptCapture], usedFoundationModel: true)
+
+        #expect(draft.canSave == false)
+    }
+
     @Test func draftRoundTripStillRequiresExplicitStoreSelection() async throws {
         var draft = PriceEntryDraft()
         draft.itemName = "Milk"

@@ -85,6 +85,12 @@ final class ScanViewModel: ObservableObject {
     private var inferredStoreCandidate: StoreCandidate?
     private var activeScanID: UUID?
 
+    // A shopping-driven launch request can prefill the item and preferred chain before capture.
+    // These survive the draft resets in beginImageReview/PriceDraftBuilder so the scan can bias
+    // extraction toward the requested item and keep the user's explicit chain selection.
+    private var pendingExpectedItemName: String?
+    private var pendingPreferredChainName: String?
+
     func configureRecentItems(with entries: [PriceEntry]) {
         recentItems = Array(
             entries
@@ -127,10 +133,12 @@ final class ScanViewModel: ObservableObject {
         }
 
         draft.itemName = request.itemName
+        pendingExpectedItemName = request.itemName.isEmpty ? nil : request.itemName
 
         if let preferredChainName = request.preferredChainName {
             draft.storeChainName = preferredChainName
             draft.storeChainExplicitlySelected = true
+            pendingPreferredChainName = preferredChainName
         }
     }
 
@@ -138,65 +146,6 @@ final class ScanViewModel: ObservableObject {
         isFlashEnabled.toggle()
     }
 
-    func handlePickedImage(
-        _ image: UIImage?,
-        sessionStore: ScanSessionStore,
-        currentLocation: CLLocation?,
-        source: ScanInputSource = .photoLibrary
-    ) async {
-        guard let image else {
-            return
-        }
-
-        let scanID = UUID()
-        activeScanID = scanID
-        beginImageReview(image, source: source)
-
-        let result = await image.extractOCR()
-        guard activeScanID == scanID else {
-            return
-        }
-        draft.ocrText = result.rawText
-        draft.confidence = result.confidence
-        draft.priceText = result.price.map(CurrencyFormatter.shared.string) ?? ""
-        draft.selectedUnit = result.unit
-        draft.quantity = result.quantity
-        draft.priceCandidates = Array(result.priceCandidates.prefix(2))
-        draft.itemName = result.itemNameHint ?? ""
-        draft.review = result.review
-
-#if DEBUG
-        print("========== SCAN RESULT ==========")
-        print("itemName: \(result.itemNameHint ?? "nil")")
-        print("price: \(result.price.map { "\($0)" } ?? "nil")")
-        print("unit: \(result.unit?.rawValue ?? "nil")")
-        print("quantity: \(result.quantity.map { "\($0)" } ?? "nil")")
-        print("priceCandidates: \(result.priceCandidates.map { "\($0.value) src=\($0.sourceText)" })")
-        print("supportingLines: \(result.supportingLines)")
-        print("review: \(result.review.issues.map(\.rawValue)) usedFM=\(result.review.usedFoundationModel)")
-        print("===============================")
-#endif
-
-        if sessionStore.nearbyCandidates.isEmpty {
-            let stores = await storeService.fetchNearbyStores(location: currentLocation)
-            guard activeScanID == scanID else {
-                return
-            }
-            sessionStore.updateCandidates(stores)
-        }
-
-        let isReceiptCapture = PriceParsingService.looksLikeReceipt(text: result.rawText)
-        let matchedCandidate = matchStoreCandidate(
-            from: sessionStore.nearbyCandidates,
-            ocrText: result.rawText,
-            currentLocation: currentLocation
-        )
-        inferredStoreCandidate = isReceiptCapture ? nil : (matchedCandidate ?? sessionStore.lastStoreCandidate)
-        applyInferredStore(from: inferredStoreCandidate, ocrText: result.rawText, nearbyCandidates: sessionStore.nearbyCandidates)
-        isProcessingOCR = false
-    }
-    
-    @available(iOS 27.0, *)
     func processPickedImage(
         _ image: UIImage?,
         sessionStore: ScanSessionStore,
@@ -211,45 +160,34 @@ final class ScanViewModel: ObservableObject {
         activeScanID = scanID
         beginImageReview(image, source: source)
 
-        let result = await image.extractPriceInformation(context: ScanPromptContext(storeName: sessionStore.lastStoreCandidate?.chainName))
+        let extractionOutcome = await image.extractPriceInformation(
+            context: ScanPromptContext(
+                storeName: sessionStore.lastStoreCandidate?.chainName,
+                expectedItemName: pendingExpectedItemName
+            )
+        )
         guard activeScanID == scanID else {
             return
         }
-        guard let result else {
+
+        let result: LLMOCRResult
+        switch extractionOutcome {
+        case .success(let extractedResult):
+            result = extractedResult
+        case .failure(let failure):
+            toastMessage = failure.userMessage
+            showToast = true
             isProcessingOCR = false
             return
         }
-        draft.ocrText = result.relevantText
-        draft.priceText = result.price.map(CurrencyFormatter.shared.string) ?? ""
-        draft.selectedUnit = result.unit
-        draft.quantity = result.quantity
-        // Map the LLM's candidates into PriceCandidate. The model doesn't supply
-        // priority/confidence/sourceLineIndexes, so default them: priority follows
-        // list order, confidence is 1.0 (LLM-asserted), and there are no source line indexes.
-        draft.priceCandidates = result.priceCandidates.enumerated().map { index, candidate in
-            PriceCandidate(
-                label: candidate.label,
-                value: candidate.value,
-                quantity: candidate.quantity,
-                priority: index,
-                sourceText: candidate.sourceText,
-                kind: candidate.kind,
-                sourceLineIndexes: [],
-                confidence: 1.0
-            )
-        }
-        draft.itemName = result.itemName ?? ""
 
-#if DEBUG
-        print("========== SCAN RESULT ==========")
-        print("itemName: \(result.itemName ?? "nil")")
-        print("price: \(result.price.map { "\($0)" } ?? "nil")")
-        print("unit: \(result.unit?.rawValue ?? "nil")")
-        print("quantity: \(result.quantity.map { "\($0)" } ?? "nil")")
-        print("priceCandidates: \(result.priceCandidates.map { "\($0.value) src=\($0.sourceText)" })")
-         print("relevantText: \(result.relevantText)")
-        print("===============================")
-#endif
+        draft = PriceDraftBuilder.makeDraft(from: result, image: capturedImage)
+
+        // Fall back to the requested item name only when the model could not read one;
+        // a name the model extracted from the tag is preferred over the shopper's query.
+        if draft.itemName.isEmpty, let pendingExpectedItemName {
+            draft.itemName = pendingExpectedItemName
+        }
 
         if sessionStore.nearbyCandidates.isEmpty {
             let stores = await storeService.fetchNearbyStores(location: currentLocation)
@@ -259,14 +197,21 @@ final class ScanViewModel: ObservableObject {
             sessionStore.updateCandidates(stores)
         }
 
-        let isReceiptCapture = PriceParsingService.looksLikeReceipt(text: result.relevantText)
-        let matchedCandidate = matchStoreCandidate(
+        let isReceipt = ReceiptCaptureClassifier.isReceiptOrInvalid(result)
+        let matched = matchStoreCandidate(
             from: sessionStore.nearbyCandidates,
             ocrText: result.relevantText,
             currentLocation: currentLocation
         )
-        inferredStoreCandidate = isReceiptCapture ? nil : (matchedCandidate ?? sessionStore.lastStoreCandidate)
+        inferredStoreCandidate = isReceipt ? nil : (matched ?? sessionStore.lastStoreCandidate)
         applyInferredStore(from: inferredStoreCandidate, ocrText: result.relevantText, nearbyCandidates: sessionStore.nearbyCandidates)
+
+        // An explicit chain from the shopping list wins over store inference (which may have
+        // overwritten it above with a nearby chain).
+        if let pendingPreferredChainName {
+            draft.storeChainName = pendingPreferredChainName
+            draft.storeChainExplicitlySelected = true
+        }
         isProcessingOCR = false
     }
 
@@ -464,6 +409,8 @@ final class ScanViewModel: ObservableObject {
         previewImage = nil
         currentScanSource = nil
         draft = PriceEntryDraft()
+        pendingExpectedItemName = nil
+        pendingPreferredChainName = nil
         cameraPreviewRefreshID = UUID()
     }
 

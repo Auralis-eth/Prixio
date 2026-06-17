@@ -416,7 +416,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "137"
             endingLineNumber = "137"
-            landmarkName = "toggleFlash()"
+            landmarkName = "applyLaunchRequest(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -432,7 +432,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "139"
             endingLineNumber = "139"
-            landmarkName = "toggleFlash()"
+            landmarkName = "applyLaunchRequest(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -448,7 +448,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "166"
             endingLineNumber = "166"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -464,7 +464,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "126"
             endingLineNumber = "126"
-            landmarkName = "applyLaunchRequest(_:)"
+            landmarkName = "openPhotoLibraryFallback()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -480,7 +480,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "179"
             endingLineNumber = "179"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -496,7 +496,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "175"
             endingLineNumber = "175"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -512,7 +512,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "170"
             endingLineNumber = "170"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -528,7 +528,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "189"
             endingLineNumber = "189"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -544,7 +544,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "194"
             endingLineNumber = "194"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -560,7 +560,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "257"
             endingLineNumber = "257"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "beginImageReview(_:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -576,7 +576,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "287"
             endingLineNumber = "287"
-            landmarkName = "applyStoreCandidate(_:)"
+            landmarkName = "saveCurrentImageToPhotoLibrary()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -592,7 +592,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "318"
             endingLineNumber = "318"
-            landmarkName = "beginImageReview(_:source:)"
+            landmarkName = "applyInferredStore(from:ocrText:nearbyCandidates:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -608,7 +608,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "345"
             endingLineNumber = "345"
-            landmarkName = "saveCurrentImageToPhotoLibrary()"
+            landmarkName = "matchStoreCandidate(from:ocrText:currentLocation:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -640,7 +640,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "142"
             endingLineNumber = "142"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "applyLaunchRequest(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1198,7 +1198,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "143"
             endingLineNumber = "143"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "applyLaunchRequest(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1214,7 +1214,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "156"
             endingLineNumber = "156"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1230,7 +1230,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "154"
             endingLineNumber = "154"
-            landmarkName = "handlePickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1294,7 +1294,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "213"
             endingLineNumber = "213"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "applyPriceCandidate(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1310,7 +1310,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "222"
             endingLineNumber = "222"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "applyStoreCandidate(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1390,7 +1390,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "242"
             endingLineNumber = "242"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "discardCapture()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1422,7 +1422,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "216"
             endingLineNumber = "216"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "applyPriceCandidate(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
