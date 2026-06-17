@@ -3,9 +3,9 @@
 //  Prixio
 //
 //  A model-callable adapter over the comparable unit-price math — the one piece
-//  the model must NOT eyeball. Compiled as a shared adapter for the future
-//  Compare/Planner agents; it is NOT registered on the Capture flow's session
-//  (Capture runs the math inline). See AIPriceExtractionTools.md §6.1.
+//  the model must NOT eyeball. Registered on the Capture flow's session
+//  (ScanViewModel.captureTools) and shared with the Compare/Planner agents.
+//  See AIPriceExtractionTools.md §6.1.
 //
 
 import Foundation

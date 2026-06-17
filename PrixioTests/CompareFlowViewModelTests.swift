@@ -126,6 +126,19 @@ struct CompareFlowViewModelTests {
     }
 
     @Test
+    func trendBadgeUsesTwoPercentDeadbandBoundaries() {
+        let viewModel = CompareViewModel()
+        let now = Date(timeIntervalSince1970: 3_100_000)
+
+        #expect(trendDirection(viewModel: viewModel, latestPrice: "5.099", previousPrice: "5.00", now: now) == .flat)
+        #expect(trendDirection(viewModel: viewModel, latestPrice: "5.10", previousPrice: "5.00", now: now) == .flat)
+        #expect(trendDirection(viewModel: viewModel, latestPrice: "5.101", previousPrice: "5.00", now: now) == .up(2))
+        #expect(trendDirection(viewModel: viewModel, latestPrice: "4.901", previousPrice: "5.00", now: now) == .flat)
+        #expect(trendDirection(viewModel: viewModel, latestPrice: "4.90", previousPrice: "5.00", now: now) == .flat)
+        #expect(trendDirection(viewModel: viewModel, latestPrice: "4.899", previousPrice: "5.00", now: now) == .down(2))
+    }
+
+    @Test
     func mixedUnitFamilyNoteAppearsWhenComparableEntriesSpanDifferentFamilies() {
         let viewModel = CompareViewModel()
         let now = Date(timeIntervalSince1970: 4_000_000)
@@ -183,6 +196,42 @@ struct CompareFlowViewModelTests {
         )
 
         #expect(state.rows.first?.distanceMeters == nil)
+    }
+
+    private func trendDirection(
+        viewModel: CompareViewModel,
+        latestPrice: String,
+        previousPrice: String,
+        now: Date
+    ) -> TrendDirection? {
+        let chainID = UUID()
+        let entries = [
+            makeEntry(
+                itemName: "Milk",
+                normalizedName: "milk",
+                chainName: "Store A",
+                chainID: chainID,
+                capturedAt: now.addingTimeInterval(-1 * 86_400),
+                normalizedPrice: latestPrice,
+                normalizedUnitType: .liter
+            ),
+            makeEntry(
+                itemName: "Milk",
+                normalizedName: "milk",
+                chainName: "Store A",
+                chainID: chainID,
+                capturedAt: now.addingTimeInterval(-5 * 86_400),
+                normalizedPrice: previousPrice,
+                normalizedUnitType: .liter
+            )
+        ]
+        return viewModel.buildItemComparisonState(
+            itemKey: "milk",
+            entries: entries,
+            mode: .perUnit,
+            userLocation: nil,
+            now: now
+        ).rows.first?.trendDirection
     }
 
     private func makeEntry(

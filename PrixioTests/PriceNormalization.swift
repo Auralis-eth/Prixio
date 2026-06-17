@@ -14,21 +14,52 @@ import Testing
 struct PriceNormalization {
 
     @Test(.tags(.shipGate)) func normalizesPoundsToKilograms() async throws {
-        let normalized = PriceParsingService.normalize(
+        let normalized = try #require(PriceParsingService.normalize(
             price: Decimal(string: "3.99")!,
             unit: .lb,
             quantity: nil
-        )
+        ))
 
-        #expect(normalized?.1 == .kg)
-        
-        guard var value = normalized?.0 else {
-            return
-        }
-        var result = Decimal.zero
-        NSDecimalRound(&result, &value, 4, .plain)
-        
-        #expect(result == Decimal(string: "8.7964"))
+        #expect(normalized.1 == .kg)
+        #expect(rounded(normalized.0, scale: 4) == Decimal(string: "8.7964"))
+    }
+
+    @Test(.tags(.shipGate)) func normalizesQuantityAndMetricUnits() async throws {
+        let each = try #require(PriceParsingService.normalize(price: Decimal(10), unit: .each, quantity: Decimal(4)))
+        #expect(each.0 == Decimal(string: "2.5"))
+        #expect(each.1 == .each)
+
+        let kilograms = try #require(PriceParsingService.normalize(price: Decimal(string: "6.50")!, unit: .kg, quantity: nil))
+        #expect(kilograms.0 == Decimal(string: "6.50"))
+        #expect(kilograms.1 == .kg)
+
+        let liters = try #require(PriceParsingService.normalize(price: Decimal(string: "3.25")!, unit: .liter, quantity: nil))
+        #expect(liters.0 == Decimal(string: "3.25"))
+        #expect(liters.1 == .liter)
+
+        let hundredGrams = try #require(PriceParsingService.normalize(price: Decimal(string: "1.10")!, unit: .hundredGrams, quantity: nil))
+        #expect(hundredGrams.0 == Decimal(11))
+        #expect(hundredGrams.1 == .kg)
+    }
+
+    @Test(.tags(.shipGate)) func normalizationFallsBackToPackagePriceForNonPositiveQuantity() async throws {
+        let zeroQuantity = try #require(PriceParsingService.normalize(price: Decimal(5), unit: .each, quantity: Decimal.zero))
+        let negativeQuantity = try #require(PriceParsingService.normalize(price: Decimal(5), unit: .each, quantity: Decimal(-2)))
+
+        #expect(zeroQuantity.0 == Decimal(5))
+        #expect(negativeQuantity.0 == Decimal(5))
+    }
+
+    @Test(.tags(.shipGate)) func normalizationDividesMultiBuyPriceByQuantity() async throws {
+        let normalized = try #require(PriceParsingService.normalize(price: Decimal(5), unit: .each, quantity: Decimal(3)))
+
+        #expect(normalized.0 == Decimal(5) / Decimal(3))
+        #expect(normalized.1 == .each)
+    }
+
+    @Test(.tags(.shipGate)) func normalizationRejectsNonPositivePrices() async throws {
+        #expect(PriceParsingService.normalize(price: Decimal.zero, unit: .each, quantity: nil) == nil)
+        #expect(PriceParsingService.normalize(price: Decimal(-1), unit: .kg, quantity: nil) == nil)
     }
 
     @Test(.tags(.shipGate)) func draftRequiresExplicitStoreSelection() async throws {
@@ -68,7 +99,9 @@ struct PriceNormalization {
     }
 
     @Test func receiptDetectionRequiresMoreThanSingleSubtotalMarker() async throws {
-        #expect(PriceParsingService.looksLikeReceipt(text: "Subtotal 12.99"))
+        // A lone "Subtotal" line is a single marker; word-boundary matching prevents it from
+        // also satisfying the "total" marker, so it stays below the two-marker receipt threshold.
+        #expect(PriceParsingService.looksLikeReceipt(text: "Subtotal 12.99") == false)
     }
     
     @Test func draftCannotSaveWhenAllRequiredFieldsAreMissing() async throws {
@@ -154,5 +187,11 @@ struct PriceNormalization {
         #expect(savedEntry.parserUsedFoundationModel == true)
         #expect(savedEntry.parserAmbiguityNotesRaw == "two nearby products")
     }
-    
+
+    private func rounded(_ value: Decimal, scale: Int) -> Decimal {
+        var value = value
+        var result = Decimal.zero
+        NSDecimalRound(&result, &value, scale, .plain)
+        return result
+    }
 }

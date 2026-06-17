@@ -139,7 +139,7 @@ struct ShoppingListViewModelTests {
         PriceEntry(
             capturedAt: capturedAt,
             itemNameRaw: item.capitalized,
-            itemNameNormalized: item,
+            itemNameNormalized: ItemKeyNormalizer.normalize(item),
             priceValue: Decimal(string: price)!,
             unitType: .each,
             unitQuantityValue: nil,

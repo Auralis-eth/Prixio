@@ -4,8 +4,8 @@
 //
 //  A model-callable adapter over PriceParsingUnitResolver's text methods. Sanity-
 //  checks multi-buy, pack count, and per-lb/kg/100g/each from printed unit text.
-//  Shared adapter for future agents; not registered on the Capture flow.
-//  See AIPriceExtractionTools.md §6.2.
+//  Registered on the Capture flow's session (ScanViewModel.captureTools) and
+//  shared with the Compare/Planner agents. See AIPriceExtractionTools.md §6.2.
 //
 
 import Foundation

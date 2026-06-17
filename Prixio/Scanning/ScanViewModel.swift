@@ -6,6 +6,7 @@
 //
 
 import CoreLocation
+import FoundationModels
 import Photos
 import SwiftData
 import SwiftUI
@@ -33,8 +34,22 @@ final class ScanViewModel: ObservableObject {
     @Published var searchResults: [StoreCandidate] = []
     @Published private(set) var cameraPreviewRefreshID = UUID()
 
-    private let storeService = StoreDetectionService()
+    private let imageExtractor: any PriceImageExtracting
+    private let storeService: any StoreLookupProviding
     private(set) var currentScanSource: ScanInputSource?
+
+    init() {
+        self.imageExtractor = DefaultPriceImageExtractor()
+        self.storeService = StoreDetectionService()
+    }
+
+    init(
+        imageExtractor: any PriceImageExtracting,
+        storeService: any StoreLookupProviding
+    ) {
+        self.imageExtractor = imageExtractor
+        self.storeService = storeService
+    }
 
     var displayImage: UIImage? {
         guard isShowingConfirmationSheet || isProcessingOCR else {
@@ -150,6 +165,7 @@ final class ScanViewModel: ObservableObject {
         _ image: UIImage?,
         sessionStore: ScanSessionStore,
         currentLocation: CLLocation?,
+        modelContext: ModelContext,
         source: ScanInputSource = .photoLibrary
     ) async {
         guard let image else {
@@ -160,11 +176,13 @@ final class ScanViewModel: ObservableObject {
         activeScanID = scanID
         beginImageReview(image, source: source)
 
-        let extractionOutcome = await image.extractPriceInformation(
+        let extractionOutcome = await imageExtractor.extractPriceInformation(
+            from: image,
             context: ScanPromptContext(
                 storeName: sessionStore.lastStoreCandidate?.chainName,
                 expectedItemName: pendingExpectedItemName
-            )
+            ),
+            tools: captureTools(sessionStore: sessionStore, currentLocation: currentLocation, modelContext: modelContext)
         )
         guard activeScanID == scanID else {
             return
@@ -213,6 +231,27 @@ final class ScanViewModel: ObservableObject {
             draft.storeChainExplicitlySelected = true
         }
         isProcessingOCR = false
+    }
+
+    /// The model-callable tools registered on the Capture extraction session. The model may
+    /// call these while reading the photo to normalise unit prices, resolve units/quantities,
+    /// infer store context, and ground a price against saved history.
+    private func captureTools(
+        sessionStore: ScanSessionStore,
+        currentLocation: CLLocation?,
+        modelContext: ModelContext
+    ) -> [any Tool] {
+        [
+            NormalizeUnitPriceTool(),
+            ResolveUnitAndQuantityTool(),
+            InferStoreContextTool(
+                service: storeService,
+                location: currentLocation,
+                nearbyCandidates: sessionStore.nearbyCandidates,
+                lastStoreCandidate: sessionStore.lastStoreCandidate
+            ),
+            ItemHistoryTool(repository: PriceEntryRepository(context: modelContext))
+        ]
     }
 
     func applyPriceCandidate(_ candidate: PriceCandidate) {
@@ -320,7 +359,8 @@ final class ScanViewModel: ObservableObject {
         }
     }
 
-    private func applyInferredStore(from candidate: StoreCandidate?, ocrText: String, nearbyCandidates: [StoreCandidate]) {
+    // Widened from `private` to internal so the store-matching logic can be unit-tested directly.
+    func applyInferredStore(from candidate: StoreCandidate?, ocrText: String, nearbyCandidates: [StoreCandidate]) {
         guard let candidate else {
             return
         }
@@ -347,7 +387,7 @@ final class ScanViewModel: ObservableObject {
         draft.storeChainExplicitlySelected = false
     }
 
-    private func matchStoreCandidate(
+    func matchStoreCandidate(
         from candidates: [StoreCandidate],
         ocrText: String,
         currentLocation: CLLocation?
@@ -374,7 +414,7 @@ final class ScanViewModel: ObservableObject {
         return matched
     }
 
-    private func shouldAutoApplyStore(
+    func shouldAutoApplyStore(
         candidate: StoreCandidate,
         ocrText: String,
         nearbyCandidates: [StoreCandidate]

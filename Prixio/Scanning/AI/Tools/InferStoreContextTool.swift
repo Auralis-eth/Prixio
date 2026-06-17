@@ -5,8 +5,8 @@
 //  A model-callable adapter: the AI supplies a store-name hint and the scan's
 //  text, and MapKit + the local chain catalog resolve real candidates, mirroring
 //  ScanViewModel.matchStoreCandidate (prefer chain match, fall back to the last
-//  store). A reusable adapter for future agents, not Capture-flow state.
-//  See AIPriceExtractionTools.md §6.3.
+//  store). Registered on the Capture flow's session (ScanViewModel.captureTools)
+//  and shared with the Compare/Planner agents. See AIPriceExtractionTools.md §6.3.
 //
 
 import CoreLocation
@@ -16,7 +16,7 @@ struct InferStoreContextTool: Tool {
     let name = "inferStoreContext"
     let description = "Suggest nearby store chains/locations for the current scan."
 
-    let service: StoreDetectionService
+    let service: any StoreLookupProviding
     let location: CLLocation?
     let nearbyCandidates: [StoreCandidate]
     let lastStoreCandidate: StoreCandidate?

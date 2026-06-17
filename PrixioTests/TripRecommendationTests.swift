@@ -65,6 +65,51 @@ struct TripRecommendationTests {
     }
 
     @Test
+    func winnerThresholdTreatsExactlySixtyPercentAsStrongWinner() {
+        let viewModel = ShoppingListViewModel()
+        let items = ["Milk", "Eggs", "Bread", "Butter", "Cheese"].map(makeItem)
+        let now = Date(timeIntervalSince1970: 3_500_000)
+        let entries = [
+            makeEntry(item: "milk", chainName: "Co-op", price: "4.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "eggs", chainName: "Co-op", price: "3.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "bread", chainName: "Co-op", price: "2.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "butter", chainName: "Sobeys", price: "5.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "cheese", chainName: "Walmart", price: "6.00", capturedAt: now.addingTimeInterval(-1 * 86_400))
+        ]
+
+        viewModel.recompute(items: items, entries: entries, userLocation: nil, now: now)
+
+        #expect(viewModel.tripRecommendation == .strongWinner(chainID: nil, chainName: "Co-op", count: 3, total: 5, staleCount: 0))
+    }
+
+    @Test
+    func winnerThresholdTreatsUnderSixtyPercentAsSplitTrip() {
+        let viewModel = ShoppingListViewModel()
+        let items = ["Milk", "Eggs", "Bread", "Butter", "Cheese", "Juice"].map(makeItem)
+        let now = Date(timeIntervalSince1970: 3_600_000)
+        let entries = [
+            makeEntry(item: "milk", chainName: "Co-op", price: "4.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "eggs", chainName: "Co-op", price: "3.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "bread", chainName: "Co-op", price: "2.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "butter", chainName: "Sobeys", price: "5.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "cheese", chainName: "Walmart", price: "6.00", capturedAt: now.addingTimeInterval(-1 * 86_400)),
+            makeEntry(item: "juice", chainName: "Safeway", price: "7.00", capturedAt: now.addingTimeInterval(-1 * 86_400))
+        ]
+
+        viewModel.recompute(items: items, entries: entries, userLocation: nil, now: now)
+
+        #expect(viewModel.tripRecommendation == .splitTrip(
+            primaryChainID: nil,
+            primaryChainName: "Co-op",
+            primaryCount: 3,
+            secondaryChainID: nil,
+            secondaryChainName: "Safeway",
+            secondaryCount: 1,
+            staleCount: 0
+        ))
+    }
+
+    @Test
     func insufficientDataWhenTooFewPricedSuggestionsExist() {
         let viewModel = ShoppingListViewModel()
         let items = [
@@ -112,7 +157,7 @@ struct TripRecommendationTests {
         PriceEntry(
             capturedAt: capturedAt,
             itemNameRaw: item.capitalized,
-            itemNameNormalized: item,
+            itemNameNormalized: ItemKeyNormalizer.normalize(item),
             priceValue: Decimal(string: price)!,
             unitType: .each,
             unitQuantityValue: nil,

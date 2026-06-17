@@ -9,7 +9,13 @@ import CoreLocation
 import MapKit
 
 @MainActor
-final class StoreDetectionService {
+protocol StoreLookupProviding: AnyObject {
+    func fetchNearbyStores(location: CLLocation?) async -> [StoreCandidate]
+    func search(query: String, near location: CLLocation?) async -> [StoreCandidate]
+}
+
+@MainActor
+final class StoreDetectionService: StoreLookupProviding {
     private let maxNearbyQueryCount = 8
     private let interRequestDelayNanoseconds: UInt64 = 250_000_000
     private let throttleRetryNanoseconds: UInt64 = 600_000_000

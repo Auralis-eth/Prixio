@@ -3,8 +3,9 @@
 //  Prixio
 //
 //  A read-only model-callable adapter that grounds "is this a good price?" in
-//  saved history. Shared adapter for future Compare/Planner agents; never wired
-//  into the Capture flow and never writes SwiftData. See AIPriceExtractionTools.md §6.4.
+//  saved history. Registered on the Capture flow's session (ScanViewModel.captureTools)
+//  and shared with the Compare/Planner agents; never writes SwiftData.
+//  See AIPriceExtractionTools.md §6.4.
 //
 
 import Foundation

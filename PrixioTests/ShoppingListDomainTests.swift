@@ -29,37 +29,19 @@ struct ShoppingListDomainTests {
 
         let entry = try #require(context.fetch(FetchDescriptor<PriceEntry>()).first)
         #expect(entry.itemNameNormalized == ItemKeyNormalizer.normalize(draft.itemName))
-        #expect(entry.itemNameNormalized == "yellow onions")
+        #expect(entry.itemNameNormalized == "yellow onion")
     }
 
     @Test
     func stalenessThresholdsMapToExpectedBuckets() {
         let now = Date(timeIntervalSince1970: 1_000_000)
 
-        #expect(
-            PriceInsightEngine.stalenessBucket(
-                for: now.addingTimeInterval(-2 * 86_400),
-                now: now
-            ) == .fresh
-        )
-        #expect(
-            PriceInsightEngine.stalenessBucket(
-                for: now.addingTimeInterval(-12 * 86_400),
-                now: now
-            ) == .aging
-        )
-        #expect(
-            PriceInsightEngine.stalenessBucket(
-                for: now.addingTimeInterval(-45 * 86_400),
-                now: now
-            ) == .stale
-        )
-        #expect(
-            PriceInsightEngine.stalenessBucket(
-                for: now.addingTimeInterval(-120 * 86_400),
-                now: now
-            ) == .veryStale
-        )
+        #expect(PriceInsightEngine.stalenessBucket(for: now.addingTimeInterval(-7 * 86_400), now: now) == .fresh)
+        #expect(PriceInsightEngine.stalenessBucket(for: now.addingTimeInterval(-8 * 86_400), now: now) == .aging)
+        #expect(PriceInsightEngine.stalenessBucket(for: now.addingTimeInterval(-30 * 86_400), now: now) == .aging)
+        #expect(PriceInsightEngine.stalenessBucket(for: now.addingTimeInterval(-31 * 86_400), now: now) == .stale)
+        #expect(PriceInsightEngine.stalenessBucket(for: now.addingTimeInterval(-90 * 86_400), now: now) == .stale)
+        #expect(PriceInsightEngine.stalenessBucket(for: now.addingTimeInterval(-91 * 86_400), now: now) == .veryStale)
     }
 
     @Test
@@ -104,14 +86,14 @@ struct ShoppingListDomainTests {
         let entries = [
             makeEntry(
                 itemName: "Chips",
-                normalizedName: "chips",
+                normalizedName: "chip",
                 price: "3.99",
                 chainName: "Store A",
                 capturedAt: now.addingTimeInterval(-2 * 86_400)
             ),
             makeEntry(
                 itemName: "Chips",
-                normalizedName: "chips",
+                normalizedName: "chip",
                 price: "2.99",
                 chainName: "Store B",
                 capturedAt: now.addingTimeInterval(-1 * 86_400)
@@ -170,7 +152,7 @@ struct ShoppingListDomainTests {
         let entries = [
             makeEntry(
                 itemName: "Eggs",
-                normalizedName: "eggs",
+                normalizedName: "egg",
                 price: "4.29",
                 normalizedPrice: "4.29",
                 normalizedUnitType: .each,
@@ -179,7 +161,7 @@ struct ShoppingListDomainTests {
             ),
             makeEntry(
                 itemName: "Eggs",
-                normalizedName: "eggs",
+                normalizedName: "egg",
                 price: "4.29",
                 normalizedPrice: "4.29",
                 normalizedUnitType: .each,

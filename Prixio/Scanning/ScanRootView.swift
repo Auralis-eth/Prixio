@@ -333,6 +333,7 @@ struct ScanRootView: View {
                     image,
                     sessionStore: sessionStore,
                     currentLocation: locationManager.currentLocation,
+                    modelContext: modelContext,
                     source: .camera
                 )
             }
@@ -360,6 +361,7 @@ struct ScanRootView: View {
             image,
             sessionStore: sessionStore,
             currentLocation: locationManager.currentLocation,
+            modelContext: modelContext,
             source: .photoLibrary
         )
     }

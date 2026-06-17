@@ -91,6 +91,10 @@ enum PriceParsingService {
     // MARK: - Unit-price math
 
     static func normalize(price: Decimal, unit: UnitType, quantity: Decimal?) -> (Decimal, UnitType)? {
+        guard price > 0 else {
+            return nil
+        }
+
         let effectivePrice = unitPrice(price: price, quantity: quantity)
 
         switch unit {
@@ -118,8 +122,11 @@ enum PriceParsingService {
 
     static func looksLikeReceipt(text: String) -> Bool {
         let lowered = text.lowercased()
+        // Match markers on word boundaries so overlapping substrings aren't double-counted
+        // (e.g. "subtotal" must not also satisfy the "total" marker). Otherwise a single
+        // "Subtotal" line would reach the two-marker threshold on its own.
         let markerCount = receiptMarkers.reduce(into: 0) { count, marker in
-            if lowered.contains(marker) {
+            if lowered.range(of: "\\b\(marker)\\b", options: .regularExpression) != nil {
                 count += 1
             }
         }

@@ -24,27 +24,6 @@ struct PriceParsingUnitResolver {
 
         let lowered = normalizedUnitDetectionText(text)
 
-        switch unit {
-        case .lb:
-            if matchesTokenBoundary(#"\b(?:lb|lbs)\b"#, in: lowered) {
-                return Decimal(1)
-            }
-        case .kg:
-            if matchesTokenBoundary(#"\bkg\b"#, in: lowered) {
-                return Decimal(1)
-            }
-        case .liter:
-            if matchesTokenBoundary(#"\b(?:l|liter|litre)\b"#, in: lowered) {
-                return Decimal(1)
-            }
-        case .hundredGrams:
-            if matchesTokenBoundary(#"\b100\s*g\b"#, in: lowered) {
-                return Decimal(1)
-            }
-        case .each:
-            break
-        }
-
         if let regex = try? NSRegularExpression(pattern: PriceParsingService.quantityFractionPattern, options: [.caseInsensitive]) {
             let matches = regex.matches(in: lowered, range: NSRange(lowered.startIndex..., in: lowered))
             for match in matches {
@@ -73,6 +52,27 @@ struct PriceParsingUnitResolver {
                 }
                 return quantity
             }
+        }
+
+        switch unit {
+        case .lb:
+            if matchesTokenBoundary(#"\b(?:lb|lbs)\b"#, in: lowered) {
+                return Decimal(1)
+            }
+        case .kg:
+            if matchesTokenBoundary(#"\bkg\b"#, in: lowered) {
+                return Decimal(1)
+            }
+        case .liter:
+            if matchesTokenBoundary(#"\b(?:l|liter|litre)\b"#, in: lowered) {
+                return Decimal(1)
+            }
+        case .hundredGrams:
+            if matchesTokenBoundary(#"\b100\s*g\b"#, in: lowered) {
+                return Decimal(1)
+            }
+        case .each:
+            break
         }
 
         return nil

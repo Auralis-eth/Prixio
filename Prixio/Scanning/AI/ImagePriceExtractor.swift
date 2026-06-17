@@ -38,12 +38,37 @@ enum ImagePriceExtractionFailure: Sendable, Equatable {
     }
 }
 
+protocol PriceImageExtracting {
+    func extractPriceInformation(
+        from image: UIImage,
+        context: ScanPromptContext,
+        tools: [any Tool]
+    ) async -> ImagePriceExtractionOutcome
+}
+
+struct DefaultPriceImageExtractor: PriceImageExtracting {
+    func extractPriceInformation(
+        from image: UIImage,
+        context: ScanPromptContext,
+        tools: [any Tool]
+    ) async -> ImagePriceExtractionOutcome {
+        await image.extractPriceInformation(context: context, tools: tools)
+    }
+}
+
 extension UIImage {
     /// Extract structured product/pricing fields from a photo of grocery signage.
     ///
     /// Returns a typed outcome so callers can distinguish model availability from
     /// generation failures and present the right recovery message.
-    func extractPriceInformation(context: ScanPromptContext = .none) async -> ImagePriceExtractionOutcome {
+    ///
+    /// - Parameter tools: Model-callable tools registered on the session so the model
+    ///   can normalise unit prices, resolve units/quantities, infer store context, and
+    ///   look up item history while extracting. Pass `[]` for a plain extraction.
+    func extractPriceInformation(
+        context: ScanPromptContext = .none,
+        tools: [any Tool] = []
+    ) async -> ImagePriceExtractionOutcome {
         switch SystemLanguageModel.default.availability {
         case .available:
             do {
@@ -66,7 +91,7 @@ extension UIImage {
                         .label("shelf_tag_photo")
                 }
 
-                let session = LanguageModelSession(instructions: {
+                let session = LanguageModelSession(tools: tools, instructions: {
                     """
                     You are a price extraction assistant for a grocery price tracking app. \
                     You analyse photos of shelf tags, price labels, produce signs, and promo \

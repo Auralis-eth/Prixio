@@ -448,7 +448,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "166"
             endingLineNumber = "166"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -480,7 +480,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "179"
             endingLineNumber = "179"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -496,7 +496,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "175"
             endingLineNumber = "175"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -512,7 +512,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "170"
             endingLineNumber = "170"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -528,7 +528,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "189"
             endingLineNumber = "189"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -544,7 +544,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "194"
             endingLineNumber = "194"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -560,7 +560,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "257"
             endingLineNumber = "257"
-            landmarkName = "beginImageReview(_:source:)"
+            landmarkName = "applyStoreCandidate(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -576,7 +576,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "287"
             endingLineNumber = "287"
-            landmarkName = "saveCurrentImageToPhotoLibrary()"
+            landmarkName = "beginImageReview(_:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -592,7 +592,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "318"
             endingLineNumber = "318"
-            landmarkName = "applyInferredStore(from:ocrText:nearbyCandidates:)"
+            landmarkName = "saveCurrentImageToPhotoLibrary()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -608,7 +608,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "345"
             endingLineNumber = "345"
-            landmarkName = "matchStoreCandidate(from:ocrText:currentLocation:)"
+            landmarkName = "save(context:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -656,8 +656,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "157"
             endingLineNumber = "157"
-            landmarkName = "PriceParsingService"
-            landmarkType = "13">
+            landmarkName = "containsPriceSignal(in:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1038,8 +1038,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "169"
             endingLineNumber = "169"
-            landmarkName = "explicitTokenCorrections"
-            landmarkType = "24">
+            landmarkName = "isLikelySKU(_:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1054,8 +1054,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "168"
             endingLineNumber = "168"
-            landmarkName = "explicitTokenCorrections"
-            landmarkType = "24">
+            landmarkName = "isLikelySKU(_:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1070,8 +1070,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "172"
             endingLineNumber = "172"
-            landmarkName = "explicitTokenCorrections"
-            landmarkType = "24">
+            landmarkName = "isLikelySKU(_:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1086,8 +1086,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "174"
             endingLineNumber = "174"
-            landmarkName = "explicitTokenCorrections"
-            landmarkType = "24">
+            landmarkName = "isLikelySKU(_:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1102,8 +1102,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "179"
             endingLineNumber = "179"
-            landmarkName = "receiptMarkers"
-            landmarkType = "24">
+            landmarkName = "isLikelySKU(_:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1118,8 +1118,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "176"
             endingLineNumber = "176"
-            landmarkName = "receiptMarkers"
-            landmarkType = "24">
+            landmarkName = "isLikelySKU(_:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1214,7 +1214,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "156"
             endingLineNumber = "156"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1230,7 +1230,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "154"
             endingLineNumber = "154"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1294,7 +1294,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "213"
             endingLineNumber = "213"
-            landmarkName = "applyPriceCandidate(_:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1310,8 +1310,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "222"
             endingLineNumber = "222"
-            landmarkName = "applyStoreCandidate(_:)"
-            landmarkType = "7">
+            landmarkName = "ScanViewModel"
+            landmarkType = "3">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -1390,7 +1390,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "242"
             endingLineNumber = "242"
-            landmarkName = "discardCapture()"
+            landmarkName = "applyPriceCandidate(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1406,7 +1406,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "206"
             endingLineNumber = "206"
-            landmarkName = "processPickedImage(_:sessionStore:currentLocation:source:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -1422,7 +1422,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "216"
             endingLineNumber = "216"
-            landmarkName = "applyPriceCandidate(_:)"
+            landmarkName = "processPickedImage(_:sessionStore:currentLocation:modelContext:source:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
