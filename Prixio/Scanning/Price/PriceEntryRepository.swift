@@ -12,6 +12,30 @@ import CoreLocation
 struct PriceEntryRepository {
     let context: ModelContext
 
+    /// Persistence hook, overridable in tests to exercise the save-failure path. Defaults to the real
+    /// `ModelContext.save()`. Mirrors `ReceiptLinePromoter.persist`.
+    var persist: (ModelContext) throws -> Void = { try $0.save() }
+
+    /// Commits pending changes, rolling back to the last saved state if the save fails so a failed
+    /// delete never leaves the entry in a half-removed state in the context. Rethrows so the caller
+    /// can surface the error to the user.
+    private func commit() throws {
+        do {
+            try persist(context)
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    /// Permanently removes a saved price observation. Deleting an entry changes price history, basket
+    /// estimates, and comparisons, so a failed save is rolled back and rethrown rather than silently
+    /// leaving the entry hidden-but-not-deleted.
+    func delete(_ entry: PriceEntry) throws {
+        context.delete(entry)
+        try commit()
+    }
+
     func seedChainsIfNeeded() throws {
         let existing = try context.fetch(FetchDescriptor<StoreChain>())
         guard existing.isEmpty else {

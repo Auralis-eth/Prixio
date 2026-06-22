@@ -9,6 +9,7 @@ import AVFoundation
 import PhotosUI
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ScanRootView: View {
     @Environment(\.modelContext) private var modelContext
@@ -20,6 +21,10 @@ struct ScanRootView: View {
     @StateObject private var locationManager = LocationManager()
     @StateObject private var viewModel = ScanViewModel()
     @State private var selectedPhotoItem: PhotosPickerItem?
+
+    /// Set when persisting swipe-dismissed receipt edits fails, surfaced as an alert so the user's
+    /// corrections aren't silently lost.
+    @State private var receiptDraftSaveError: String?
 
     var body: some View {
         NavigationStack {
@@ -74,6 +79,15 @@ struct ScanRootView: View {
             selection: $selectedPhotoItem,
             matching: .images
         )
+        .fileImporter(
+            isPresented: $viewModel.isShowingPDFImporter,
+            allowedContentTypes: [.pdf],
+            allowsMultipleSelection: false
+        ) { result in
+            Task {
+                await handlePDFImport(result)
+            }
+        }
         .onChange(of: selectedPhotoItem) { _, item in
             Task {
                 await handleSelectedPhotoItem(item)
@@ -94,6 +108,8 @@ struct ScanRootView: View {
                 isProcessingOCR: viewModel.isProcessingOCR,
                 capturedImage: viewModel.capturedImage,
                 recentItems: viewModel.recentItems,
+                priceMemory: priceMemoryInsight,
+                storeMemory: storeMemoryInsight,
                 onPriceCandidateTap: viewModel.applyPriceCandidate,
                 onSelectSuggestion: viewModel.applyItemSuggestion,
                 onOpenStoreSelection: { viewModel.isShowingStoreSheet = true },
@@ -123,6 +139,27 @@ struct ScanRootView: View {
             .presentationDragIndicator(.visible)
             .interactiveDismissDisabled(viewModel.isProcessingOCR)
         }
+        .sheet(item: $viewModel.receiptUnderReview, onDismiss: {
+            // A swipe-to-dismiss bypasses the Save Draft / Done buttons; persist in-flight edits as a
+            // draft so the user's corrections aren't silently lost. Save Draft / Done / Discard have
+            // already persisted (or deleted) by the time this fires, leaving the context clean — so the
+            // `hasChanges` guard makes this a true no-op for them and only saves when the swipe actually
+            // left unsaved edits behind, rather than redundantly re-committing the whole context.
+            guard modelContext.hasChanges else { return }
+            do {
+                try modelContext.save()
+            } catch {
+                // Roll back the unsaved edits so the context isn't left in a half-applied state, and
+                // tell the user rather than swallowing the failure.
+                modelContext.rollback()
+                receiptDraftSaveError = "Couldn’t save your receipt edits. Open the receipt from the Spending tab to review it again."
+            }
+        }) { capture in
+            ReceiptReviewView(
+                viewModel: ReceiptReviewViewModel(capture: capture, context: modelContext),
+                onClose: { viewModel.receiptUnderReview = nil }
+            )
+        }
         .sheet(isPresented: $viewModel.isShowingStoreSheet) {
             StoreSelectionSheet(
                 nearbyCandidates: sessionStore.nearbyCandidates,
@@ -143,6 +180,60 @@ struct ScanRootView: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .alert(
+            "Couldn’t Save",
+            isPresented: Binding(
+                get: { receiptDraftSaveError != nil },
+                set: { if !$0 { receiptDraftSaveError = nil } }
+            ),
+            presenting: receiptDraftSaveError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
+        }
+    }
+
+    // Recomputed reactively as the user edits the draft, so the "usual price" read always reflects
+    // the current item name, price, and unit. Stays silent until those fields are usable.
+    private var priceMemoryInsight: PriceMemoryInsight? {
+        guard
+            !viewModel.isProcessingOCR,
+            let price = viewModel.draft.parsedPrice,
+            price > 0,
+            let unit = viewModel.draft.selectedUnit,
+            !viewModel.draft.itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+
+        return PriceInsightEngine.computePriceMemory(
+            itemName: viewModel.draft.itemName,
+            currentPrice: price,
+            unitType: unit,
+            allEntries: entries
+        )
+    }
+
+    // Store-relative read for the matched item: is the selected store usually cheaper, average, or
+    // pricier than other stores? Stays silent until the item, unit, and a chosen store are usable.
+    private var storeMemoryInsight: StoreMemoryInsight? {
+        guard
+            !viewModel.isProcessingOCR,
+            let unit = viewModel.draft.selectedUnit,
+            !viewModel.draft.itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let storeName = viewModel.draft.storeChainName,
+            !storeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+
+        return PriceInsightEngine.computeStoreMemory(
+            itemName: viewModel.draft.itemName,
+            currentStoreName: storeName,
+            unitType: unit,
+            allEntries: entries
+        )
     }
 
     private var scannerBackground: some View {
@@ -191,6 +282,15 @@ struct ScanRootView: View {
 
     private var topHUD: some View {
         VStack(spacing: 14) {
+            Picker("Capture mode", selection: $viewModel.scanMode) {
+                ForEach(ScanMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 240)
+            .accessibilityIdentifier("scanModePicker")
+
             HStack {
                 Spacer()
                 Button(action: {
@@ -221,10 +321,22 @@ struct ScanRootView: View {
                 Spacer()
             }
 
-            Text("Point at the price tag.")
+            Text(viewModel.scanMode.capturePrompt)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.white.opacity(0.74))
                 .accessibilityIdentifier("scannerPrompt")
+
+            if viewModel.scanMode == .receipt {
+                Button {
+                    viewModel.presentPDFImporter()
+                } label: {
+                    Label("Import PDF from Files", systemImage: "doc.badge.plus")
+                        .font(.footnote.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+                .accessibilityIdentifier("importReceiptPDFButton")
+            }
         }
     }
 
@@ -253,17 +365,34 @@ struct ScanRootView: View {
 
                 Spacer()
 
-                Button(action: capturePhoto) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(0.22))
-                            .frame(width: 84, height: 84)
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 64, height: 64)
-                    }
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: 84, height: 84)
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 64, height: 64)
                 }
+                .contentShape(Circle())
+                // Tap captures in the current mode; a long press is a convenience shortcut into
+                // Receipt mode. Using distinct gestures (rather than a Button + simultaneous long
+                // press) keeps the long press from also triggering a capture on release.
+                .onTapGesture {
+                    capturePhoto()
+                }
+                .onLongPressGesture(minimumDuration: 0.5) {
+                    viewModel.switchToReceiptModeViaShortcut()
+                }
+                .accessibilityElement()
+                .accessibilityAddTraits(.isButton)
                 .accessibilityLabel("Shutter button")
+                .accessibilityHint("Captures using the current mode")
+                .accessibilityAction {
+                    capturePhoto()
+                }
+                .accessibilityAction(named: "Switch to Receipt Mode") {
+                    viewModel.switchToReceiptModeViaShortcut()
+                }
 
                 Spacer()
 
@@ -364,6 +493,36 @@ struct ScanRootView: View {
             modelContext: modelContext,
             source: .photoLibrary
         )
+    }
+
+    private func handlePDFImport(_ result: Result<[URL], Error>) async {
+        let urls: [URL]
+        switch result {
+        case .success(let value):
+            urls = value
+        case .failure:
+            viewModel.reportReceiptImportFailure()
+            return
+        }
+        guard let url = urls.first else {
+            // The picker reported success with no file (e.g. cancelled); nothing to report.
+            return
+        }
+
+        // Imported files arrive as security-scoped URLs; access must be opened before reading.
+        let didStartAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        guard let data = try? Data(contentsOf: url) else {
+            viewModel.reportReceiptImportFailure("That PDF could not be read.")
+            return
+        }
+
+        await viewModel.ingestReceiptPDF(data: data, modelContext: modelContext)
     }
 
     private func applyPendingScanLaunchRequest(_ request: ScanLaunchRequest?) {

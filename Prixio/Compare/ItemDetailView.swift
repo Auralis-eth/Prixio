@@ -13,7 +13,15 @@ struct ItemDetailView: View {
     @StateObject private var viewModel = CompareViewModel()
     @State private var mode: CompareDisplayMode = .perUnit
     @State private var comparisonState = CompareViewModel.ItemComparisonState(rows: [], showsMixedUnitFamilyNote: false)
+    @State private var history: ItemPriceHistory?
+    @State private var historyScope: PriceHistoryScope = .allStores
+    @State private var availableScopes: [PriceHistoryScope] = [.allStores]
     @State private var selectedEntry: PriceEntry?
+
+    /// Set when deleting a saved price entry fails to persist, surfaced as an alert. A silently failed
+    /// delete would leave the entry hidden here but still feeding price history, basket estimates, and
+    /// comparisons.
+    @State private var saveErrorMessage: String?
 
     init(itemKey: String, displayName: String, userLocation: CLLocation?) {
         self.itemKey = itemKey
@@ -31,6 +39,10 @@ struct ItemDetailView: View {
     var body: some View {
         List {
             headerSection
+
+            if let history {
+                priceHistorySection(history)
+            }
 
             if comparisonState.showsMixedUnitFamilyNote {
                 Section {
@@ -68,10 +80,25 @@ struct ItemDetailView: View {
         .onChange(of: mode) { _, _ in
             recompute()
         }
+        .onChange(of: historyScope) { _, _ in
+            recomputeHistory()
+        }
         .sheet(item: $selectedEntry) { entry in
             EntryDetailSheet(entry: entry) {
                 delete(entry: entry)
             }
+        }
+        .alert(
+            "Couldn’t Delete",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            ),
+            presenting: saveErrorMessage
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
     }
 
@@ -92,6 +119,69 @@ struct ItemDetailView: View {
         }
     }
 
+    private func priceHistorySection(_ history: ItemPriceHistory) -> some View {
+        Section("Price history") {
+            if availableScopes.count > 1 {
+                Picker("Stores", selection: $historyScope) {
+                    ForEach(availableScopes) { scope in
+                        Text(scope.displayName).tag(scope)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            if history.anomaly != .insufficientData {
+                Label(history.anomaly.displayLabel, systemImage: history.anomaly.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(anomalyTint(history.anomaly))
+            }
+
+            HStack(spacing: 12) {
+                statTile("Latest", value: history.latest.price)
+                statTile("Lowest", value: history.lowest.price)
+                statTile("Highest", value: history.highest.price)
+            }
+
+            if history.hasUsualBand {
+                Text("Usual range \(CurrencyFormatter.shared.display(history.usualLow))–\(CurrencyFormatter.shared.display(history.usualHigh)) · \(history.observationCount) prices")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("\(history.observationCount) price\(history.observationCount == 1 ? "" : "s") so far — need a few more to flag deals.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if history.timeline.count >= 2 {
+                ItemHistoryChart(history: history)
+            }
+        }
+    }
+
+    private func statTile(_ title: String, value: Decimal) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(CurrencyFormatter.shared.display(value))
+                .font(.subheadline.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func anomalyTint(_ anomaly: PriceAnomaly) -> Color {
+        switch anomaly {
+        case .likelySale, .belowUsual:
+            return .green
+        case .nearUsual, .insufficientData:
+            return .secondary
+        case .aboveUsual:
+            return .orange
+        case .unusuallyHigh:
+            return .red
+        }
+    }
+
     private func recompute() {
         comparisonState = viewModel.buildItemComparisonState(
             itemKey: itemKey,
@@ -100,13 +190,35 @@ struct ItemDetailView: View {
             userLocation: userLocation
         )
 
+        availableScopes = viewModel.availableHistoryScopes(itemKey: itemKey, entries: itemEntries)
+        // Reset to the all-stores view if the previously selected scope no longer has data (e.g. its
+        // last entry was deleted), so the picker never points at a vanished store.
+        if !availableScopes.contains(historyScope) {
+            historyScope = .allStores
+        }
+
+        recomputeHistory()
+
         if mode == .perUnit, comparisonState.rows.isEmpty {
             mode = .perPackage
         }
     }
 
+    private func recomputeHistory() {
+        history = viewModel.buildItemHistory(
+            itemKey: itemKey,
+            displayName: displayName,
+            entries: itemEntries,
+            mode: mode,
+            scope: historyScope
+        )
+    }
+
     private func delete(entry: PriceEntry) {
-        modelContext.delete(entry)
-        try? modelContext.save()
+        do {
+            try PriceEntryRepository(context: modelContext).delete(entry)
+        } catch {
+            saveErrorMessage = "Couldn’t delete this price. Please try again."
+        }
     }
 }

@@ -7,6 +7,7 @@ final class ShoppingListViewModel: ObservableObject {
     @Published private(set) var activeRows: [ShoppingListRowData] = []
     @Published private(set) var completedRows: [ShoppingListRowData] = []
     @Published private(set) var tripRecommendation: TripRecommendation = .insufficientData
+    @Published private(set) var basketEstimate: BasketEstimate = .empty
 
     func recompute(
         items: [ShoppingListItem],
@@ -37,6 +38,14 @@ final class ShoppingListViewModel: ObservableObject {
         activeRows = rows.filter { !$0.isDone }
         completedRows = rows.filter(\.isDone)
         tripRecommendation = makeTripRecommendation(from: activeRows)
+
+        // Basket totals use package prices (you buy a package, not a normalized unit).
+        basketEstimate = PriceInsightEngine.computeBasketEstimate(
+            items: activeRows.map { BasketItemInput(itemKey: $0.itemKey, displayName: $0.displayName) },
+            useNormalizedPricing: false,
+            allEntries: entries,
+            now: now
+        )
     }
 
     private func makeRow(

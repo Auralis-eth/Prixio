@@ -5,6 +5,7 @@ enum AppTab: Hashable {
     case scan
     case compare
     case shopping
+    case spending
     case settings
 }
 

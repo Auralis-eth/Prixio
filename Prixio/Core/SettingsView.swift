@@ -49,6 +49,23 @@ struct SettingsView: View {
                 } footer: {
                     Text("Adds 100 marked grocery price records for Compare testing. Delete removes only records created by this tool.")
                 }
+
+                Section {
+                    LabeledContent("Seeded records", value: "\(spendingSeededCount)")
+
+                    Button("Add spending test data") {
+                        addSpendingTestData()
+                    }
+
+                    Button("Delete spending test data", role: .destructive) {
+                        deleteSpendingTestData()
+                    }
+                    .disabled(spendingSeededCount == 0)
+                } header: {
+                    Text("Spending Test Data")
+                } footer: {
+                    Text("Adds several months of marked expenses, income, and grocery receipts for Spending testing. Delete removes only records created by this tool.")
+                }
                 #endif
             }
             .navigationTitle("Settings")
@@ -94,6 +111,27 @@ struct SettingsView: View {
     private func deleteTestRecords() {
         do {
             try TestPriceEntrySeeder.deleteRecords(from: entries, in: modelContext)
+        } catch {
+            seedOperationError = error.localizedDescription
+        }
+    }
+
+    private var spendingSeededCount: Int {
+        (try? TestSpendingSeeder.seededCount(in: modelContext)) ?? 0
+    }
+
+    private func addSpendingTestData() {
+        do {
+            try TestSpendingSeeder.deleteRecords(in: modelContext)
+            try TestSpendingSeeder.insertRecords(into: modelContext)
+        } catch {
+            seedOperationError = error.localizedDescription
+        }
+    }
+
+    private func deleteSpendingTestData() {
+        do {
+            try TestSpendingSeeder.deleteRecords(in: modelContext)
         } catch {
             seedOperationError = error.localizedDescription
         }

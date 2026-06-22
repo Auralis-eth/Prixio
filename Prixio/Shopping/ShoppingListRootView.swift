@@ -13,6 +13,10 @@ struct ShoppingListRootView: View {
     @State private var selectedRow: ShoppingListRowData?
     @State private var scanNudgeRow: ShoppingListRowData?
 
+    /// Set when a list mutation fails to persist, surfaced as an alert so an add/toggle/delete that
+    /// didn't actually save can't look like it worked.
+    @State private var saveErrorMessage: String?
+
     var body: some View {
         NavigationStack {
             List {
@@ -23,9 +27,12 @@ struct ShoppingListRootView: View {
                         completedOnlySection
                     } else {
                         Section {
-                            TripOptimizerCard(recommendation: viewModel.tripRecommendation)
-                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                .listRowBackground(Color.clear)
+                            TripOptimizerCard(
+                                recommendation: viewModel.tripRecommendation,
+                                basket: viewModel.basketEstimate
+                            )
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                            .listRowBackground(Color.clear)
                         }
 
                         Section("Checklist") {
@@ -106,6 +113,18 @@ struct ShoppingListRootView: View {
                     scanNudgeRow = nil
                 }
             )
+        }
+        .alert(
+            "Couldn’t Save",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            ),
+            presenting: saveErrorMessage
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
     }
 
@@ -222,11 +241,15 @@ struct ShoppingListRootView: View {
             return
         }
 
-        _ = try? ShoppingListRepository(context: modelContext).addItem(
-            to: activeList,
-            displayName: displayName,
-            quantityNote: quantityNote
-        )
+        do {
+            _ = try ShoppingListRepository(context: modelContext).addItem(
+                to: activeList,
+                displayName: displayName,
+                quantityNote: quantityNote
+            )
+        } catch {
+            saveErrorMessage = "Couldn’t add this item. Please try again."
+        }
         recompute()
     }
 
@@ -236,7 +259,13 @@ struct ShoppingListRootView: View {
         }
 
         let newValue = !item.isDone
-        _ = try? ShoppingListRepository(context: modelContext).setDone(newValue, for: item)
+        do {
+            try ShoppingListRepository(context: modelContext).setDone(newValue, for: item)
+        } catch {
+            saveErrorMessage = "Couldn’t update this item. Please try again."
+            recompute()
+            return
+        }
         recompute()
 
         if newValue && row.shouldNudgeForFreshness {
@@ -249,7 +278,11 @@ struct ShoppingListRootView: View {
             return
         }
 
-        _ = try? ShoppingListRepository(context: modelContext).deleteItem(item)
+        do {
+            try ShoppingListRepository(context: modelContext).deleteItem(item)
+        } catch {
+            saveErrorMessage = "Couldn’t delete this item. Please try again."
+        }
         recompute()
     }
 

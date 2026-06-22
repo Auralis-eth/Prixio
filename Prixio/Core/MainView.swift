@@ -30,6 +30,12 @@ struct MainView: View {
                 Label("Shopping List", systemImage: "checklist")
             }
 
+            SpendingRootView()
+            .tag(AppTab.spending)
+            .tabItem {
+                Label("Spending", systemImage: "creditcard")
+            }
+
             SettingsView()
             .tag(AppTab.settings)
             .tabItem {

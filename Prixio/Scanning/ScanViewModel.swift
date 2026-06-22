@@ -21,7 +21,9 @@ final class ScanViewModel: ObservableObject {
     }
 
     @Published var draft = PriceEntryDraft()
+    @Published var scanMode: ScanMode = .priceTag
     @Published var isShowingImagePicker = false
+    @Published var isShowingPDFImporter = false
     @Published var isShowingConfirmationSheet = false
     @Published var isShowingStoreSheet = false
     @Published var isProcessingOCR = false
@@ -32,22 +34,27 @@ final class ScanViewModel: ObservableObject {
     @Published var toastMessage = "Price saved"
     @Published var recentItems: [String] = []
     @Published var searchResults: [StoreCandidate] = []
+    @Published var receiptUnderReview: ReceiptCapture?
     @Published private(set) var cameraPreviewRefreshID = UUID()
 
     private let imageExtractor: any PriceImageExtracting
+    private let receiptExtractor: any ReceiptImageExtracting
     private let storeService: any StoreLookupProviding
     private(set) var currentScanSource: ScanInputSource?
 
     init() {
         self.imageExtractor = DefaultPriceImageExtractor()
+        self.receiptExtractor = DefaultReceiptImageExtractor()
         self.storeService = StoreDetectionService()
     }
 
     init(
         imageExtractor: any PriceImageExtracting,
-        storeService: any StoreLookupProviding
+        storeService: any StoreLookupProviding,
+        receiptExtractor: any ReceiptImageExtracting = DefaultReceiptImageExtractor()
     ) {
         self.imageExtractor = imageExtractor
+        self.receiptExtractor = receiptExtractor
         self.storeService = storeService
     }
 
@@ -161,6 +168,109 @@ final class ScanViewModel: ObservableObject {
         isFlashEnabled.toggle()
     }
 
+    /// Long-press shutter shortcut: jump straight to Receipt capture mode. The visible mode picker
+    /// remains the canonical control for assistive technologies, so this is purely a convenience.
+    /// No-op while a capture is being reviewed/processed or when already in Receipt mode.
+    func switchToReceiptModeViaShortcut() {
+        guard !isShowingConfirmationSheet, !isProcessingOCR else {
+            return
+        }
+        guard scanMode != .receipt else {
+            return
+        }
+
+        scanMode = .receipt
+        Haptics.impact()
+        presentTransientToast("Receipt mode")
+    }
+
+    /// Presents the system document picker for importing a receipt PDF (Receipt mode only).
+    func presentPDFImporter() {
+        Haptics.impact()
+        isShowingPDFImporter = true
+    }
+
+    /// Persists a captured/selected receipt image, runs Foundation Models extraction to populate its
+    /// store/date/totals and line items, then presents the receipt review surface.
+    func ingestReceiptImage(_ image: UIImage, source: ScanInputSource, modelContext: ModelContext) async {
+        // Guard against re-entry: extraction is a multi-second on-device call, so a second shutter
+        // tap (or import) while one is in flight would otherwise create a duplicate ReceiptCapture.
+        guard !isProcessingOCR else {
+            return
+        }
+        isProcessingOCR = true
+        defer { isProcessingOCR = false }
+
+        let receiptSource: ReceiptSource = source == .camera ? .cameraPhoto : .importedImage
+        do {
+            let capture = try ReceiptImportService(context: modelContext).importImage(image, source: receiptSource)
+            await extractAndPresent(capture, image: image, modelContext: modelContext)
+        } catch {
+            presentTransientToast("Could not save the receipt.")
+        }
+    }
+
+    /// Persists an imported receipt PDF (first page rendered to an image), runs extraction, then
+    /// presents the review surface. The caller reads the security-scoped file into `data`.
+    func ingestReceiptPDF(data: Data, modelContext: ModelContext) async {
+        guard !isProcessingOCR else {
+            return
+        }
+        isProcessingOCR = true
+        defer { isProcessingOCR = false }
+
+        do {
+            guard let capture = try ReceiptImportService(context: modelContext).importPDF(data) else {
+                presentTransientToast("That PDF could not be read.")
+                return
+            }
+            let pageImage = capture.imageData.flatMap(UIImage.init(data:))
+            await extractAndPresent(capture, image: pageImage, modelContext: modelContext)
+        } catch {
+            presentTransientToast("Could not save the receipt.")
+        }
+    }
+
+    private func extractAndPresent(_ capture: ReceiptCapture, image: UIImage?, modelContext: ModelContext) async {
+        if let image {
+            switch await receiptExtractor.extractReceipt(from: image) {
+            case .success(let result):
+                ReceiptDraftBuilder.apply(result, to: capture, context: modelContext)
+                do {
+                    try modelContext.save()
+                } catch {
+                    // The capture itself is already persisted; only the extracted draft failed to
+                    // save. Tell the user so they know to re-check rather than trusting silent data.
+                    presentTransientToast("Couldn’t save the scanned details. Review and try again.")
+                }
+            case .failure(let failure):
+                // The capture is already saved; the user can still review/correct it manually.
+                presentTransientToast(failure.userMessage)
+            }
+        }
+        Haptics.success()
+        receiptUnderReview = capture
+    }
+
+    /// Surfaces a user-facing toast when receipt import fails in the view layer before the view
+    /// model takes over (e.g. the document picker errored or the file could not be read).
+    func reportReceiptImportFailure(_ message: String = "That receipt could not be imported.") {
+        presentTransientToast(message)
+    }
+
+    /// Shows a toast that auto-dismisses, matching the post-save confirmation behaviour.
+    private func presentTransientToast(_ message: String) {
+        toastMessage = message
+        withAnimation(.easeOut(duration: 0.2)) {
+            showToast = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+            withAnimation(.easeIn(duration: 0.2)) {
+                self?.showToast = false
+            }
+        }
+    }
+
     func processPickedImage(
         _ image: UIImage?,
         sessionStore: ScanSessionStore,
@@ -169,6 +279,13 @@ final class ScanViewModel: ObservableObject {
         source: ScanInputSource = .photoLibrary
     ) async {
         guard let image else {
+            return
+        }
+
+        // Receipt mode captures a basket, not a price. Route the image into receipt ingestion so it
+        // is stored as a pending-review ReceiptCapture and never reaches the price confirmation flow.
+        if scanMode == .receipt {
+            await ingestReceiptImage(image, source: source, modelContext: modelContext)
             return
         }
 
@@ -193,9 +310,12 @@ final class ScanViewModel: ObservableObject {
         case .success(let extractedResult):
             result = extractedResult
         case .failure(let failure):
+            // `beginImageReview` already opened the confirmation sheet over an empty draft in
+            // anticipation of a result. On failure, tear that down so the user isn't stranded on a
+            // blank "Scan looks solid" sheet behind the toast — show only the error and let them retake.
             toastMessage = failure.userMessage
             showToast = true
-            isProcessingOCR = false
+            resetCaptureState()
             return
         }
 

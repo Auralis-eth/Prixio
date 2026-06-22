@@ -149,6 +149,32 @@ final class CompareViewModel: ObservableObject {
         return ItemComparisonState(rows: rows, showsMixedUnitFamilyNote: showsMixedUnitFamilyNote)
     }
 
+    /// Item-level price history (latest/lowest/highest/usual band + anomaly + timeline) for the
+    /// detail surface, tracking the current per-unit/per-package display mode.
+    func buildItemHistory(
+        itemKey: String,
+        displayName: String,
+        entries: [PriceEntry],
+        mode: CompareDisplayMode,
+        scope: PriceHistoryScope = .allStores,
+        now: Date = .now
+    ) -> ItemPriceHistory? {
+        PriceInsightEngine.computeItemHistory(
+            itemKey: itemKey,
+            displayName: displayName,
+            useNormalizedPricing: mode == .perUnit,
+            allEntries: entries,
+            scope: scope,
+            now: now
+        )
+    }
+
+    /// Store scopes (all-stores plus per-chain/-location) that have history for this item, used to
+    /// offer a chain-vs-location breakdown in the detail surface.
+    func availableHistoryScopes(itemKey: String, entries: [PriceEntry]) -> [PriceHistoryScope] {
+        PriceInsightEngine.availableStoreScopes(itemKey: itemKey, allEntries: entries)
+    }
+
     private func makeSuggestedCard(for entries: [PriceEntry]) -> SuggestedComparisonCard? {
         let storeCount = distinctStoreCount(for: entries)
         guard storeCount >= 2, let latestEntry = entries.max(by: { $0.capturedAt < $1.capturedAt }) else {

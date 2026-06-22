@@ -13,6 +13,8 @@ struct ConfirmationSheet: View {
     let isProcessingOCR: Bool
     let capturedImage: UIImage?
     let recentItems: [String]
+    let priceMemory: PriceMemoryInsight?
+    var storeMemory: StoreMemoryInsight? = nil
     let onPriceCandidateTap: (PriceCandidate) -> Void
     let onSelectSuggestion: (String) -> Void
     let onOpenStoreSelection: () -> Void
@@ -121,6 +123,14 @@ struct ConfirmationSheet: View {
                         Text(priceReviewMessage)
                             .font(.footnote)
                             .foregroundStyle(priceReviewTone)
+                    }
+
+                    if let priceMemory {
+                        PriceMemoryBadge(insight: priceMemory)
+                    }
+
+                    if let storeMemory {
+                        StoreMemoryBadge(insight: storeMemory)
                     }
                 }
 
@@ -382,6 +392,134 @@ struct ConfirmationSheet: View {
                 isSavingPhotoReference = false
                 isShowingPhotoSaveAlert = true
             }
+        }
+    }
+}
+
+private struct PriceMemoryBadge: View {
+    let insight: PriceMemoryInsight
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: iconName)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(tone)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(tone)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(tone.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var title: String {
+        switch insight.level {
+        case .belowUsual:
+            return "Below your usual"
+        case .nearUsual:
+            return "Near your usual"
+        case .aboveUsual:
+            return "Above your usual"
+        }
+    }
+
+    private var detail: String {
+        let low = CurrencyFormatter.shared.display(insight.usualLow)
+        let high = CurrencyFormatter.shared.display(insight.usualHigh)
+        let base = "Usual \(low)–\(high) from \(insight.observationCount) prices"
+        return insight.freshness.isStale ? "\(base) · history may be stale" : base
+    }
+
+    private var tone: Color {
+        switch insight.level {
+        case .belowUsual:
+            return .green
+        case .nearUsual:
+            return .secondary
+        case .aboveUsual:
+            return .orange
+        }
+    }
+
+    private var iconName: String {
+        switch insight.level {
+        case .belowUsual:
+            return "arrow.down.circle"
+        case .nearUsual:
+            return "equal.circle"
+        case .aboveUsual:
+            return "arrow.up.circle"
+        }
+    }
+}
+
+private struct StoreMemoryBadge: View {
+    let insight: StoreMemoryInsight
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: iconName)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(tone)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(tone)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(tone.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var title: String {
+        switch insight.level {
+        case .cheaperHere:
+            return "Usually cheaper here"
+        case .averageHere:
+            return "About average here"
+        case .expensiveHere:
+            return "Usually pricier here"
+        }
+    }
+
+    private var detail: String {
+        let base = "Based on \(insight.observationCount) prices at \(insight.storeName), across \(insight.storeCount) stores"
+        return insight.freshness.isStale ? "\(base) · history may be stale" : base
+    }
+
+    private var tone: Color {
+        switch insight.level {
+        case .cheaperHere:
+            return .green
+        case .averageHere:
+            return .secondary
+        case .expensiveHere:
+            return .orange
+        }
+    }
+
+    private var iconName: String {
+        switch insight.level {
+        case .cheaperHere:
+            return "storefront"
+        case .averageHere:
+            return "equal.circle"
+        case .expensiveHere:
+            return "exclamationmark.circle"
         }
     }
 }
