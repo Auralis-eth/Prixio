@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 /// One household income declaration. Household-level only for the first version — per-person income
-/// is an open product question (see PriceCaptureAndIntelligence.md).
+/// is an open product question (see Docs/OutstandingWork.md §9/§10).
 @Model
 final class IncomeEntry {
     var id: UUID

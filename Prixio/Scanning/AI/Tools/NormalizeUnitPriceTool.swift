@@ -5,7 +5,6 @@
 //  A model-callable adapter over the comparable unit-price math — the one piece
 //  the model must NOT eyeball. Registered on the Capture flow's session
 //  (ScanViewModel.captureTools) and shared with the Compare/Planner agents.
-//  See AIPriceExtractionTools.md §6.1.
 //
 
 import Foundation

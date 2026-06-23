@@ -6,7 +6,7 @@ import UIKit
 /// are reviewed and extracted as a single unit.
 enum PDFReceiptRenderer {
     /// Maximum pages composited from a single PDF. Pages beyond this are dropped (see
-    /// PriceCaptureAndIntelligence.md open questions).
+    /// Docs/OutstandingWork.md §10 open questions).
     static let maxCompositePages = 5
 
     static func renderFirstPage(from data: Data, scale: CGFloat = 2.0) -> UIImage? {

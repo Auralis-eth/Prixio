@@ -10,7 +10,7 @@ import Foundation
 /// Single source of truth for the app's default currency. v1 is Canada-focused, so the default is
 /// CAD; capture can override per-record (e.g. a receipt that prints a different currency). Note that
 /// `CurrencyFormatter` still *displays* this one currency app-wide — full multi-currency display is a
-/// separate effort (see PriceCaptureAndIntelligence.md).
+/// separate effort (see Docs/OutstandingWork.md §9).
 enum AppCurrency {
     static let defaultCode = "CAD"
 }
@@ -34,10 +34,13 @@ struct CurrencyFormatter {
     }()
 
     /// Grouping-separator-free formatter for editable numeric fields, so the rendered string always
-    /// round-trips back through `price(from:)`.
+    /// round-trips back through `price(from:)`. Pinned to `en_US_POSIX` so the output uses a period
+    /// decimal mark and Latin digits regardless of host locale — otherwise a comma-decimal or
+    /// non-Latin-digit locale (e.g. Arabic-Indic) would emit a string `Decimal(string:)` can't parse.
     private let editableFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
         formatter.usesGroupingSeparator = false

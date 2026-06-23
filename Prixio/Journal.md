@@ -297,6 +297,64 @@ The cleanup rule is just as important. A flashlight left on after a sheet appear
 
 The shopping-list empty state got the same treatment in a quieter corner of the app. The two choices are now explicit buttons with separate styles and separate intent helpers: add means add, scan means scan, and scan clears sheet state before leaving. Stable UI identifiers were added too, because future automation should test the contract directly instead of squinting at screen text like it is reading tea leaves.
 
+### Aha! Moment: Sometimes the Cleanest Migration Is a Door Closing
+
+The OCR-to-image-AI migration decision got sharper once the platform question was settled: Prixio is moving to iOS 27 as the base runtime. That matters because it turns the old Vision OCR path from a fallback into dead weight. Keeping it around would mean maintaining two extraction philosophies: one pipeline trying to repair noisy text fragments, and another asking the system model to read the image and return structured grocery-price fields directly.
+
+The better architecture is a single front door. `extractPriceInformation` becomes the scanner's source of structured truth, while deterministic app code still owns the parts that should never be vibes: validation, unit-price math, receipt suppression, store matching, draft building, and SwiftData writes. The model reads the shelf tag; the app decides whether the result is safe to save.
+
+The useful lesson is that migrations are not always about preserving every bridge. Sometimes the responsible move is to raise the floor, delete the fallback, and make the remaining path boring enough to test. For Prixio, that means fixed `LLMOCRResult` fixtures in unit tests, manual device QA for live model extraction, and review states driven by real issues instead of treating every model-assisted scan as suspicious by default.
+
+### War Story: The Model Read the Receipt, and That Was the Problem
+
+The image-AI migration made the scanner feel wonderfully direct: photo in, structured grocery-price draft out. But a direct pipe is only safe if the shutoff valve works. The review pass found two sneaky data-integrity bugs where the app could hear the model say “this is suspicious” and still let a bad record stroll into SwiftData wearing a nametag.
+
+The first bug was receipts. The classifier could recognize `receiptLike`, but the scan flow only used that fact to avoid auto-filling a store. The draft still carried the extracted receipt total, and a manually chosen store could make it saveable. That is like a bouncer spotting the wrong ticket and then politely holding the door open anyway. Receipt captures now get their own `receiptCapture` review issue, and `PriceEntryDraft.canSave` refuses them even if every visible field is filled.
+
+The second bug was unit contradiction. If the model returned `.each` while its own transcription said `$1.29 /lb`, the validator raised an orange flag but the draft still kept `.each` selected. That could quietly poison normalized price comparisons. The builder now fails closed: when the model's unit contradicts printed unit text, the selected unit is cleared so the user must choose one before saving.
+
+The polish pass also stopped treating every Foundation Models failure as the same foggy `nil`. Extraction now returns a typed outcome, so the scanner can distinguish unsupported devices, disabled Apple Intelligence, a model that is still preparing, and generation failure. The lesson is simple and stubborn: AI can read the shelf tag, but app code owns the cash register.
+
+### Aha! Moment: Scanner Modes Need Front Doors, Not Secret Knock Patterns
+
+The receipt-scanning discussion clarified a useful product rule: hidden gestures are shortcuts, not architecture. A long hold on the Scan tab sounds clever, but Prixio's scanner mode is not really tab navigation. It is capture intent. That intent belongs inside the scanner where the camera guidance, prompt context, validation, and review UI can all change together.
+
+So the direction is now written down in `Docs/PriceCaptureAndIntelligence.md`: add a visible `Price Tag` / `Receipt` mode switch first, then add long-press shutter as the speed path once receipt mode has real behavior behind it. The visible control is the front door. The long press is the side entrance for people who already know the house.
+
+The deeper lesson is that receipts are not just bigger shelf tags. A shelf tag wants to become one normalized price entry. A receipt is a basket: line items, discounts, dates, taxes, totals, and maybe a few trustworthy item prices hiding in the noise. If we force that into the existing confirmation sheet, we teach the app to lie with confidence. Better to give receipt capture its own intelligence path and let users promote specific line items into price history only when the evidence is good.
+
+### Aha! Moment: Receipts Are The Grocery App's Memory, Not Just Another Photo
+
+Expanding `PriceCaptureAndIntelligence.md` pulled the scanner plan into a bigger product shape. Price Intelligence is still the heart of Prixio: shelf tags, price history, sale detection, unit normalization, anomaly flags, and cheapest-basket decisions. But receipts and spending capture are the bloodstream. They tell the app what the household actually bought, where the money went, and whether a so-called deal changed anything in real life.
+
+The important architectural line is now explicit: `PriceEntry` should not become a junk drawer for every money-shaped thing. Shelf tags become trusted item-price observations. Receipts become basket captures with line items. Manual expenses and income become household context. The intelligence layer gets smarter by connecting those streams, not by pretending they are the same stream with different hats.
+
+That keeps the product from drifting into two bad futures at once: a grocery scanner that cannot explain spending, or a budget app that forgot why price intelligence made it useful in the first place.
+
+### Aha! Moment: Memory Should Be Proved Before It Becomes Furniture
+
+The newest pass on `PriceCaptureAndIntelligence.md` added a missing middle layer: Memory Experiments. That matters because it is tempting to jump straight from `we store price rows` to `the app remembers your grocery life`. Those are not the same thing. A database is a filing cabinet. Memory is the app pulling the right folder before you ask twice.
+
+The plan now calls for small proof loops before durable models harden: item memory, price memory, store memory, basket memory, receipt memory, spending memory, and recurring memory. Each experiment has to answer one useful question and prove it can do so conservatively. If it cannot explain itself, handle thin data, and let the user correct it, it is not ready to become product architecture.
+
+That is the senior-engineer move here: test the shape of the memory before building a mansion around it.
+
+### Aha! Moment: A Roadmap Needs Receipts From The Real World
+
+The completion-plan pass caught a quiet gap in `PriceCaptureAndIntelligence.md`: receipt photos were covered, receipt OCR was covered, but PDF receipts from email were only implied by the broader receipt idea. That is exactly the kind of missing bridge that turns a good product thesis into an awkward first version. People do not only photograph receipts; stores email them, apps export them, and users expect the import path to meet the evidence where it already lives.
+
+The doc now names the five core capabilities directly: take grocery receipt photos, import PDFs from email/files, OCR store receipts, build shopping lists, and build price history. Shopping List is already MVP-complete, so the remaining work there is intelligence work, not basic list creation. Everything else now has a concrete completion standard instead of living as a hopeful bullet.
+
+The lesson: if a roadmap says `capture receipts`, ask `from where?` before you call it complete.
+
+### War Story: `Decimal(string:)` Was a Little Too Helpful
+
+A unit-test pass on the money helpers caught a wonderfully sneaky bug: `CurrencyFormatter.price(from:)` was leaning on `Decimal(string:)` to decide whether user input was valid. That sounds reasonable until you hand it `12.3.4` and it calmly returns `12.3`, as if the second decimal point was just someone clearing their throat.
+
+That is dangerous in an app about prices. A malformed edit should fail loudly enough for the UI to keep the old value or ask the user to fix it, not quietly save the first number-shaped prefix it found. The parser now validates the whole normalized string with a tiny numeric pattern before creating the `Decimal`, so `12,50` still works, `1234567.89` still round-trips, and junk no longer dresses up as money.
+
+The lesson: standard-library parsers often optimize for permissive reading, not domain truth. When the domain is currency, validate the entire token before trusting the number.
+
 ## Engineer's Wisdom
 Good engineers protect the first useful moment. In a camera app, the first useful moment is not “SwiftUI finished drawing the screen” and it is not “all capture outputs are warmed up.” It is “the user can see the live thing they are trying to capture.”
 
@@ -311,3 +369,21 @@ For Prixio, the practical wisdom is:
 I would design the scan screen with an explicit time-to-first-preview budget from day one. The camera preview would be the launch-critical path, and everything else would have to earn the right to run before the first frame: store lookup, recent-save UI, gallery thumbnail work, OCR warmup, and any future model prewarming.
 
 That does not mean making the scanner bare. It means sequencing it like a good stage crew: curtain up first, props after.
+
+### Shipped: The OCR-to-Image-AI Migration Landed
+
+The door closed. Prixio's base runtime is now iOS 27.0 (app and test targets), and the Vision OCR pipeline is gone: `OCRService`, `OCRTextObservation`, `ConsolidatedObservation`, the spatial snapshot builder, the FM-assist merger, `OCRResult`/`OCRQualityReport`, and the OCR-repair string helpers were all deleted. `extractPriceInformation` and the `@Generable` `LLMOCRResult` types moved into a new `Scanning/AI/` group, alongside a source-agnostic `TextObservation` protocol so the surviving scorers/resolvers re-read the model's own transcription instead of Vision observations.
+
+The capture flow is now a straight pipeline: `extractPriceInformation` → `PriceDraftBuilder` → `PriceExtractionValidator` (which cross-checks the model's chosen price against its own candidates and the deterministic scorer re-read) → `ReceiptCaptureClassifier` → existing store matching and `PriceEntryRepository` save. Review state is driven by real issues: a clean extraction reads as clean even though `usedFoundationModel` is always true on the AI path. Four `FoundationModels.Tool` adapters (normalize, resolve-unit, infer-store, item-history) are compiled as shared adapters for future Compare/Planner agents but are intentionally not registered on the single-photo capture session.
+
+The test suite tells the same story: parser-internal snapshot/FM-assist tests died with the code they exercised; what remains are fixture-driven validator/draft/classifier/tool tests and retyped scorer tests. 71 tests are green, none depending on live model extraction — that part is manual/device QA, because model availability and sampling are not stable CI inputs.
+
+### War Story: Test Seams Are Cheaper Before the AI Gets Involved
+
+The unit-test hardening pass found the awkward part of the shiny image-AI scanner: `processPickedImage` was doing the right orchestration, but it was wired straight to two real-world doors — Apple Intelligence for extraction and MapKit for nearby stores. That made the most important scan composition path feel like a museum exhibit: you could look at it, but touching it in tests was frowned upon.
+
+The fix was not a grand architecture festival. It was two small seams. `PriceImageExtracting` lets tests hand the scanner a fake `LLMOCRResult`, and `StoreLookupProviding` lets tests hand it fake nearby stores. Production still uses `DefaultPriceImageExtractor` and `StoreDetectionService`; tests get a quiet little practice kitchen where no model availability, network lookup, or device state can wander in and spill soup.
+
+This pass also tightened `ItemKeyNormalizer`. Compare and shopping matching depend on item keys acting like stable shelf labels, not like raw OCR confetti. Punctuation, casing, whitespace, simple plurals, and unit-size noise now collapse into a more useful canonical key: `Yellow Onions 3 lb` becomes `yellow onion`, while brand-like words stay because sometimes `PC Blue Menu` is the whole point.
+
+The broader lesson: if a test needs the real world to behave, it is not a unit test yet. Give the orchestration a fakeable boundary, then test the grocery-store chaos with fixtures instead of hope.

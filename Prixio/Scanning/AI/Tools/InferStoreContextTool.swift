@@ -6,7 +6,8 @@
 //  text, and MapKit + the local chain catalog resolve real candidates, mirroring
 //  ScanViewModel.matchStoreCandidate (prefer chain match, fall back to the last
 //  store). Registered on the Capture flow's session (ScanViewModel.captureTools)
-//  and shared with the Compare/Planner agents. See AIPriceExtractionTools.md §6.3.
+//  and shared with the Compare/Planner agents. Known fidelity gap vs.
+//  matchStoreCandidate tracked in Docs/OutstandingWork.md §6.
 //
 
 import CoreLocation

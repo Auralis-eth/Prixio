@@ -40,7 +40,7 @@ final class ReceiptCapture: Identifiable {
     var currencyCode: String
 
     /// Original image reference kept at least until review is complete. Retention beyond review is
-    /// an open product question (see PriceCaptureAndIntelligence.md).
+    /// an open product question (see Docs/OutstandingWork.md §10).
     var imageData: Data?
     var photoAssetId: String?
     /// Raw OCR/model text retained for audit, correction, and later reprocessing.

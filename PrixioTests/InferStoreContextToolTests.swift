@@ -109,7 +109,7 @@ struct InferStoreContextToolTests {
         #expect(suggestion.mapKitPlaceId == "pid-1")
     }
 
-    // Characterization of the documented fidelity gap (AIPriceExtractionTools.md §6.3):
+    // Characterization of the documented fidelity gap (Docs/OutstandingWork.md §6):
     // unlike ScanViewModel.matchStoreCandidate, this tool does NOT apply the >1500 m
     // distance rejection or receipt suppression. These tests lock in the current behavior
     // so a future parity fix is a deliberate, visible change.
