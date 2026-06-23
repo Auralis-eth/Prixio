@@ -198,6 +198,34 @@ struct CompareFlowViewModelTests {
         #expect(state.rows.first?.distanceMeters == nil)
     }
 
+    @Test
+    func trendDirectionIsUnavailableWhenPreviousPriceIsZero() {
+        // Guards the deltaRatio divide-by-zero: a prior price of 0 can't yield a percentage change.
+        let viewModel = CompareViewModel()
+        let now = Date(timeIntervalSince1970: 3_200_000)
+
+        #expect(trendDirection(viewModel: viewModel, latestPrice: "5.00", previousPrice: "0.00", now: now) == .unavailable)
+    }
+
+    @Test
+    func buildItemComparisonStateIsEmptyForAnItemWithNoEntries() {
+        // Unknown/unmatched item key: no rows, and no mixed-unit note fabricated from nothing.
+        let viewModel = CompareViewModel()
+        let entries = [
+            makeEntry(itemName: "Milk", normalizedName: "milk", chainName: "Store A", capturedAtDaysAgo: 1)
+        ]
+
+        let state = viewModel.buildItemComparisonState(
+            itemKey: "eggs",
+            entries: entries,
+            mode: .perUnit,
+            userLocation: nil
+        )
+
+        #expect(state.rows.isEmpty)
+        #expect(state.showsMixedUnitFamilyNote == false)
+    }
+
     private func trendDirection(
         viewModel: CompareViewModel,
         latestPrice: String,

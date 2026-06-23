@@ -4,39 +4,46 @@ import Testing
 @MainActor
 struct AppNavigationModelTests {
     @Test
-    func launchScanStoresItemNameAndOptionalPreferredChain() {
-        let navigationModel = AppNavigationModel()
+    func launchScan_selectsScanTabAndStoresRequest_givenItemAndPreferredStore() throws {
+        let navigation = AppNavigationModel()
+        navigation.selectedTab = .shopping
 
-        navigationModel.launchScan(itemName: "Milk", preferredChainName: "Co-op")
+        navigation.launchScan(itemName: "Milk", preferredChainName: "Costco")
 
-        #expect(navigationModel.selectedTab == .scan)
-        #expect(
-            navigationModel.pendingScanLaunchRequest ==
-            ScanLaunchRequest(itemName: "Milk", preferredChainName: "Co-op")
-        )
+        #expect(navigation.selectedTab == .scan)
+        let request = try #require(navigation.pendingScanLaunchRequest)
+        #expect(request.itemName == "Milk")
+        #expect(request.preferredChainName == "Costco")
     }
 
     @Test
-    func launchScanAllowsMissingPreferredChain() {
-        let navigationModel = AppNavigationModel()
+    func launchScan_allowsNilPreferredStore() throws {
+        let navigation = AppNavigationModel()
 
-        navigationModel.launchScan(itemName: "Bananas")
+        navigation.launchScan(itemName: "Eggs")
 
-        #expect(
-            navigationModel.pendingScanLaunchRequest ==
-            ScanLaunchRequest(itemName: "Bananas", preferredChainName: nil)
-        )
+        let request = try #require(navigation.pendingScanLaunchRequest)
+        #expect(request == ScanLaunchRequest(itemName: "Eggs", preferredChainName: nil))
     }
 
     @Test
-    func consumingLaunchRequestClearsPendingState() {
-        let navigationModel = AppNavigationModel()
-        navigationModel.launchScan(itemName: "Yogurt", preferredChainName: "Sobeys")
+    func consumePendingScanLaunchRequest_returnsRequestOnceAndClearsIt() throws {
+        let navigation = AppNavigationModel()
+        navigation.launchScan(itemName: "Bread", preferredChainName: "Walmart")
 
-        let request = navigationModel.consumePendingScanLaunchRequest()
+        let first = try #require(navigation.consumePendingScanLaunchRequest())
+        let second = navigation.consumePendingScanLaunchRequest()
 
-        #expect(request == ScanLaunchRequest(itemName: "Yogurt", preferredChainName: "Sobeys"))
-        #expect(navigationModel.pendingScanLaunchRequest == nil)
+        #expect(first == ScanLaunchRequest(itemName: "Bread", preferredChainName: "Walmart"))
+        #expect(second == nil)
+        #expect(navigation.pendingScanLaunchRequest == nil)
+    }
+
+    @Test
+    func consumePendingScanLaunchRequest_returnsNil_givenNoPendingRequest() {
+        let navigation = AppNavigationModel()
+
+        #expect(navigation.consumePendingScanLaunchRequest() == nil)
     }
 
     @Test

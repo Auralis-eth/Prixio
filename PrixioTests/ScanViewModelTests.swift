@@ -5,6 +5,9 @@ import Testing
 import UIKit
 @testable import Prixio
 
+// Serialized: these tests construct in-memory SwiftData ModelContainers and a @MainActor view model.
+// Running them in parallel races SwiftData/Core Data global state and crashes the test runner.
+@Suite(.serialized)
 @MainActor
 struct ScanViewModelTests {
     @Test
@@ -97,6 +100,96 @@ struct ScanViewModelTests {
     }
 
     @Test
+    func receiptModeExtractsAndPresentsReviewWithoutPriceEntry() async throws {
+        let sessionStore = ScanSessionStore()
+        let modelContainer = try ModelContainer(
+            for: PriceEntry.self, ReceiptCapture.self, ReceiptLineItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let modelContext = ModelContext(modelContainer)
+        let extractedReceipt = LLMReceiptResult(
+            storeName: "Costco",
+            purchaseDate: nil,
+            subtotal: nil,
+            tax: nil,
+            discountTotal: nil,
+            depositTotal: nil,
+            total: nil,
+            lineItems: [
+                LLMReceiptLine(rawText: "MILK 4.99", itemName: "Milk", price: Decimal(string: "4.99"), quantity: 1, unit: .each, lowConfidence: false)
+            ],
+            issues: []
+        )
+        let viewModel = ScanViewModel(
+            imageExtractor: FakePriceImageExtractor(outcome: .success(.fixture())),
+            storeService: FakeStoreLookupProvider(candidates: []),
+            receiptExtractor: FakeReceiptImageExtractor(outcome: .success(extractedReceipt))
+        )
+        viewModel.scanMode = .receipt
+        let image = makeImage()
+
+        await viewModel.processPickedImage(
+            image,
+            sessionStore: sessionStore,
+            currentLocation: nil,
+            modelContext: modelContext,
+            source: .camera
+        )
+
+        // The price-tag review flow must not be triggered for a receipt capture.
+        #expect(viewModel.isShowingConfirmationSheet == false)
+        #expect(viewModel.isProcessingOCR == false)
+        #expect(viewModel.draft.itemName.isEmpty)
+        // The receipt review surface is presented instead.
+        #expect(viewModel.receiptUnderReview != nil)
+
+        let receipts = try modelContext.fetch(FetchDescriptor<ReceiptCapture>())
+        #expect(receipts.count == 1)
+        #expect(receipts.first?.source == .cameraPhoto)
+        #expect(receipts.first?.reviewState == .pendingReview)
+        #expect(receipts.first?.lineItems.count == 1)
+        // A receipt capture must never create a PriceEntry directly.
+        #expect(try modelContext.fetch(FetchDescriptor<PriceEntry>()).isEmpty)
+    }
+
+    @Test
+    func longPressShortcutSwitchesToReceiptModeWithToast() async throws {
+        let viewModel = ScanViewModel()
+        #expect(viewModel.scanMode == .priceTag)
+
+        viewModel.switchToReceiptModeViaShortcut()
+
+        #expect(viewModel.scanMode == .receipt)
+        #expect(viewModel.showToast)
+        #expect(viewModel.toastMessage == "Receipt mode")
+    }
+
+    @Test
+    func longPressShortcutIsNoOpWhenAlreadyInReceiptMode() async throws {
+        let viewModel = ScanViewModel()
+        viewModel.scanMode = .receipt
+
+        viewModel.switchToReceiptModeViaShortcut()
+
+        #expect(viewModel.scanMode == .receipt)
+        #expect(viewModel.showToast == false)
+    }
+
+    @Test
+    func longPressShortcutIsNoOpDuringReview() async throws {
+        let viewModel = ScanViewModel()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.systemPurple.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        viewModel.beginImageReview(image, source: .camera)
+
+        viewModel.switchToReceiptModeViaShortcut()
+
+        #expect(viewModel.scanMode == .priceTag)
+    }
+
+    @Test
     func dismissingSheetWithoutExplicitActionStillResetsCaptureState() async throws {
         let viewModel = ScanViewModel()
         let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
@@ -116,6 +209,37 @@ struct ScanViewModelTests {
         #expect(viewModel.draft.itemName.isEmpty)
     }
 
+    @Test
+    func priceTagExtractionFailureTearsDownTheConfirmationSheet() async throws {
+        // On a failed extraction the view model must not leave the user stranded on the blank
+        // confirmation sheet that `beginImageReview` opened in anticipation of a result — it shows the
+        // error toast and resets capture state instead.
+        let sessionStore = ScanSessionStore()
+        let modelContainer = try ModelContainer(
+            for: PriceEntry.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let viewModel = ScanViewModel(
+            imageExtractor: FakePriceImageExtractor(outcome: .failure(.generationFailed)),
+            storeService: FakeStoreLookupProvider(candidates: [])
+        )
+
+        await viewModel.processPickedImage(
+            makeImage(),
+            sessionStore: sessionStore,
+            currentLocation: nil,
+            modelContext: ModelContext(modelContainer),
+            source: .photoLibrary
+        )
+
+        #expect(viewModel.isShowingConfirmationSheet == false)
+        #expect(viewModel.isProcessingOCR == false)
+        #expect(viewModel.capturedImage == nil)
+        #expect(viewModel.previewImage == nil)
+        #expect(viewModel.showToast)
+        #expect(viewModel.toastMessage == ImagePriceExtractionFailure.generationFailed.userMessage)
+    }
+
     private func makeImage() -> UIImage {
         UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
             UIColor.systemGreen.setFill()
@@ -132,6 +256,14 @@ private struct FakePriceImageExtractor: PriceImageExtracting {
         context: ScanPromptContext,
         tools: [any Tool]
     ) async -> ImagePriceExtractionOutcome {
+        outcome
+    }
+}
+
+private struct FakeReceiptImageExtractor: ReceiptImageExtracting {
+    let outcome: ReceiptExtractionOutcome
+
+    func extractReceipt(from image: UIImage) async -> ReceiptExtractionOutcome {
         outcome
     }
 }

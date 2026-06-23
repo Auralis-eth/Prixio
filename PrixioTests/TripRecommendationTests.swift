@@ -143,9 +143,13 @@ struct TripRecommendationTests {
 
         viewModel.recompute(items: items, entries: entries, userLocation: nil, now: now)
 
+        // The 40-day-old milk price is stale, so it's reported in `staleCount` but does NOT vote for
+        // the winner — only the two fresh Co-op prices do. (Previously a stale price inflated the
+        // winner count, letting a months-old scan drive a confident recommendation.) Co-op still wins
+        // 2 of 3, which clears the 60% threshold.
         #expect(
             viewModel.tripRecommendation ==
-            .strongWinner(chainID: nil, chainName: "Co-op", count: 3, total: 3, staleCount: 1)
+            .strongWinner(chainID: nil, chainName: "Co-op", count: 2, total: 3, staleCount: 1)
         )
     }
 
