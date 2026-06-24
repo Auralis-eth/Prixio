@@ -8,6 +8,7 @@ final class PriceEntry {
     var capturedAt: Date
     var itemNameRaw: String
     var itemNameNormalized: String
+    var brand: String?
     var priceValue: Decimal
     var currencyCode: String
     var unitType: UnitType
@@ -34,6 +35,7 @@ final class PriceEntry {
         capturedAt: Date,
         itemNameRaw: String,
         itemNameNormalized: String,
+        brand: String? = nil,
         priceValue: Decimal,
         currencyCode: String = "CAD",
         unitType: UnitType,
@@ -59,6 +61,7 @@ final class PriceEntry {
         self.capturedAt = capturedAt
         self.itemNameRaw = itemNameRaw
         self.itemNameNormalized = itemNameNormalized
+        self.brand = brand
         self.priceValue = priceValue
         self.currencyCode = currencyCode
         self.unitType = unitType

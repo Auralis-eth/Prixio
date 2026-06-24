@@ -99,7 +99,9 @@ final class CompareViewModel: ObservableObject {
         now: Date = .now
     ) -> ItemComparisonState {
         let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
-        let matchingEntries = entries.filter { $0.itemNameNormalized == normalizedKey }
+        let matchingEntries = entries.filter {
+            ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.itemNameNormalized)
+        }
         let candidateEntries = comparableEntries(from: matchingEntries, mode: mode)
 
         guard !candidateEntries.isEmpty else {

@@ -39,6 +39,46 @@ enum ItemKeyNormalizer {
         return normalizedTokens.joined(separator: " ")
     }
 
+    /// The normalized tokens of a value — the same folding/unit-stripping/singularizing pipeline as
+    /// `normalize`, then split on spaces. An empty or unit-only value yields no tokens.
+    static func tokens(_ value: String) -> [String] {
+        let normalized = normalize(value)
+        guard !normalized.isEmpty else {
+            return []
+        }
+        return normalized.split(separator: " ").map(String.init)
+    }
+
+    /// Whether a (possibly generic) shopping/query item matches a stored entry's item, allowing a
+    /// generic query to roll up more-specific products. True when the keys are identical, or when
+    /// every token of the query also appears in the entry **and** the query's head noun (its last
+    /// token) is the entry's head noun — so "sour cream" matches "Daisy Sour Cream", "butter"
+    /// matches "Salted Butter", and "milk" matches "Almond Milk", but the generic word being a mere
+    /// modifier in the entry is rejected ("milk" ✗ "milk chocolate", "cream" ✗ "cream cheese"), a
+    /// more-specific query never matches a broader entry ("daisy sour cream" ✗ "sour cream"), and
+    /// unrelated items never match.
+    ///
+    /// The head-noun anchor mirrors `PriceInsightEngine.areSubstitutable`. Known limitation: compound
+    /// products whose head noun *is* the generic word still match ("peanut butter" under "butter"),
+    /// since separating them needs lexical knowledge this normalizer doesn't have.
+    ///
+    /// Inputs may be raw or already-normalized; both sides are normalized internally.
+    static func matches(queryKey: String, entryKey: String) -> Bool {
+        let queryTokens = tokens(queryKey)
+        let entryTokens = tokens(entryKey)
+        guard let queryHead = queryTokens.last else {
+            // An empty query only matches an (equally empty) entry — never rolls up real products.
+            return entryTokens.isEmpty
+        }
+        // The query's head noun must also be the entry's head noun, so a generic query only rolls up
+        // products that refine it (brand/adjective in front), not ones that merely mention the word.
+        guard entryTokens.last == queryHead else {
+            return false
+        }
+        let entrySet = Set(entryTokens)
+        return queryTokens.allSatisfy(entrySet.contains)
+    }
+
     private static func isCompactSizeToken(_ token: String) -> Bool {
         token.range(
             of: #"^\d+(?:g|kg|ml|l|oz|lb|lbs|pk|ct)$"#,
@@ -55,6 +95,16 @@ enum ItemKeyNormalizer {
         }
         if token.hasSuffix("ies"), token.count > 4 {
             return String(token.dropLast(3)) + "y"
+        }
+        // Plurals that add "-es" to a singular ending in -o (tomatoes → tomato, potatoes → potato).
+        if token.hasSuffix("oes"), token.count > 4 {
+            return String(token.dropLast(2))
+        }
+        // Plurals that add "-es" after a sibilant (peaches → peach, dishes → dish, boxes → box,
+        // glasses → glass). Restricted to these endings so "houses"/"roses" aren't over-stemmed.
+        if token.hasSuffix("ches") || token.hasSuffix("shes") ||
+            token.hasSuffix("xes") || token.hasSuffix("zes") || token.hasSuffix("sses") {
+            return String(token.dropLast(2))
         }
         return String(token.dropLast())
     }

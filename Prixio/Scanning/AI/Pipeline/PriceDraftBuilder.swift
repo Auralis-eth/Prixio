@@ -26,6 +26,7 @@ enum PriceDraftBuilder {
         }
         draft.quantity = result.quantity
         draft.itemName = result.itemName ?? ""
+        draft.brand = result.brand ?? ""
         draft.priceCandidates = result.priceCandidates.enumerated().map { index, candidate in
             PriceCandidate(
                 label: candidate.label,

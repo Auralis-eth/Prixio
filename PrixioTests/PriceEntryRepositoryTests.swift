@@ -79,6 +79,49 @@ struct PriceEntryRepositoryTests {
         #expect(try Data(contentsOf: url) == Data([1, 2, 3, 4]))
     }
 
+    @Test
+    func saveEntryPersistsTrimmedBrand() throws {
+        let context = try makeContext()
+        var draft = validDraft()
+        draft.brand = "  Compliments  "
+
+        try PriceEntryRepository(context: context).saveEntry(from: draft)
+
+        let entry = try #require(context.fetch(FetchDescriptor<PriceEntry>()).first)
+        #expect(entry.brand == "Compliments")
+    }
+
+    @Test
+    func updateRewritesEditableFieldsAndDerivedKeys() throws {
+        let context = try makeContext()
+        let repository = PriceEntryRepository(context: context)
+        try repository.saveEntry(from: validDraft())
+        let entry = try #require(context.fetch(FetchDescriptor<PriceEntry>()).first)
+
+        try repository.update(
+            entry,
+            itemName: "Salted Butters",
+            brand: "  PC  ",
+            priceValue: Decimal(string: "6.49")!,
+            unitType: .lb,
+            storeChainName: "Sobeys",
+            storeLocationName: "Sobeys Downtown"
+        )
+
+        let updated = try #require(context.fetch(FetchDescriptor<PriceEntry>()).first)
+        #expect(updated.itemNameRaw == "Salted Butters")
+        #expect(updated.itemNameNormalized == ItemKeyNormalizer.normalize("Salted Butters"))
+        #expect(updated.brand == "PC")
+        #expect(updated.priceValue == Decimal(string: "6.49")!)
+        #expect(updated.unitType == .lb)
+        #expect(updated.storeChainNameSnapshot == "Sobeys")
+        #expect(updated.storeLocationNameSnapshot == "Sobeys Downtown")
+
+        // The chain snapshot and storeChainId stay consistent: editing to "Sobeys" links a Sobeys record.
+        let chain = try #require(context.fetch(FetchDescriptor<StoreChain>()).first { $0.name == "Sobeys" })
+        #expect(updated.storeChainId == chain.id)
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(
             for: PriceEntry.self,

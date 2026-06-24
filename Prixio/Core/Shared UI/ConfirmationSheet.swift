@@ -28,6 +28,8 @@ struct ConfirmationSheet: View {
     @State private var isSavingPhotoReference = false
     @State private var photoSaveMessage: String?
     @State private var isShowingPhotoSaveAlert = false
+    @State private var isShowingCustomChainAlert = false
+    @State private var customChainText = ""
 
     var body: some View {
         ScrollView {
@@ -101,6 +103,14 @@ struct ConfirmationSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
+                    fieldTitle("Brand")
+                    TextField("Optional, e.g. PC, Compliments", text: $draft.brand)
+                        .textInputAutocapitalization(.words)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Brand, optional")
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
                     fieldTitle("Price")
                     TextField("0.00", text: $draft.priceText)
                         .keyboardType(.decimalPad)
@@ -164,6 +174,11 @@ struct ConfirmationSheet: View {
                                 draft.storeChainName = chain
                                 draft.storeChainExplicitlySelected = true
                             }
+                        }
+
+                        Button("Custom…") {
+                            customChainText = ""
+                            isShowingCustomChainAlert = true
                         }
                     } label: {
                         HStack {
@@ -235,6 +250,23 @@ struct ConfirmationSheet: View {
         } message: {
             Text(photoSaveMessage ?? "Finished saving the photo.")
         }
+        .alert("Custom Chain", isPresented: $isShowingCustomChainAlert) {
+            TextField("Store chain", text: $customChainText)
+                .textInputAutocapitalization(.words)
+            Button("Set", action: applyCustomChain)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enter a store chain that isn’t in the list.")
+        }
+    }
+
+    private func applyCustomChain() {
+        let name = customChainText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            return
+        }
+        draft.storeChainName = name
+        draft.storeChainExplicitlySelected = true
     }
 
     private func fieldTitle(_ text: String) -> some View {

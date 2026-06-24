@@ -11,6 +11,7 @@ import Foundation
 struct PriceEntryDraft {
     var capturedAt: Date = .now
     var itemName: String = ""
+    var brand: String = ""
     var priceText: String = ""
     var selectedUnit: UnitType?
     var storeChainName: String?

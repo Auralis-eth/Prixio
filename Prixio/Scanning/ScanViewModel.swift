@@ -37,6 +37,21 @@ final class ScanViewModel: ObservableObject {
     @Published var receiptUnderReview: ReceiptCapture?
     @Published private(set) var cameraPreviewRefreshID = UUID()
 
+    /// One captured-but-not-yet-reviewed shot in Quick (toddler) mode. The image is extracted in the
+    /// background; `isProcessing` stays true until extraction finishes (or fails). Reviewed later in a
+    /// batch rather than inline, so the user can keep shooting.
+    struct PendingCapture: Identifiable {
+        let id = UUID()
+        var draft: PriceEntryDraft
+        var image: UIImage?
+        var isProcessing: Bool
+    }
+
+    /// The Quick-mode review queue. Persists across mode switches so captures are never lost before
+    /// the user reviews them.
+    @Published var pendingCaptures: [PendingCapture] = []
+    @Published var isShowingBatchReview = false
+
     private let imageExtractor: any PriceImageExtracting
     private let receiptExtractor: any ReceiptImageExtracting
     private let storeService: any StoreLookupProviding
@@ -107,6 +122,10 @@ final class ScanViewModel: ObservableObject {
     private var inferredStoreCandidate: StoreCandidate?
     private var activeScanID: UUID?
 
+    /// Serializes Quick-mode extraction: each queued capture's on-device extraction is chained after
+    /// the previous one so rapid-fire shutter taps never run concurrent Foundation Models sessions.
+    private var quickCaptureExtractionTask: Task<Void, Never>?
+
     // A shopping-driven launch request can prefill the item and preferred chain before capture.
     // These survive the draft resets in beginImageReview/PriceDraftBuilder so the scan can bias
     // extraction toward the requested item and keep the user's explicit chain selection.
@@ -128,13 +147,13 @@ final class ScanViewModel: ObservableObject {
     }
 
     func loadNearbyStoresIfNeeded(sessionStore: ScanSessionStore, location: CLLocation?) async {
-        if let cached = sessionStore.cachedCandidatesIfFresh(), !cached.isEmpty {
+        if let cached = sessionStore.cachedCandidatesIfFresh(near: location), !cached.isEmpty {
             inferredStoreCandidate = cached.first
             return
         }
 
         let stores = await storeService.fetchNearbyStores(location: location)
-        sessionStore.updateCandidates(stores)
+        sessionStore.updateCandidates(stores, near: location)
         inferredStoreCandidate = stores.first
     }
 
@@ -289,6 +308,18 @@ final class ScanViewModel: ObservableObject {
             return
         }
 
+        // Quick (toddler) mode defers review: queue the shot and extract in the background instead of
+        // opening the confirmation sheet, so the user can keep capturing without interruption.
+        if scanMode == .quickCapture {
+            enqueueQuickCapture(
+                image,
+                sessionStore: sessionStore,
+                currentLocation: currentLocation,
+                modelContext: modelContext
+            )
+            return
+        }
+
         let scanID = UUID()
         activeScanID = scanID
         beginImageReview(image, source: source)
@@ -332,7 +363,7 @@ final class ScanViewModel: ObservableObject {
             guard activeScanID == scanID else {
                 return
             }
-            sessionStore.updateCandidates(stores)
+            sessionStore.updateCandidates(stores, near: currentLocation)
         }
 
         let isReceipt = ReceiptCaptureClassifier.isReceiptOrInvalid(result)
@@ -351,6 +382,139 @@ final class ScanViewModel: ObservableObject {
             draft.storeChainExplicitlySelected = true
         }
         isProcessingOCR = false
+    }
+
+    /// Quick (toddler) mode capture. Appends the shot to `pendingCaptures` immediately so the user
+    /// can keep shooting, then schedules background extraction. Extraction is **serialized** across
+    /// captures via `quickCaptureExtractionTask`: each link awaits the previous one before starting,
+    /// so rapid-fire shutter taps never run concurrent on-device Foundation Models sessions (which
+    /// would contend for the single on-device model and risk memory/thermal pressure). The shot is
+    /// queued before scheduling, so the camera stays live regardless. Never opens the confirmation
+    /// sheet — the queue is reviewed later in a batch via `BatchReviewView`.
+    func enqueueQuickCapture(
+        _ image: UIImage,
+        sessionStore: ScanSessionStore,
+        currentLocation: CLLocation?,
+        modelContext: ModelContext
+    ) {
+        let pending = PendingCapture(
+            draft: PriceEntryDraft(
+                capturedAt: .now,
+                imageData: image.jpegData(compressionQuality: 0.88)
+            ),
+            image: image,
+            isProcessing: true
+        )
+        pendingCaptures.append(pending)
+        let id = pending.id
+
+        let previous = quickCaptureExtractionTask
+        quickCaptureExtractionTask = Task { [weak self] in
+            await previous?.value
+            await self?.extractQuickCapture(
+                id: id,
+                image: image,
+                sessionStore: sessionStore,
+                currentLocation: currentLocation,
+                modelContext: modelContext
+            )
+        }
+    }
+
+    /// Runs on-device extraction for one queued capture and fills in its draft and inferred store.
+    /// Invoked only by the serial `quickCaptureExtractionTask` chain, so it never overlaps another
+    /// extraction. A no-op if the capture was discarded before extraction reached it.
+    private func extractQuickCapture(
+        id: UUID,
+        image: UIImage,
+        sessionStore: ScanSessionStore,
+        currentLocation: CLLocation?,
+        modelContext: ModelContext
+    ) async {
+        let extractionOutcome = await imageExtractor.extractPriceInformation(
+            from: image,
+            context: ScanPromptContext(
+                storeName: sessionStore.lastStoreCandidate?.chainName,
+                expectedItemName: nil
+            ),
+            tools: captureTools(sessionStore: sessionStore, currentLocation: currentLocation, modelContext: modelContext)
+        )
+
+        // Make sure nearby candidates are loaded so the queued draft can carry a store.
+        if sessionStore.nearbyCandidates.isEmpty {
+            let stores = await storeService.fetchNearbyStores(location: currentLocation)
+            sessionStore.updateCandidates(stores, near: currentLocation)
+        }
+
+        guard let index = pendingCaptures.firstIndex(where: { $0.id == id }) else {
+            // Discarded mid-flight; nothing to update.
+            return
+        }
+
+        switch extractionOutcome {
+        case .success(let result):
+            var draft = PriceDraftBuilder.makeDraft(from: result, image: image)
+            draft.imageData = pendingCaptures[index].draft.imageData
+            let isReceipt = ReceiptCaptureClassifier.isReceiptOrInvalid(result)
+            let matched = matchStoreCandidate(
+                from: sessionStore.nearbyCandidates,
+                ocrText: result.relevantText,
+                currentLocation: currentLocation
+            )
+            let inferred = isReceipt ? nil : (matched ?? sessionStore.lastStoreCandidate)
+            applyInferredStore(
+                inferred,
+                to: &draft,
+                ocrText: result.relevantText,
+                nearbyCandidates: sessionStore.nearbyCandidates
+            )
+            pendingCaptures[index].draft = draft
+        case .failure:
+            // Keep the shot (with its image) so the user can complete it by hand during review.
+            break
+        }
+        pendingCaptures[index].isProcessing = false
+    }
+
+    /// Persists one reviewed quick-capture draft and removes it from the queue. Returns `false`
+    /// (leaving the item queued) when the draft isn't complete enough to save or persistence fails.
+    @discardableResult
+    func savePending(id: UUID, context: ModelContext) -> Bool {
+        guard let index = pendingCaptures.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        let draft = pendingCaptures[index].draft
+        guard draft.canSave else {
+            return false
+        }
+        do {
+            try PriceEntryRepository(context: context).saveEntry(from: draft)
+            pendingCaptures.remove(at: index)
+            Haptics.success()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func discardPending(id: UUID) {
+        pendingCaptures.removeAll { $0.id == id }
+    }
+
+    /// A SwiftUI binding into a queued draft, looked up by id so the batch-review editor can mutate it
+    /// in place even as the queue changes around it.
+    func draftBinding(for id: UUID) -> Binding<PriceEntryDraft> {
+        Binding(
+            get: { [weak self] in
+                self?.pendingCaptures.first(where: { $0.id == id })?.draft ?? PriceEntryDraft()
+            },
+            set: { [weak self] newValue in
+                guard let self, let index = self.pendingCaptures.firstIndex(where: { $0.id == id }) else {
+                    return
+                }
+                self.pendingCaptures[index].draft = newValue
+            }
+        )
     }
 
     /// The model-callable tools registered on the Capture extraction session. The model may
@@ -481,6 +645,17 @@ final class ScanViewModel: ObservableObject {
 
     // Widened from `private` to internal so the store-matching logic can be unit-tested directly.
     func applyInferredStore(from candidate: StoreCandidate?, ocrText: String, nearbyCandidates: [StoreCandidate]) {
+        applyInferredStore(candidate, to: &draft, ocrText: ocrText, nearbyCandidates: nearbyCandidates)
+    }
+
+    /// Applies an inferred store onto an arbitrary draft (the live `draft` for inline review, or a
+    /// queued draft for Quick mode), filling only fields the user hasn't already set.
+    func applyInferredStore(
+        _ candidate: StoreCandidate?,
+        to draft: inout PriceEntryDraft,
+        ocrText: String,
+        nearbyCandidates: [StoreCandidate]
+    ) {
         guard let candidate else {
             return
         }

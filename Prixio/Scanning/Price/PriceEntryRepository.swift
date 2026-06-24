@@ -36,6 +36,42 @@ struct PriceEntryRepository {
         try commit()
     }
 
+    /// Applies user edits to a saved entry. Recomputes the normalized item key and unit price (the
+    /// derived fields that drive matching and comparisons) from the new values, and re-links the
+    /// chain record so the snapshot and `storeChainId` stay consistent. The store *location* is only
+    /// edited as a per-entry snapshot label; the shared `StoreLocation`/coordinates are left intact so
+    /// renaming one entry never silently rewrites other entries captured at the same place.
+    func update(
+        _ entry: PriceEntry,
+        itemName: String,
+        brand: String?,
+        priceValue: Decimal,
+        unitType: UnitType,
+        storeChainName: String?,
+        storeLocationName: String?
+    ) throws {
+        let trimmedChain = storeChainName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedChainName = (trimmedChain?.isEmpty ?? true) ? nil : trimmedChain
+        let chainRecord = try chain(named: resolvedChainName)
+
+        let trimmedBrand = brand?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLocation = storeLocationName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = PriceParsingService.normalize(price: priceValue, unit: unitType, quantity: entry.unitQuantityValue)
+
+        entry.itemNameRaw = itemName.trimmingCharacters(in: .whitespacesAndNewlines)
+        entry.itemNameNormalized = ItemKeyNormalizer.normalize(itemName)
+        entry.brand = (trimmedBrand?.isEmpty ?? true) ? nil : trimmedBrand
+        entry.priceValue = priceValue
+        entry.unitType = unitType
+        entry.normalizedUnitPriceValue = normalized?.0
+        entry.normalizedUnitType = normalized?.1
+        entry.storeChainId = chainRecord?.id
+        entry.storeChainNameSnapshot = resolvedChainName
+        entry.storeLocationNameSnapshot = (trimmedLocation?.isEmpty ?? true) ? nil : trimmedLocation
+
+        try commit()
+    }
+
     func seedChainsIfNeeded() throws {
         let existing = try context.fetch(FetchDescriptor<StoreChain>())
         guard existing.isEmpty else {
@@ -62,10 +98,12 @@ struct PriceEntryRepository {
         let normalized = PriceParsingService.normalize(price: parsedPrice, unit: unit, quantity: draft.quantity)
         let photoPath = try persistPhotoData(draft.imageData, suggestedName: draft.capturedAt)
 
+        let trimmedBrand = draft.brand.trimmingCharacters(in: .whitespacesAndNewlines)
         let entry = PriceEntry(
             capturedAt: draft.capturedAt,
             itemNameRaw: draft.itemName,
             itemNameNormalized: ItemKeyNormalizer.normalize(draft.itemName),
+            brand: trimmedBrand.isEmpty ? nil : trimmedBrand,
             priceValue: parsedPrice,
             unitType: unit,
             unitQuantityValue: draft.quantity,

@@ -54,7 +54,9 @@ enum PriceInsightEngine {
         now: Date = .now
     ) -> BestStoreSuggestion? {
         let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
-        let matchingEntries = allEntries.filter { $0.itemNameNormalized == normalizedKey }
+        let matchingEntries = allEntries.filter {
+            ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.itemNameNormalized)
+        }
         guard !matchingEntries.isEmpty else {
             return nil
         }
@@ -107,7 +109,7 @@ enum PriceInsightEngine {
     ) -> ItemPriceHistory? {
         let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
         let matchingEntries = allEntries
-            .filter { $0.itemNameNormalized == normalizedKey }
+            .filter { ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.itemNameNormalized) }
             .filter { entryMatches(scope: scope, entry: $0) }
         let candidates = comparableEntries(from: matchingEntries, useNormalizedPricing: useNormalizedPricing)
         guard !candidates.isEmpty else {
@@ -215,7 +217,9 @@ enum PriceInsightEngine {
         allEntries: [PriceEntry]
     ) -> [PriceHistoryScope] {
         let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
-        let matching = allEntries.filter { $0.itemNameNormalized == normalizedKey }
+        let matching = allEntries.filter {
+            ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.itemNameNormalized)
+        }
         guard !matching.isEmpty else {
             return [.allStores]
         }
@@ -330,7 +334,9 @@ enum PriceInsightEngine {
         now: Date = .now
     ) -> [String: BasketStorePrice] {
         let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
-        let matching = allEntries.filter { $0.itemNameNormalized == normalizedKey }
+        let matching = allEntries.filter {
+            ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.itemNameNormalized)
+        }
         let candidates = comparableEntries(from: matching, useNormalizedPricing: useNormalizedPricing)
         guard !candidates.isEmpty else {
             return [:]

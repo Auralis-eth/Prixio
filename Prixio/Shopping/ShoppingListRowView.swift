@@ -20,6 +20,12 @@ struct ShoppingListRowView: View {
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(.primary)
 
+                    if let brand = row.brand, !brand.isEmpty {
+                        Text(brand)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+
                     if let quantityNote = row.quantityNote, !quantityNote.isEmpty {
                         Text(quantityNote)
                             .font(.subheadline)

@@ -180,6 +180,24 @@ struct ScanRootView: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $viewModel.isShowingBatchReview) {
+            BatchReviewView(
+                viewModel: viewModel,
+                recentItems: viewModel.recentItems,
+                nearbyCandidates: sessionStore.nearbyCandidates,
+                currentLocation: locationManager.currentLocation,
+                onClose: { viewModel.isShowingBatchReview = false },
+                onSave: { id in
+                    viewModel.savePending(id: id, context: modelContext)
+                },
+                onSearchStores: { query in
+                    await viewModel.searchStores(
+                        query: query,
+                        currentLocation: locationManager.currentLocation
+                    )
+                }
+            )
+        }
         .alert(
             "Couldn’t Save",
             isPresented: Binding(
@@ -342,6 +360,10 @@ struct ScanRootView: View {
 
     private var bottomHUD: some View {
         VStack(spacing: 16) {
+            if !viewModel.pendingCaptures.isEmpty {
+                quickCaptureQueueChip
+            }
+
             if viewModel.isProcessingOCR {
                 ProgressView("Extracting details")
                     .tint(.white)
@@ -439,6 +461,35 @@ struct ScanRootView: View {
                 .background(.black.opacity(0.28), in: Capsule())
             }
         }
+    }
+
+    /// Quick-mode review entry point: shows how many captures are waiting and opens the batch review.
+    /// A spinner replaces the count badge while any capture is still extracting.
+    private var quickCaptureQueueChip: some View {
+        Button {
+            viewModel.isShowingBatchReview = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "tray.full")
+                    .font(.subheadline.weight(.semibold))
+                Text(viewModel.pendingCaptures.count == 1 ? "1 capture to review" : "\(viewModel.pendingCaptures.count) captures to review")
+                    .font(.subheadline.weight(.semibold))
+                if viewModel.pendingCaptures.contains(where: \.isProcessing) {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(.white)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .accessibilityIdentifier("quickCaptureQueueChip")
+        .accessibilityLabel("Review \(viewModel.pendingCaptures.count) captured prices")
     }
 
     private func capturePhoto() {

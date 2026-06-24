@@ -52,11 +52,14 @@ struct ShoppingListRepository {
     func addItem(
         to list: ShoppingList,
         displayName: String,
+        brand: String? = nil,
         quantityNote: String? = nil
     ) throws -> ShoppingListItem {
+        let trimmedBrand = brand?.trimmingCharacters(in: .whitespacesAndNewlines)
         let item = ShoppingListItem(
             itemKey: ItemKeyNormalizer.normalize(displayName),
             displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines),
+            brand: (trimmedBrand?.isEmpty ?? true) ? nil : trimmedBrand,
             quantityNote: quantityNote?.trimmingCharacters(in: .whitespacesAndNewlines),
             list: list
         )

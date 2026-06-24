@@ -13,6 +13,29 @@ struct StoreSelectionSheet: View {
 
     @State private var query = ""
     @State private var searchResults: [StoreCandidate] = []
+    @State private var customChain = ""
+
+    private var trimmedCustomChain: String {
+        customChain.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// True when the active chain is a user-entered name outside the built-in catalog, so the
+    /// custom row can show the checkmark the catalog list otherwise would.
+    private var isCustomChainSelected: Bool {
+        guard let selectedChainName, !selectedChainName.isEmpty else {
+            return false
+        }
+        return !StoreCatalog.commonChains.contains { $0.name == selectedChainName }
+    }
+
+    private func submitCustomChain() {
+        let name = trimmedCustomChain
+        guard !name.isEmpty else {
+            return
+        }
+        onSelectChain(name)
+        customChain = ""
+    }
 
     var body: some View {
         NavigationStack {
@@ -47,6 +70,25 @@ struct StoreSelectionSheet: View {
                                 }
                             }
                         }
+                    }
+                }
+
+                Section("Custom Chain") {
+                    if isCustomChainSelected, let selectedChainName {
+                        HStack {
+                            Text(selectedChainName)
+                            Spacer()
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.teal)
+                        }
+                    }
+
+                    HStack {
+                        TextField("Enter a store chain", text: $customChain)
+                            .textInputAutocapitalization(.words)
+                            .onSubmit(submitCustomChain)
+                        Button("Use", action: submitCustomChain)
+                            .disabled(trimmedCustomChain.isEmpty)
                     }
                 }
 

@@ -5,6 +5,7 @@ struct ShoppingListRowData: Identifiable {
     let itemID: UUID
     let itemKey: String
     let displayName: String
+    let brand: String?
     let quantityNote: String?
     let isDone: Bool
     let suggestion: PriceInsightEngine.BestStoreSuggestion?

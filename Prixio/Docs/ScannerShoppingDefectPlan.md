@@ -39,7 +39,13 @@ How it was tested (Simulator / device / unit / XCUI) and the result.
 
 ## Active Defects
 
-_None. All tracked defects are resolved — see Closed Defects below._
+_None._
+
+The 2026-06-14 scanner/shopping backlog (B1–B8) has been triaged and closed out: B7 shipped, and
+B1/B3/B4/B5/B6/B8 are code-complete pending the device pass tracked in
+`PhysicalDeviceQATestPlan.md` (QA-120–QA-131). The residual store-indicator refresh gap from B2 and
+the B4 repository-parity note now live in `OutstandingWork.md` (item 5). Re-add an entry below using
+the template if a new defect appears.
 
 ---
 

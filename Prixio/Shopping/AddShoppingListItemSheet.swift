@@ -11,17 +11,25 @@ struct AddShoppingListItemSheet: View {
     }
 
     let suggestions: [KnownItemSuggestion]
-    let onAdd: (_ displayName: String, _ quantityNote: String?) -> Void
+    let onAdd: (_ displayName: String, _ brand: String?, _ quantityNote: String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var itemName = ""
+    @State private var brand = ""
     @State private var quantityNote = ""
+    @FocusState private var isItemNameFocused: Bool
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Item") {
                     TextField("Add an item", text: $itemName)
+                        .textInputAutocapitalization(.words)
+                        .focused($isItemNameFocused)
+                }
+
+                Section("Brand") {
+                    TextField("Optional, e.g. PC, Compliments", text: $brand)
                         .textInputAutocapitalization(.words)
                 }
 
@@ -52,8 +60,10 @@ struct AddShoppingListItemSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add") {
                         let trimmedQuantity = quantityNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines)
                         onAdd(
                             itemName.trimmingCharacters(in: .whitespacesAndNewlines),
+                            trimmedBrand.isEmpty ? nil : trimmedBrand,
                             trimmedQuantity.isEmpty ? nil : trimmedQuantity
                         )
                         dismiss()
@@ -63,6 +73,9 @@ struct AddShoppingListItemSheet: View {
             }
         }
         .accessibilityIdentifier("addItemSheet")
+        .onAppear {
+            isItemNameFocused = true
+        }
     }
 
     private var filteredSuggestions: [KnownItemSuggestion] {

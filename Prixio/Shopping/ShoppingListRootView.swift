@@ -85,8 +85,8 @@ struct ShoppingListRootView: View {
         .sheet(isPresented: $isShowingAddSheet) {
             AddShoppingListItemSheet(
                 suggestions: knownItemSuggestions,
-                onAdd: { displayName, quantityNote in
-                    addItem(displayName: displayName, quantityNote: quantityNote)
+                onAdd: { displayName, brand, quantityNote in
+                    addItem(displayName: displayName, brand: brand, quantityNote: quantityNote)
                 }
             )
         }
@@ -236,7 +236,7 @@ struct ShoppingListRootView: View {
         viewModel.recompute(items: items, entries: entries, userLocation: nil)
     }
 
-    private func addItem(displayName: String, quantityNote: String?) {
+    private func addItem(displayName: String, brand: String?, quantityNote: String?) {
         guard let activeList else {
             return
         }
@@ -245,6 +245,7 @@ struct ShoppingListRootView: View {
             _ = try ShoppingListRepository(context: modelContext).addItem(
                 to: activeList,
                 displayName: displayName,
+                brand: brand,
                 quantityNote: quantityNote
             )
         } catch {

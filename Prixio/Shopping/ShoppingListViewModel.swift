@@ -65,6 +65,7 @@ final class ShoppingListViewModel: ObservableObject {
             itemID: item.id,
             itemKey: item.itemKey,
             displayName: item.displayName,
+            brand: item.brand,
             quantityNote: item.quantityNote,
             isDone: item.isDone,
             suggestion: suggestion,

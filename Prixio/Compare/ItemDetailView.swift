@@ -8,7 +8,16 @@ struct ItemDetailView: View {
     let userLocation: CLLocation?
 
     @Environment(\.modelContext) private var modelContext
-    @Query private var itemEntries: [PriceEntry]
+    @Query(sort: \PriceEntry.capturedAt, order: .reverse) private var allEntries: [PriceEntry]
+
+    /// Entries that satisfy this item. A generic name (e.g. "sour cream") rolls up more-specific
+    /// scanned products (e.g. "Daisy Sour Cream") via `ItemKeyNormalizer.matches`. Filtered in memory
+    /// because the token-subset match can't be expressed as a SwiftData `#Predicate`.
+    private var itemEntries: [PriceEntry] {
+        allEntries.filter {
+            ItemKeyNormalizer.matches(queryKey: itemKey, entryKey: $0.itemNameNormalized)
+        }
+    }
 
     @StateObject private var viewModel = CompareViewModel()
     @State private var mode: CompareDisplayMode = .perUnit
@@ -27,13 +36,6 @@ struct ItemDetailView: View {
         self.itemKey = itemKey
         self.displayName = displayName
         self.userLocation = userLocation
-        _itemEntries = Query(
-            filter: #Predicate<PriceEntry> { entry in
-                entry.itemNameNormalized == itemKey
-            },
-            sort: \PriceEntry.capturedAt,
-            order: .reverse
-        )
     }
 
     var body: some View {
@@ -84,12 +86,18 @@ struct ItemDetailView: View {
             recomputeHistory()
         }
         .sheet(item: $selectedEntry) { entry in
-            EntryDetailSheet(entry: entry) {
-                delete(entry: entry)
-            }
+            EntryDetailSheet(
+                entry: entry,
+                onSave: { fields in
+                    save(entry: entry, fields: fields)
+                },
+                onDelete: {
+                    delete(entry: entry)
+                }
+            )
         }
         .alert(
-            "Couldn’t Delete",
+            "Something Went Wrong",
             isPresented: Binding(
                 get: { saveErrorMessage != nil },
                 set: { if !$0 { saveErrorMessage = nil } }
@@ -212,6 +220,23 @@ struct ItemDetailView: View {
             mode: mode,
             scope: historyScope
         )
+    }
+
+    private func save(entry: PriceEntry, fields: EntryDetailSheet.EditedFields) {
+        do {
+            try PriceEntryRepository(context: modelContext).update(
+                entry,
+                itemName: fields.itemName,
+                brand: fields.brand,
+                priceValue: fields.priceValue,
+                unitType: fields.unit,
+                storeChainName: fields.storeChainName,
+                storeLocationName: fields.storeLocationName
+            )
+            recompute()
+        } catch {
+            saveErrorMessage = "Couldn’t save your changes. Please try again."
+        }
     }
 
     private func delete(entry: PriceEntry) {

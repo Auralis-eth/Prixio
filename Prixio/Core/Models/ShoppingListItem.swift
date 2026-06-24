@@ -6,6 +6,7 @@ final class ShoppingListItem {
     var id: UUID
     var itemKey: String
     var displayName: String
+    var brand: String?
     var quantityNote: String?
     var isDone: Bool
     var doneAt: Date?
@@ -17,6 +18,7 @@ final class ShoppingListItem {
         id: UUID = UUID(),
         itemKey: String,
         displayName: String,
+        brand: String? = nil,
         quantityNote: String? = nil,
         isDone: Bool = false,
         doneAt: Date? = nil,
@@ -26,6 +28,7 @@ final class ShoppingListItem {
         self.id = id
         self.itemKey = itemKey
         self.displayName = displayName
+        self.brand = brand
         self.quantityNote = quantityNote
         self.isDone = isDone
         self.doneAt = doneAt

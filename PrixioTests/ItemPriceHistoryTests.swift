@@ -275,6 +275,45 @@ struct ItemPriceHistoryTests {
     }
 
     @Test
+    func genericQueryRollsUpSpecificProductsInHistory() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let entries = [
+            entry(name: "Daisy Sour Cream", price: "3.00", capturedDaysAgo: 30, now: now),
+            entry(name: "Daisy Sour Cream", price: "3.50", capturedDaysAgo: 20, now: now),
+            entry(name: "Compliments Sour Cream", price: "2.50", capturedDaysAgo: 10, now: now)
+        ]
+
+        // A shopper's generic "Sour Cream" rolls up the specific scanned products that satisfy it.
+        let history = try #require(PriceInsightEngine.computeItemHistory(
+            itemKey: "Sour Cream",
+            displayName: "Sour Cream",
+            useNormalizedPricing: false,
+            allEntries: entries,
+            now: now
+        ))
+        #expect(history.observationCount == 3)
+        #expect(history.lowest.price == Decimal(string: "2.50"))
+        #expect(history.highest.price == Decimal(string: "3.50"))
+    }
+
+    @Test
+    func bestStoreForGenericQueryUsesCheapestSpecificProduct() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let entries = [
+            storeEntry(name: "Daisy Sour Cream", price: "3.50", chain: "Walmart", capturedDaysAgo: 5, now: now),
+            storeEntry(name: "Compliments Sour Cream", price: "2.50", chain: "Sobeys", capturedDaysAgo: 3, now: now)
+        ]
+
+        let suggestion = try #require(PriceInsightEngine.computeBestStoreForItem(
+            itemKey: "sour cream",
+            allEntries: entries,
+            now: now
+        ))
+        #expect(suggestion.storeChainName == "Sobeys")
+        #expect(suggestion.packagePrice == Decimal(string: "2.50"))
+    }
+
+    @Test
     func availableScopesIsAllStoresOnlyForASingleStore() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let entries = [
