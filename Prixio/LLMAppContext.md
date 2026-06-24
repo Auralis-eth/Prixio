@@ -193,6 +193,16 @@ After the OCR → image-AI migration this layer no longer parses pixels. It hold
 - `StoreSelectionSheet.swift`
   - UI for confirming or changing inferred store
 
+### Camera Layer (`Scanning/Camera/`)
+
+- `CameraController.swift`
+  - owns `AVCaptureSession`, `AVCapturePhotoOutput`, the torch, startup, and still capture on a private `sessionQueue`
+  - launch-performance features adopted from the WWDC 2026 "responsive camera" guidance: automatic deferred start (`session.automaticallyRunsDeferredStart`, `photoOutput.isDeferredStartEnabled` when supported), responsive capture (`isResponsiveCaptureEnabled`), `maxPhotoQualityPrioritization = .quality`, duplicate-shutter suppression while a capture continuation is in flight, and `isCaptureReady` published after `sessionDidRunDeferredStart`
+  - the torch is owned here (real hardware state), not optimistic view state; the shutter is intentionally NOT gated on `isCaptureReady` so responsive capture keeps early taps useful
+- `CameraPreviewView.swift`
+  - hosts `AVCaptureVideoPreviewLayer` (`resizeAspectFill`), kept non-deferred (`isDeferredStartEnabled = false`); Prixio does not use `AVCaptureVideoDataOutput`
+- Remaining camera-performance work (launch/capture signposts + Instruments measurement, splitting camera prep from store/location loading on the scan-startup critical path, system-pressure observation, and real-device timing/thermal validation) is tracked in `OutstandingWork.md`.
+
 ### Shared UI
 
 - `ConfirmationSheet.swift`

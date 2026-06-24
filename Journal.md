@@ -32,6 +32,13 @@ If you are hunting parsing bugs, start in `PriceParsingService.swift`. That file
 - Parameterized tests over one-off test methods, because parsing logic usually fails as a family of related inputs rather than as isolated snowflakes.
 
 ## The Journey
+### June 19, 2026
+Testing pass: receipt review got a sturdier set of guardrails. The view model is the bouncer between "raw receipt text" and "trusted price history," so the tests now make it prove the door only opens for lines with a real item name and a positive price.
+
+The useful gotcha: a receipt line can look visually harmless while still being dangerous to promote. Whitespace-only names, zero-dollar coupon lines, negative discount lines, and already-promoted rows should all stay out of price history. The tests treat those like bad tickets at the door: polite refusal, no database write, no fake "saved" state.
+
+We also pinned two lifecycle behaviors that are easy to forget: receipt lines render in printed order by `createdAt`, and discarding a receipt should sweep away its line items too. SwiftData cascade rules are like the cleanup crew after closing time; trust them, but still make them clock in on a test.
+
 ### March 13, 2026
 War story: the product-family clustering logic had a bad habit of acting like flavor text was the whole identity of a product. That meant lines such as `Old Dutch Mesquite BBQ` and `Lays Mesquite BBQ` could end up in the same family because `Mesquite` and `BBQ` were shouting loudly in the keyword overlap score.
 

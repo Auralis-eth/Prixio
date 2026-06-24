@@ -387,3 +387,31 @@ The fix was not a grand architecture festival. It was two small seams. `PriceIma
 This pass also tightened `ItemKeyNormalizer`. Compare and shopping matching depend on item keys acting like stable shelf labels, not like raw OCR confetti. Punctuation, casing, whitespace, simple plurals, and unit-size noise now collapse into a more useful canonical key: `Yellow Onions 3 lb` becomes `yellow onion`, while brand-like words stay because sometimes `PC Blue Menu` is the whole point.
 
 The broader lesson: if a test needs the real world to behave, it is not a unit test yet. Give the orchestration a fakeable boundary, then test the grocery-store chaos with fixtures instead of hope.
+
+### Aha! Moment: Flyers Are Remote Shelf Tags With Paper Trails
+
+The flyer-processing direction changes the shape of Prixio's price memory. A shelf scan says, "I stood in front of this product and saw this price." A flyer scrape says, "This public merchant source advertised this price for this region and date range." Those sound similar until you try to compare them. One is local evidence. The other is remote evidence with geography, sale windows, retailer site quirks, and terms-of-use questions riding shotgun.
+
+That is why the first planning pass keeps flyer checks manual. A button in Shopping List or Compare is honest: the user asks Prixio to go look, Prixio returns reviewable candidates, and every candidate carries source provenance. Automatic daily scraping can wait until the data contract is strong enough to deserve that confidence.
+
+The useful mental model: online flyers are not just another scanner input. They are a little market-research agent that turns websites, PDFs, and images into structured product candidates. Treat them like guests at the price-history table, not like they already own the house.
+
+The next decision made the agent less magical and more useful: start with a hard-coded Alberta banner catalog. Real Canadian Superstore, Safeway, Sobeys, Costco, Walmart Supercentre, No Frills, Save-On-Foods, FreshCo, Co-op, and Freson Bros. are not random web targets; they are the first shelves in the remote grocery aisle. That means connectors can be built, tested, and debugged one merchant at a time instead of asking a generic scraper to understand the entire grocery internet on day one.
+
+The first bit of UI is intentionally a POC workbench, not a pretend-finished product. `FlyerProcessingPOCRootView` now sits first in the tab bar with the Alberta banner catalog and a manual `Check Flyers` trigger placeholder. Think of it like setting up the prep table before cooking: the button gives the future coordinator somewhere to plug in, and the source list keeps the feature grounded in the merchants Prixio actually plans to process first.
+
+### War Story: Before You Read the Flyer, Find the Flyer
+
+The source-discovery POC deliberately stops before product extraction. That can feel like walking up to the grocery store and refusing to buy anything, but it is the right first checkpoint. A model cannot parse a flyer the app cannot reliably find, and a price repository should not trust data from a mystery URL wearing a retailer costume.
+
+The new Flyers layer now does the boring-but-important door check: each Alberta banner has official seed URLs, allowed domains, a `URLSession` fetch path, and a Brave Search fallback that only accepts official retailer domains. Third-party flyer indexes stay outside v1. Missing Brave credentials do not break the whole run; they show up as an explicit fallback-unavailable state while known URLs still get checked.
+
+The lesson: source provenance is not paperwork after extraction. It is the bouncer at the front of the pipeline.
+
+### Aha! Moment: A Reachable URL Is Not a Flyer Source
+
+The source-discovery POC now has its next checkpoint written down in `Docs/FlyerSourceDiscoveryHardeningPlan.md`. The big idea is simple: `HTTP 200` is not a product decision. A page can respond, redirect, show an empty JavaScript shell, require a store selection, expose a PDF, hide behind a flyer viewer, or technically work while being useless for extraction.
+
+So the next engineering move is to turn discovery into a source candidate audit. Instead of asking, "did the URL answer?" Prixio should ask, "what did we try, where did it land, what shape is it, why do we trust it, and what extractor would handle it next?" That means snippets, MIME types, final URLs, rejected search results, source-shape classification, and visible debug details in the POC row.
+
+The useful analogy: before the kitchen starts cooking, someone has to inspect the delivery. If the box says "tomatoes" but contains a locked safe, the recipe is not the problem.

@@ -83,3 +83,6 @@ The agent that automates trip planning and rescan nudges.
   stitches the three agents into one loop.
 - A 4th lightweight **Settings agent** is optional (units, distance prefs, data
   hygiene like "merge duplicate stores"), if you want coverage of that screen.
+
+
+
