@@ -2,6 +2,7 @@ import Combine
 import Foundation
 
 enum AppTab: Hashable {
+    case flyers
     case scan
     case compare
     case shopping

@@ -12,6 +12,12 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $navigationModel.selectedTab) {
+            FlyerProcessingPOCRootView()
+                .tag(AppTab.flyers)
+                .tabItem {
+                    Label("Flyers", systemImage: "newspaper")
+                }
+
             ScanRootView()
                 .tag(AppTab.scan)
                 .tabItem {
@@ -19,28 +25,28 @@ struct MainView: View {
                 }
 
             CompareRootView()
-            .tag(AppTab.compare)
-            .tabItem {
-                Label("Compare", systemImage: "basket")
-            }
+                .tag(AppTab.compare)
+                .tabItem {
+                    Label("Compare", systemImage: "basket")
+                }
 
             ShoppingListRootView()
-            .tag(AppTab.shopping)
-            .tabItem {
-                Label("Shopping List", systemImage: "checklist")
-            }
+                .tag(AppTab.shopping)
+                .tabItem {
+                    Label("Shopping List", systemImage: "checklist")
+                }
 
             SpendingRootView()
-            .tag(AppTab.spending)
-            .tabItem {
-                Label("Spending", systemImage: "creditcard")
-            }
+                .tag(AppTab.spending)
+                .tabItem {
+                    Label("Spending", systemImage: "creditcard")
+                }
 
             SettingsView()
-            .tag(AppTab.settings)
-            .tabItem {
-                Label("Settings", systemImage: "gearshape")
-            }
+                .tag(AppTab.settings)
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
         }
     }
 }
