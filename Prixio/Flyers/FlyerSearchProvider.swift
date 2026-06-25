@@ -41,6 +41,10 @@ enum BraveSearchConfiguration {
         return usableAPIKey(bundleValue)
     }
 
+    static var hasUsableAPIKey: Bool {
+        apiKey != nil
+    }
+
     private static func usableAPIKey(_ value: String?) -> String? {
         guard let value else {
             return nil

@@ -32,6 +32,13 @@ If you are hunting parsing bugs, start in `PriceParsingService.swift`. That file
 - Parameterized tests over one-off test methods, because parsing logic usually fails as a family of related inputs rather than as isolated snowflakes.
 
 ## The Journey
+### June 24, 2026
+Flyer discovery got its first proper audit trail. Before this, the POC behaved like a store clerk who only told you "nope" after checking the back room: technically true, deeply unhelpful.
+
+The no-Brave-key test needed sharper breadcrumbs. Known retailer URLs must still be fetched first, and only after those fail or come back unusable should the app say Brave fallback is unavailable. The coordinator now prints a run ID, each banner's official URL attempts, HTTP status, MIME type, byte count, redirects, weak responses, search queries, rejected third-party results, and the exact missing-key branch.
+
+The lesson: network discovery code needs a flight recorder before it needs more cleverness. If the console log can tell the whole story, the next prompt can audit behavior instead of guessing at ghosts behind a spinner.
+
 ### June 19, 2026
 Testing pass: receipt review got a sturdier set of guardrails. The view model is the bouncer between "raw receipt text" and "trusted price history," so the tests now make it prove the door only opens for lines with a real item name and a positive price.
 

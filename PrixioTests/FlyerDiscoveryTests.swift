@@ -30,6 +30,12 @@ struct FlyerDiscoveryTests {
 
         #expect(connectors.count == 10)
         for connector in connectors {
+            guard connector.unsupportedReason == nil else {
+                // Unsupported connectors are stubbed with no official URLs by design.
+                #expect(connector.officialEntryURLs.isEmpty)
+                continue
+            }
+
             #expect(!connector.officialEntryURLs.isEmpty)
             for url in connector.officialEntryURLs {
                 #expect(connector.allows(url: url))
@@ -62,6 +68,7 @@ struct FlyerDiscoveryTests {
         #expect(result.state == .found)
         #expect(result.selectedURL == knownURL)
         #expect(result.method == .knownURL)
+        #expect(result.sourceShape == .html)
         #expect(searchProvider.queries.isEmpty)
     }
 
@@ -206,6 +213,114 @@ struct FlyerDiscoveryTests {
     }
 }
 
+@MainActor
+struct FlyerSourceShapeClassifierTests {
+    @Test
+    func classifiesPDFFromMIMEType() {
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "application/pdf",
+            bodyText: nil,
+            byteCount: 4096
+        )
+        #expect(result.shape == .pdf)
+    }
+
+    @Test
+    func classifiesImageFromMIMEType() {
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "image/jpeg",
+            bodyText: nil,
+            byteCount: 4096
+        )
+        #expect(result.shape == .image)
+    }
+
+    @Test
+    func classifiesJSONFromMIMEType() {
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "application/json",
+            bodyText: "{\"flyer\": true}",
+            byteCount: 32
+        )
+        #expect(result.shape == .json)
+    }
+
+    @Test
+    func classifiesHTMLWithServerRenderedPricesAsUsable() {
+        // Real static flyer content: visible text carries many prices, not just
+        // flyer vocabulary.
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "text/html",
+            bodyText: """
+            <html><body><h1>Weekly flyer deals</h1>\
+            <p>Milk $3.99</p><p>Bread $2.49</p><p>Eggs $4.99</p>\
+            <p>Apples $1.99</p><p>Cheese $7.49</p><p>Coffee $9.99</p></body></html>
+            """,
+            byteCount: 2048
+        )
+        #expect(result.shape == .html)
+        #expect(result.signals.contains("flyer"))
+        #expect(result.signals.contains("prices:6"))
+    }
+
+    @Test
+    func classifiesHTMLWithFlyerWordsButNoPricesAsDynamic() {
+        // Mirrors real grocery SPAs (Safeway, Save-On, etc.): nav/title/footer
+        // chrome carries "Weekly Flyer"/"Deals" but the prices are JS-rendered,
+        // so visible text has no price tokens.
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "text/html",
+            bodyText: """
+            <html><body><nav>Weekly Flyer | Deals | Coupons | Offers | Savings</nav>\
+            <div id="root"></div></body></html>
+            """,
+            byteCount: 4096
+        )
+        #expect(result.shape == .dynamicHTML)
+        #expect(result.signals.contains("prices:0"))
+        #expect(!result.signals.contains("prices:5"))
+    }
+
+    @Test
+    func classifiesHTMLWithFlyerTermsOnlyInScriptsOrMetaAsDynamic() {
+        // Vocabulary lives only in <script> state and <meta> tags; no visible
+        // flyer words and no prices.
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "text/html",
+            bodyText: """
+            <!DOCTYPE html><html><head>\
+            <script>window.__DATA__={title:"weekly flyer deals and savings",coupon:true};</script>\
+            <meta name="description" content="weekly flyer deals, sale, savings, coupon, offer">\
+            </head><body><div id="root"></div></body></html>
+            """,
+            byteCount: 4096
+        )
+        #expect(result.shape == .dynamicHTML)
+        #expect(result.signals == ["prices:0"])
+    }
+
+    @Test
+    func classifiesHTMLShellWithoutFlyerTermsAsDynamic() {
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "text/html",
+            bodyText: "<html><body><div id=\"app\"></div><script src=\"bundle.js\"></script></body></html>",
+            byteCount: 256
+        )
+        #expect(result.shape == .dynamicHTML)
+        #expect(result.signals == ["prices:0"])
+    }
+
+    @Test
+    func classifiesUnknownWhenNonTextAndNoBody() {
+        let result = FlyerSourceShapeClassifier.classify(
+            mimeType: "application/octet-stream",
+            bodyText: nil,
+            byteCount: 4096
+        )
+        #expect(result.shape == .unknown)
+    }
+}
+
 private enum FakeFlyerError: Error {
     case unavailable
 }
@@ -256,7 +371,10 @@ private extension FlyerFetchedDocument {
             finalURL: url,
             statusCode: 200,
             mimeType: "text/html",
-            byteCount: 128
+            byteCount: 128,
+            sourceShape: .html,
+            contentSnippet: "Weekly flyer deals",
+            usefulnessSignals: ["flyer", "deal"]
         )
     }
 }

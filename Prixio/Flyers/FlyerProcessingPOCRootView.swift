@@ -104,6 +104,11 @@ private struct FlyerDiscoveryResultRow: View {
                 LabeledContent("Method", value: method.rawValue)
                     .font(.caption)
             }
+
+            if let sourceShape = result.sourceShape {
+                LabeledContent("Source shape", value: sourceShape.label)
+                    .font(.caption)
+            }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)

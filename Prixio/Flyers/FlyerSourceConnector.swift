@@ -67,12 +67,10 @@ enum FlyerSourceConnectorCatalog {
         case .costco:
             return connector(
                 banner: banner,
-                urls: ["https://www.costco.ca/coupons.html"],
-                allowedDomains: ["costco.ca"],
-                queries: [
-                    "Costco Canada warehouse savings Alberta official",
-                    "Costco coupons Alberta warehouse savings official"
-                ]
+                urls: [],
+                allowedDomains: [],
+                queries: [],
+                unsupportedReason: "No accessible public grocery flyer source for v1; Costco only exposes a JS coupon shell."
             )
         case .walmartSupercentre:
             return connector(
