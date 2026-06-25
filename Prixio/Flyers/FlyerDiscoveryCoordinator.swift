@@ -7,6 +7,7 @@ enum FlyerDiscoveryMethod: String, Equatable {
 
 enum FlyerDiscoveryState: Equatable {
     case found
+    case needsRenderedExtraction
     case fallbackUnavailable
     case unsupported
     case failed
@@ -15,6 +16,8 @@ enum FlyerDiscoveryState: Equatable {
         switch self {
         case .found:
             "Found"
+        case .needsRenderedExtraction:
+            "Needs rendered extraction"
         case .fallbackUnavailable:
             "Fallback unavailable"
         case .unsupported:
@@ -80,10 +83,11 @@ final class FlyerDiscoveryCoordinator {
         }
 
         let foundCount = results.filter { $0.state == .found }.count
+        let needsRenderedExtractionCount = results.filter { $0.state == .needsRenderedExtraction }.count
         let fallbackUnavailableCount = results.filter { $0.state == .fallbackUnavailable }.count
         let failedCount = results.filter { $0.state == .failed }.count
         let unsupportedCount = results.filter { $0.state == .unsupported }.count
-        logger.log("run=\(runID) phase=finish found=\(foundCount) fallbackUnavailable=\(fallbackUnavailableCount) failed=\(failedCount) unsupported=\(unsupportedCount)")
+        logger.log("run=\(runID) phase=finish found=\(foundCount) needsRenderedExtraction=\(needsRenderedExtractionCount) fallbackUnavailable=\(fallbackUnavailableCount) failed=\(failedCount) unsupported=\(unsupportedCount)")
 
         return results
     }
@@ -103,18 +107,21 @@ final class FlyerDiscoveryCoordinator {
             )
         }
 
-        if let knownURLResult = await firstUsableKnownURL(for: connector, runID: runID) {
+        let knownURLResult = await firstUsableKnownURL(for: connector, runID: runID)
+        if let knownURLResult, knownURLResult.state == .found {
             logger.log("run=\(runID) banner=\(bannerLabel) phase=banner-finish state=\(knownURLResult.state.label) method=\(knownURLResult.method?.rawValue ?? "none") shape=\(knownURLResult.sourceShape?.rawValue ?? "none") selectedURL=\(knownURLResult.selectedURL?.absoluteString ?? "none") message=\(knownURLResult.message)")
             return knownURLResult
         }
 
         let fallbackResult = await discoverWithSearchFallback(for: connector, runID: runID)
-        logger.log("run=\(runID) banner=\(bannerLabel) phase=banner-finish state=\(fallbackResult.state.label) method=\(fallbackResult.method?.rawValue ?? "none") shape=\(fallbackResult.sourceShape?.rawValue ?? "none") selectedURL=\(fallbackResult.selectedURL?.absoluteString ?? "none") message=\(fallbackResult.message)")
-        return fallbackResult
+        let result = bestResult(fallbackResult, fallback: knownURLResult)
+        logger.log("run=\(runID) banner=\(bannerLabel) phase=banner-finish state=\(result.state.label) method=\(result.method?.rawValue ?? "none") shape=\(result.sourceShape?.rawValue ?? "none") selectedURL=\(result.selectedURL?.absoluteString ?? "none") message=\(result.message)")
+        return result
     }
 
     private func firstUsableKnownURL(for connector: FlyerSourceConnector, runID: String) async -> FlyerDiscoveryResult? {
         let bannerLabel = logLabel(for: connector.banner)
+        var weakResult: FlyerDiscoveryResult?
         for url in connector.officialEntryURLs {
             guard connector.allows(url: url) else {
                 logger.log("run=\(runID) banner=\(bannerLabel) phase=known-url-rejected reason=domain-not-allowed attemptedURL=\(url.absoluteString)")
@@ -127,6 +134,19 @@ final class FlyerDiscoveryCoordinator {
                 logger.log("run=\(runID) banner=\(bannerLabel) phase=known-url-fetch-finish attemptedURL=\(url.absoluteString) finalURL=\(document.finalURL.absoluteString) status=\(document.statusCode) mime=\(document.mimeType ?? "unknown") bytes=\(document.byteCount) shape=\(document.sourceShape.rawValue) usable=\(document.isUsable) signals=\(signalsLabel(for: document)) snippet=\(snippetLabel(for: document))")
                 guard document.isUsable else {
                     logger.log("run=\(runID) banner=\(bannerLabel) phase=known-url-unusable reason=\(unusableReason(for: document)) attemptedURL=\(url.absoluteString)")
+                    continue
+                }
+
+                guard isExtractableSource(document.sourceShape) else {
+                    logger.log("run=\(runID) banner=\(bannerLabel) phase=known-url-weak reason=requires-rendered-extraction attemptedURL=\(url.absoluteString) finalURL=\(document.finalURL.absoluteString) shape=\(document.sourceShape.rawValue)")
+                    weakResult = weakResult ?? FlyerDiscoveryResult(
+                        banner: connector.banner,
+                        state: .needsRenderedExtraction,
+                        selectedURL: document.finalURL,
+                        method: .knownURL,
+                        sourceShape: document.sourceShape,
+                        message: "Official source is reachable but requires rendered extraction before prices can be read."
+                    )
                     continue
                 }
 
@@ -145,7 +165,7 @@ final class FlyerDiscoveryCoordinator {
         }
 
         logger.log("run=\(runID) banner=\(bannerLabel) phase=known-urls-exhausted")
-        return nil
+        return weakResult
     }
 
     private func discoverWithSearchFallback(for connector: FlyerSourceConnector, runID: String) async -> FlyerDiscoveryResult {
@@ -173,6 +193,11 @@ final class FlyerDiscoveryCoordinator {
                         logger.log("run=\(runID) banner=\(bannerLabel) phase=search-result-fetch-finish attemptedURL=\(searchResult.url.absoluteString) finalURL=\(document.finalURL.absoluteString) status=\(document.statusCode) mime=\(document.mimeType ?? "unknown") bytes=\(document.byteCount) shape=\(document.sourceShape.rawValue) usable=\(document.isUsable) signals=\(signalsLabel(for: document)) snippet=\(snippetLabel(for: document))")
                         guard document.isUsable else {
                             logger.log("run=\(runID) banner=\(bannerLabel) phase=search-result-unusable reason=\(unusableReason(for: document)) attemptedURL=\(searchResult.url.absoluteString)")
+                            continue
+                        }
+
+                        guard isExtractableSource(document.sourceShape) else {
+                            logger.log("run=\(runID) banner=\(bannerLabel) phase=search-result-weak reason=requires-rendered-extraction attemptedURL=\(searchResult.url.absoluteString) finalURL=\(document.finalURL.absoluteString) shape=\(document.sourceShape.rawValue)")
                             continue
                         }
 
@@ -222,6 +247,29 @@ final class FlyerDiscoveryCoordinator {
         )
     }
 
+    private func bestResult(_ result: FlyerDiscoveryResult, fallback: FlyerDiscoveryResult?) -> FlyerDiscoveryResult {
+        if result.state == .found {
+            return result
+        }
+
+        if let fallback, fallback.state == .needsRenderedExtraction {
+            if result.state == .fallbackUnavailable {
+                return FlyerDiscoveryResult(
+                    banner: fallback.banner,
+                    state: fallback.state,
+                    selectedURL: fallback.selectedURL,
+                    method: fallback.method,
+                    sourceShape: fallback.sourceShape,
+                    message: "\(fallback.message) Brave fallback is unavailable because BRAVE_SEARCH_API_KEY is not configured."
+                )
+            }
+
+            return fallback
+        }
+
+        return result
+    }
+
     private func rankedSearchResults(
         _ results: [FlyerSearchResult],
         for connector: FlyerSourceConnector
@@ -255,6 +303,15 @@ final class FlyerDiscoveryCoordinator {
 
     private func hostLabel(for url: URL) -> String {
         url.host ?? url.absoluteString
+    }
+
+    private func isExtractableSource(_ shape: FlyerSourceShape) -> Bool {
+        switch shape {
+        case .html, .pdf, .image, .json:
+            true
+        case .dynamicHTML, .unknown:
+            false
+        }
     }
 
     private func logLabel(for banner: FlyerBanner) -> String {

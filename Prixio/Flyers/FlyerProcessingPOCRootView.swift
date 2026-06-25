@@ -118,6 +118,8 @@ private struct FlyerDiscoveryResultRow: View {
         switch result.state {
         case .found:
             "checkmark.circle.fill"
+        case .needsRenderedExtraction:
+            "curlybraces.square"
         case .fallbackUnavailable:
             "key.slash"
         case .unsupported:
@@ -131,6 +133,8 @@ private struct FlyerDiscoveryResultRow: View {
         switch result.state {
         case .found:
             .green
+        case .needsRenderedExtraction:
+            .blue
         case .fallbackUnavailable:
             .orange
         case .unsupported:

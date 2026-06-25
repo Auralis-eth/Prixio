@@ -59,7 +59,12 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
 
     private var completedSummary: String {
         let foundCount = results.filter { $0.state == .found }.count
+        let renderedCount = results.filter { $0.state == .needsRenderedExtraction }.count
         let totalCount = results.count
-        return "Found official sources for \(foundCount) of \(totalCount) banners."
+        if renderedCount > 0 {
+            return "Found extractable sources for \(foundCount) of \(totalCount) banners; \(renderedCount) need rendered extraction."
+        }
+
+        return "Found extractable official sources for \(foundCount) of \(totalCount) banners."
     }
 }

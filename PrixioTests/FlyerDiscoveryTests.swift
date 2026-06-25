@@ -73,6 +73,88 @@ struct FlyerDiscoveryTests {
     }
 
     @Test
+    func coordinatorUsesBraveFallback_whenKnownURLIsDynamicHTMLAndSearchResultIsExtractable() async throws {
+        let connector = makeConnector(
+            officialURLs: ["https://example-grocer.ca/flyer"],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        let knownURL = try #require(connector.officialEntryURLs.first)
+        let searchURL = try #require(URL(string: "https://www.example-grocer.ca/weekly-deals.json"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            knownURL: .success(.dynamicHTML(url: knownURL)),
+            searchURL: .success(.json(url: searchURL))
+        ])
+        let searchProvider = FakeFlyerSearchProvider(results: [
+            FlyerSearchResult(title: "Example Grocer Weekly Flyer JSON", url: searchURL, description: "Alberta deals")
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.state == .found)
+        #expect(result.selectedURL == searchURL)
+        #expect(result.method == .braveSearch)
+        #expect(result.sourceShape == .json)
+        #expect(searchProvider.queries == ["Example Grocer Alberta flyer official"])
+    }
+
+    @Test
+    func coordinatorReportsRenderedExtractionNeeded_whenKnownURLIsDynamicHTMLAndFallbackIsMissingKey() async throws {
+        let connector = makeConnector(
+            officialURLs: ["https://example-grocer.ca/flyer"],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        let knownURL = try #require(connector.officialEntryURLs.first)
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            knownURL: .success(.dynamicHTML(url: knownURL))
+        ])
+        let searchProvider = FakeFlyerSearchProvider(error: FlyerSearchError.missingAPIKey)
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.state == .needsRenderedExtraction)
+        #expect(result.selectedURL == knownURL)
+        #expect(result.method == .knownURL)
+        #expect(result.sourceShape == .dynamicHTML)
+        #expect(result.message.contains("rendered extraction"))
+        #expect(result.message.contains("BRAVE_SEARCH_API_KEY"))
+    }
+
+    @Test
+    func coordinatorPreservesRedirectFinalURLFromKnownSource() async throws {
+        let connector = makeConnector(
+            officialURLs: ["https://example-grocer.ca/flyer"],
+            allowedDomains: ["example-grocer.ca"]
+        )
+        let attemptedURL = try #require(connector.officialEntryURLs.first)
+        let finalURL = try #require(URL(string: "https://www.example-grocer.ca/en/weekly-flyer"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            attemptedURL: .success(.usable(url: finalURL))
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: FakeFlyerSearchProvider(results: [])
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.state == .found)
+        #expect(result.selectedURL == finalURL)
+    }
+
+    @Test
     func coordinatorUsesBraveFallback_whenKnownURLFailsAndOfficialSearchResultWorks() async throws {
         let connector = makeConnector(
             officialURLs: ["https://example-grocer.ca/flyer"],
@@ -100,6 +182,98 @@ struct FlyerDiscoveryTests {
         #expect(result.selectedURL == searchURL)
         #expect(result.method == .braveSearch)
         #expect(searchProvider.queries == ["Example Grocer Alberta flyer official"])
+    }
+
+    @Test
+    func coordinatorTriesAllKnownURLsBeforeSearchFallback() async throws {
+        let connector = makeConnector(
+            officialURLs: [
+                "https://example-grocer.ca/flyer",
+                "https://example-grocer.ca/deals"
+            ],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        let firstURL = try #require(connector.officialEntryURLs.first)
+        let secondURL = try #require(connector.officialEntryURLs.dropFirst().first)
+        let searchURL = try #require(URL(string: "https://www.example-grocer.ca/weekly-deals"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            firstURL: .failure(FakeFlyerError.unavailable),
+            secondURL: .success(.unusable(url: secondURL, statusCode: 404, byteCount: 256)),
+            searchURL: .success(.usable(url: searchURL))
+        ])
+        let searchProvider = FakeFlyerSearchProvider(results: [
+            FlyerSearchResult(title: "Example Grocer Weekly Flyer", url: searchURL, description: "Alberta deals")
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(fetcher.requestedURLs == [firstURL, secondURL, searchURL])
+        #expect(result.state == .found)
+        #expect(result.selectedURL == searchURL)
+    }
+
+    @Test
+    func coordinatorSkipsEmptyKnownURLResponseAndUsesSearchFallback() async throws {
+        let connector = makeConnector(
+            officialURLs: ["https://example-grocer.ca/flyer"],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        let knownURL = try #require(connector.officialEntryURLs.first)
+        let searchURL = try #require(URL(string: "https://www.example-grocer.ca/weekly-deals"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            knownURL: .success(.unusable(url: knownURL, statusCode: 200, byteCount: 0)),
+            searchURL: .success(.usable(url: searchURL))
+        ])
+        let searchProvider = FakeFlyerSearchProvider(results: [
+            FlyerSearchResult(title: "Example Grocer Weekly Flyer", url: searchURL, description: "Alberta deals")
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.state == .found)
+        #expect(result.selectedURL == searchURL)
+        #expect(fetcher.requestedURLs == [knownURL, searchURL])
+    }
+
+    @Test
+    func coordinatorReportsFailed_whenOfficialSearchResultFailsFetch() async throws {
+        let connector = makeConnector(
+            officialURLs: ["https://example-grocer.ca/flyer"],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        let knownURL = try #require(connector.officialEntryURLs.first)
+        let searchURL = try #require(URL(string: "https://www.example-grocer.ca/weekly-deals"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            knownURL: .failure(FakeFlyerError.unavailable),
+            searchURL: .failure(FakeFlyerError.unavailable)
+        ])
+        let searchProvider = FakeFlyerSearchProvider(results: [
+            FlyerSearchResult(title: "Example Grocer Weekly Flyer", url: searchURL, description: "Alberta deals")
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.state == .failed)
+        #expect(result.selectedURL == nil)
+        #expect(fetcher.requestedURLs == [knownURL, searchURL])
     }
 
     @Test
@@ -189,7 +363,7 @@ struct FlyerDiscoveryTests {
 
         #expect(viewModel.runState == .completed)
         #expect(viewModel.results.first?.state == .found)
-        #expect(viewModel.statusSummary == "Found official sources for 1 of 1 banners.")
+        #expect(viewModel.statusSummary == "Found extractable official sources for 1 of 1 banners.")
     }
 
     private func makeConnector(
@@ -375,6 +549,42 @@ private extension FlyerFetchedDocument {
             sourceShape: .html,
             contentSnippet: "Weekly flyer deals",
             usefulnessSignals: ["flyer", "deal"]
+        )
+    }
+
+    static func dynamicHTML(url: URL) -> FlyerFetchedDocument {
+        FlyerFetchedDocument(
+            finalURL: url,
+            statusCode: 200,
+            mimeType: "text/html",
+            byteCount: 4096,
+            sourceShape: .dynamicHTML,
+            contentSnippet: "Weekly flyer app shell",
+            usefulnessSignals: ["prices:0"]
+        )
+    }
+
+    static func json(url: URL) -> FlyerFetchedDocument {
+        FlyerFetchedDocument(
+            finalURL: url,
+            statusCode: 200,
+            mimeType: "application/json",
+            byteCount: 512,
+            sourceShape: .json,
+            contentSnippet: "{\"flyer\":true}",
+            usefulnessSignals: []
+        )
+    }
+
+    static func unusable(url: URL, statusCode: Int, byteCount: Int) -> FlyerFetchedDocument {
+        FlyerFetchedDocument(
+            finalURL: url,
+            statusCode: statusCode,
+            mimeType: "text/html",
+            byteCount: byteCount,
+            sourceShape: .dynamicHTML,
+            contentSnippet: nil,
+            usefulnessSignals: []
         )
     }
 }
