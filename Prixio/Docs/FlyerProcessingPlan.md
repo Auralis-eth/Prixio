@@ -303,8 +303,8 @@ A useful first implementation is now split into milestones:
 1. Add a manual "Check Flyers" action from the Flyers POC tab. Status: implemented.
 2. Hard-code the Alberta banner set listed above as the initial source catalog. Status: implemented.
 3. Implement official source connectors in rank order, with URLSession checks and Brave Search fallback limited to official domains. Status: implemented for source discovery.
-4. Fetch active flyer pages, product pages, images, or PDFs depending on each connector's source shape. Status: source availability check implemented; asset extraction still pending.
-5. Extract product-price candidates using OCR/NLP/computer vision. Status: pending.
+4. Fetch active flyer pages, product pages, images, or PDFs depending on each connector's source shape. Status: implemented. Content acquisition became its own milestone (`FlyerContentAcquisitionPlan.md`) and ships a per-destination router (`FlyerContentAcquisitionRouter`): static HTML/JSON/PDF/image are processed in-app (`StaticFlyerContentAcquirer`), and only JS-rendered (`dynamicHTML`) sources use an on-device rendered fetch (`WebPageFlyerContentAcquirer`). Both produce flyer text + price-token signals. Per the 2026-06-25 audit all ten banners are currently `dynamicHTML`, so they route to the rendered path today; the static path is ready for any destination that returns processable content.
+5. Extract product-price candidates using OCR/NLP/computer vision. Status: pending (now unblocked — rendered flyer content is available).
 6. Match candidates against current shopping-list item keys. Status: pending.
 7. Show a review list with source, confidence, sale dates, geography, and unit price. Status: pending.
 8. Let the user save selected flyer prices or use them for list estimates. Status: pending.

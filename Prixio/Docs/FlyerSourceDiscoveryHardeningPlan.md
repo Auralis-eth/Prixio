@@ -143,6 +143,18 @@ Audit follow-ups before extraction:
 
 ## Debugging Improvements Needed
 
+### Separate Reachability From Extractability
+
+`dynamicHTML` sources must not be treated as fully `found` extraction sources. A 2xx non-empty official page only proves reachability; if the classifier labels it `dynamicHTML`, the result should say the source needs rendered extraction or a client-side JSON/PDF endpoint before product prices can be read.
+
+Fix plan:
+
+- Keep static/extractable shapes (`html`, `pdf`, `image`, `json`) eligible for `found`.
+- Treat `dynamicHTML` and `unknown` as weak source candidates.
+- Continue to Brave fallback when a known official URL is reachable but weak, so search can still find a better official JSON/PDF/flyer endpoint.
+- If no better fallback exists, return the weak candidate as `needsRenderedExtraction` with its selected URL and source shape preserved.
+- Do not start product-price extraction until the downstream contract distinguishes reachable dynamic shells from extractable source candidates.
+
 ### Preserve Attempt Diagnostics
 
 `FlyerDiscoveryResult` should stop reporting only the selected URL and one message. It needs an audit trail.
@@ -254,11 +266,17 @@ Concretely:
 
 1. Extend `FlyerFetchedDocument` with bounded `contentSnippet` or equivalent lightweight metadata. **Done 2026-06-25** — added `sourceShape`, bounded `contentSnippet` (≤300 chars, from a ≤256 KB decoded prefix), and `usefulnessSignals`. `responseHeaders`/`contentLengthHeader` remain deferred.
 2. Add `FlyerSourceShape` and classify sources from MIME type plus simple content signals. **Done 2026-06-25** — `FlyerSourceShape` (`html`/`pdf`/`image`/`json`/`dynamicHTML`/`unknown`) plus a pure `FlyerSourceShapeClassifier` (MIME first, then flyer-term signals; HTML without useful terms → `dynamicHTML`). Six classifier unit tests added.
-3. Add attempt diagnostics so `FlyerDiscoveryResult` can explain every URL and search result it considered. **Pending** — `FlyerDiscoveryResult` now carries `sourceShape`, but the full per-attempt audit trail (all attempted URLs, rejected results, final URLs) is still only in the console log, not the result model.
-4. Update `FlyerProcessingPOCRootView` to show debug details in each result row. **Partial 2026-06-25** — rows now show the source shape; full attempt diagnostics still pending step 3.
-5. Add tests for redirects, unusable HTML shells, PDFs, images, rejected domains, and failure reasons. **Partial 2026-06-25** — PDF/image/JSON/HTML/dynamic-shell classification and rejected domains are covered; redirects and non-2xx failure-reason mapping still pending.
+3. Add attempt diagnostics so `FlyerDiscoveryResult` can explain every URL and search result it considered. **Done 2026-06-25** — added `FlyerDiscoveryAttempt` (method, attempted URL, final URL, status, MIME, bytes, source shape, outcome, detail) and `FlyerAttemptOutcome` (`accepted`/`weakDynamic`/`unusable`/`fetchError`/`domainRejected`). `FlyerDiscoveryResult` now carries `attempts` and `attemptedQueries`; the coordinator records every known-URL and search-result attempt, including rejected third-party domains (not fetched) and per-attempt failure reasons. Deterministic (no UUID/timestamp) so whole results stay `Equatable`.
+4. Update `FlyerProcessingPOCRootView` to show debug details in each result row. **Done 2026-06-25** — each row has an expandable "Diagnostics (N attempts)" `DisclosureGroup` listing search queries and every attempt (method, outcome, attempted/final URL, HTTP/MIME/bytes/shape, detail). The collapsed summary stays a single combined accessibility element.
+5. Add tests for redirects, unusable HTML shells, PDFs, images, rejected domains, and failure reasons. **Done 2026-06-25** — PDF/image/JSON/HTML/dynamic-shell classification, rejected domains, redirect final URL preservation, non-2xx/empty known URL fallback, multiple known URL attempts, dynamic-known-URL fallback, and official search-result fetch failures are covered. Added three audit-trail tests: redirect final URL recorded on the accepted attempt, rejected third-party recorded as a `domainRejected` attempt (never fetched), and every known-URL attempt + query recorded in order with the correct outcomes.
 6. Run the POC against the real ten Alberta banners.
 7. Record the source decisions and extraction risks before starting product-price extraction.
+
+### 2026-06-25 Code Review Follow-Up
+
+Fixed: known official URLs that classify as `dynamicHTML` no longer stop discovery as `found`. They are retained as weak candidates, Brave fallback is tried when configured, and the final state becomes `needsRenderedExtraction` if no extractable official source is found.
+
+Resolved 2026-06-25: the full attempt diagnostics model (`FlyerDiscoveryAttempt`/`FlyerAttemptOutcome` on `FlyerDiscoveryResult`) and the expandable per-row UI details (the "Diagnostics" `DisclosureGroup`) have both landed (steps 3–4 above). A real run can now be debugged from the result model and the POC UI without reading Xcode console logs.
 
 ## Phase Boundary
 

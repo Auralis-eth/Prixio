@@ -31,6 +31,7 @@
 		6F3C58AF2E81A60100D362D9 /* Prixio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Prixio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6F3C58C02E81A60300D362D9 /* PrixioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PrixioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6F3C58CA2E81A60300D362D9 /* PrixioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PrixioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6F9124E02FEC12050000D0D8 /* LocalSecrets.example.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalSecrets.example.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -99,6 +100,7 @@
 				6F3C58B02E81A60100D362D9 /* Products */,
 				6FDA1CEA2F870872001C2395 /* Compare */,
 				6FDA1CFC2F870A17001C2395 /* Shopping */,
+				6F9124DF2FEC12010000D0D8 /* Config */,
 			);
 			sourceTree = "<group>";
 		};
@@ -110,6 +112,14 @@
 				6F3C58CA2E81A60300D362D9 /* PrixioUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		6F9124DF2FEC12010000D0D8 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				6F9124E02FEC12050000D0D8 /* LocalSecrets.example.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		6FDA1CEA2F870872001C2395 /* Compare */ = {
@@ -320,8 +330,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Prixio/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Prixio uses the camera to capture price tags for OCR and price logging.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "To Know where the items are";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "To Know where the items are";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Prixio uses your location to suggest nearby grocery stores while scanning.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Prixio can save a scanned price-tag photo to your library so you can reference it later.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Prixio can import a photo if the camera is unavailable or you want to scan an existing image.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -358,8 +371,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Prixio/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Prixio uses the camera to capture price tags for OCR and price logging.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "To Know where the items are";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "To Know where the items are";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Prixio uses your location to suggest nearby grocery stores while scanning.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Prixio can save a scanned price-tag photo to your library so you can reference it later.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Prixio can import a photo if the camera is unavailable or you want to scan an existing image.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

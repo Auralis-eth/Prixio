@@ -332,6 +332,136 @@ struct FlyerDiscoveryTests {
     }
 
     @Test
+    func coordinatorRecordsKnownURLAttemptWithRedirectFinalURLInDiagnostics() async throws {
+        let connector = makeConnector(
+            officialURLs: ["https://example-grocer.ca/flyer"],
+            allowedDomains: ["example-grocer.ca"]
+        )
+        let attemptedURL = try #require(connector.officialEntryURLs.first)
+        let finalURL = try #require(URL(string: "https://www.example-grocer.ca/en/weekly-flyer"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            attemptedURL: .success(.usable(url: finalURL))
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: FakeFlyerSearchProvider(results: [])
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.attempts.count == 1)
+        let attempt = try #require(result.attempts.first)
+        #expect(attempt.method == .knownURL)
+        #expect(attempt.attemptedURL == attemptedURL)
+        #expect(attempt.finalURL == finalURL)
+        #expect(attempt.outcome == .accepted)
+        #expect(attempt.sourceShape == .html)
+        #expect(result.attemptedQueries.isEmpty)
+    }
+
+    @Test
+    func coordinatorRecordsRejectedThirdPartySearchResultAsDomainRejectedAttempt() async throws {
+        let connector = makeConnector(
+            officialURLs: ["https://example-grocer.ca/flyer"],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        let knownURL = try #require(connector.officialEntryURLs.first)
+        let thirdPartyURL = try #require(URL(string: "https://flipp.com/en-ca/calgary-ab/stores/example-grocer"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            knownURL: .failure(FakeFlyerError.unavailable),
+            thirdPartyURL: .success(.usable(url: thirdPartyURL))
+        ])
+        let searchProvider = FakeFlyerSearchProvider(results: [
+            FlyerSearchResult(title: "Example Grocer Flyer", url: thirdPartyURL, description: "Calgary flyer")
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        // Known URL fetch error + rejected third-party result, both recorded.
+        #expect(result.attempts.contains { $0.method == .knownURL && $0.outcome == .fetchError })
+        let rejected = try #require(result.attempts.first { $0.outcome == .domainRejected })
+        #expect(rejected.method == .braveSearch)
+        #expect(rejected.attemptedURL == thirdPartyURL)
+        #expect(rejected.finalURL == nil)
+        #expect(result.attemptedQueries == ["Example Grocer Alberta flyer official"])
+        #expect(!fetcher.requestedURLs.contains(thirdPartyURL))
+    }
+
+    @Test
+    func coordinatorRecordsEveryKnownURLAttemptAndQueryInOrder() async throws {
+        let connector = makeConnector(
+            officialURLs: [
+                "https://example-grocer.ca/flyer",
+                "https://example-grocer.ca/deals"
+            ],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        let firstURL = try #require(connector.officialEntryURLs.first)
+        let secondURL = try #require(connector.officialEntryURLs.dropFirst().first)
+        let searchURL = try #require(URL(string: "https://www.example-grocer.ca/weekly-deals"))
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            firstURL: .failure(FakeFlyerError.unavailable),
+            secondURL: .success(.unusable(url: secondURL, statusCode: 404, byteCount: 256)),
+            searchURL: .success(.usable(url: searchURL))
+        ])
+        let searchProvider = FakeFlyerSearchProvider(results: [
+            FlyerSearchResult(title: "Example Grocer Weekly Flyer", url: searchURL, description: "Alberta deals")
+        ])
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.attempts.map(\.attemptedURL) == [firstURL, secondURL, searchURL])
+        #expect(result.attempts.map(\.outcome) == [.fetchError, .unusable, .accepted])
+        #expect(result.attempts[1].statusCode == 404)
+        #expect(result.attemptedQueries == ["Example Grocer Alberta flyer official"])
+    }
+
+    @Test
+    func coordinatorSelectsRichestDynamicKnownURLWhenAllAreWeak() async throws {
+        let connector = makeConnector(
+            officialURLs: [
+                "https://example-grocer.ca/print-flyer",
+                "https://example-grocer.ca/deals/flyer"
+            ],
+            allowedDomains: ["example-grocer.ca"],
+            queries: ["Example Grocer Alberta flyer official"]
+        )
+        // First URL is a tiny anti-bot shell; second is the larger real flyer shell.
+        let botShellURL = try #require(connector.officialEntryURLs.first)
+        let realShellURL = try #require(connector.officialEntryURLs.dropFirst().first)
+        let fetcher = FakeFlyerDocumentFetcher(documents: [
+            botShellURL: .success(.dynamicHTML(url: botShellURL, byteCount: 2586)),
+            realShellURL: .success(.dynamicHTML(url: realShellURL, byteCount: 39154))
+        ])
+        let searchProvider = FakeFlyerSearchProvider(error: FlyerSearchError.missingAPIKey)
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: fetcher,
+            searchProvider: searchProvider
+        )
+
+        let result = try #require(await coordinator.discoverSources().first)
+
+        #expect(result.state == .needsRenderedExtraction)
+        // The richer 39 KB shell is selected over the 2.6 KB bot wall.
+        #expect(result.selectedURL == realShellURL)
+        #expect(result.sourceShape == .dynamicHTML)
+    }
+
+    @Test
     func viewModelReportsCompletedSummaryAfterDiscovery() async throws {
         let connector = makeConnector(
             officialURLs: ["https://example-grocer.ca/flyer"],
@@ -552,12 +682,12 @@ private extension FlyerFetchedDocument {
         )
     }
 
-    static func dynamicHTML(url: URL) -> FlyerFetchedDocument {
+    static func dynamicHTML(url: URL, byteCount: Int = 4096) -> FlyerFetchedDocument {
         FlyerFetchedDocument(
             finalURL: url,
             statusCode: 200,
             mimeType: "text/html",
-            byteCount: 4096,
+            byteCount: byteCount,
             sourceShape: .dynamicHTML,
             contentSnippet: "Weekly flyer app shell",
             usefulnessSignals: ["prices:0"]

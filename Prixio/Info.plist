@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BRAVE_SEARCH_API_KEY</key>
+	<string>$(BRAVE_SEARCH_API_KEY)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Prixio uses the camera to capture price tags for OCR and price logging.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

@@ -32,6 +32,15 @@ If you are hunting parsing bugs, start in `PriceParsingService.swift`. That file
 - Parameterized tests over one-off test methods, because parsing logic usually fails as a family of related inputs rather than as isolated snowflakes.
 
 ## The Journey
+### June 25, 2026
+Flyer discovery learned an important grocery-web lesson: "the page loaded" and "we can extract prices from it" are not the same sentence.
+
+The first source audit found that all supported Alberta banners returned reachable official pages, but those pages were mostly JavaScript shells. The old coordinator treated any 2xx non-empty response like a successful source. That was like seeing the grocery store lights on from the parking lot and declaring the apples already bagged.
+
+The fix split reachability from extractability. Static `html`, `pdf`, `image`, and `json` sources can still be `Found`; `dynamicHTML` and `unknown` now become weak candidates that need rendered extraction or a client-side endpoint. Better yet, a weak known URL no longer blocks Brave fallback, so the app can keep looking for an official JSON/PDF/flyer endpoint before settling for "this needs rendering."
+
+The lesson: discovery pipelines need honest vocabulary. If the next stage cannot consume a source yet, the current stage should not hand it over wearing a graduation cap.
+
 ### June 24, 2026
 Flyer discovery got its first proper audit trail. Before this, the POC behaved like a store clerk who only told you "nope" after checking the back room: technically true, deeply unhelpful.
 
