@@ -170,6 +170,47 @@ struct FlyerPriceExtractionTests {
         #expect(result.candidateCount == 1)
     }
 
+    @Test("Drops objects whose name is a SKU / numeric / single glyph")
+    func dropsNonProductNames() {
+        let payload = """
+        {"items":[
+          {"name":"123456","current_price":3.99},
+          {"name":"X","current_price":3.99},
+          {"name":"500 g","current_price":3.99},
+          {"name":"Aged Cheddar","current_price":3.99}
+        ]}
+        """
+        let result = extractor.extract(from: content(method: .endpointJSON, payload: payload))
+        // Only the real product survives: numeric SKU, single glyph, and a
+        // unit-only name (empty normalized key) are all noise.
+        #expect(result.candidateCount == 1)
+        #expect(result.candidates.first?.productName == "Aged Cheddar")
+    }
+
+    @Test("Folds the same product at the same price across capture sections")
+    func foldsSameProductSamePriceAcrossSections() {
+        // The same item appears in a main grid and a "recommended" block with
+        // differing peripheral fields — it must collapse to one candidate.
+        let payload = """
+        {"grid":[{"name":"Orange Juice 1.5L","current_price":4.99,"valid_to":"2026-07-02"}],
+         "recommended":[{"name":"Orange Juice 1.5L","current_price":4.99}]}
+        """
+        let result = extractor.extract(from: content(method: .endpointJSON, payload: payload))
+        #expect(result.candidateCount == 1)
+    }
+
+    @Test("Keeps distinct prices of the same product as separate candidates")
+    func keepsDistinctPricesSeparate() {
+        let payload = """
+        {"items":[
+          {"name":"Bacon 500g","current_price":5.99},
+          {"name":"Bacon 500g","current_price":6.99}
+        ]}
+        """
+        let result = extractor.extract(from: content(method: .endpointJSON, payload: payload))
+        #expect(result.candidateCount == 2)
+    }
+
     // MARK: - Text strategy
 
     @Test("Extracts dollar-priced product lines from harvested text")

@@ -15,12 +15,24 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
     @Published private(set) var acquisitions: [FlyerBannerID: FlyerAcquiredContent] = [:]
     @Published private(set) var extractionState: RunState = .idle
     @Published private(set) var extractions: [FlyerBannerID: FlyerExtractionResult] = [:]
+    @Published private(set) var matchState: RunState = .idle
+    @Published private(set) var matches: [ShoppingItemFlyerMatches] = []
 
     private let coordinator: FlyerDiscoveryCoordinator
     private let acquirer: FlyerContentAcquiring
     private let acquisitionLogger: FlyerAcquisitionLogging
     private let extractor: FlyerPriceExtractor
     private let extractionLogger: FlyerAcquisitionLogging
+    private let dealMatcher = FlyerDealMatcher()
+    private let matchLogger: FlyerAcquisitionLogging
+
+    /// A stand-in shopping list for the POC: until the flow reads real
+    /// `ShoppingListItem`s from SwiftData (step 7+), matching is demonstrated
+    /// against a fixed set of common Alberta grocery items.
+    static let sampleQueries: [FlyerDealMatcher.Query] = [
+        "milk", "eggs", "butter", "bread", "bananas", "chicken breast",
+        "ground beef", "coffee", "cheese", "apples", "potatoes", "yogurt"
+    ].map { FlyerDealMatcher.Query(itemKey: ItemKeyNormalizer.normalize($0), displayName: $0) }
 
     init(
         coordinator: FlyerDiscoveryCoordinator? = nil,
@@ -36,6 +48,7 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         self.acquisitionLogger = acquisitionLogger ?? ConsoleFlyerAcquisitionLogger()
         self.extractor = extractor
         self.extractionLogger = extractionLogger ?? ConsoleFlyerExtractionLogger()
+        self.matchLogger = ConsoleFlyerMatchLogger()
         self.results = (initialResults ?? connectors.map {
             FlyerDiscoveryResult(
                 banner: $0.banner,
@@ -97,6 +110,8 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         acquisitionState = .idle
         extractions = [:]
         extractionState = .idle
+        matches = []
+        matchState = .idle
         let discoveredResults = await coordinator.discoverSources()
         results = discoveredResults.sorted { $0.banner.rank < $1.banner.rank }
         runState = .completed
@@ -114,6 +129,8 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         // Re-acquiring invalidates any prior extraction.
         extractions = [:]
         extractionState = .idle
+        matches = []
+        matchState = .idle
         acquisitionLogger.log("phase=run-start banners=\(results.count)")
         var output: [FlyerBannerID: FlyerAcquiredContent] = [:]
         for result in results {
@@ -180,6 +197,9 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         }
 
         extractionState = .loading
+        // Re-extracting invalidates any prior deal matching.
+        matches = []
+        matchState = .idle
         extractionLogger.log("phase=run-start banners=\(acquisitions.count)")
         var output: [FlyerBannerID: FlyerExtractionResult] = [:]
         // Extract in the discovery rank order so the log/UI read consistently.
@@ -197,6 +217,58 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         let bannersWithCandidates = output.values.filter { $0.candidateCount > 0 }.count
         extractionLogger.log("phase=run-finish banners=\(output.count) withCandidates=\(bannersWithCandidates) totalCandidates=\(totalCandidates)")
         extractionState = .completed
+    }
+
+    /// Matching can run once extraction has produced candidates.
+    var canMatchDeals: Bool {
+        extractionState == .completed && matchState != .loading
+    }
+
+    var isMatching: Bool {
+        matchState == .loading
+    }
+
+    var matchSummary: String {
+        switch matchState {
+        case .idle:
+            "Extract candidates first, then match them against the sample shopping list."
+        case .loading:
+            "Matching flyer candidates to the sample shopping list..."
+        case .completed:
+            matchCompletedSummary
+        }
+    }
+
+    /// Results limited to items that found at least one deal — the useful subset.
+    var matchedItemsWithDeals: [ShoppingItemFlyerMatches] {
+        matches.filter(\.hasDeals)
+    }
+
+    /// Matches extracted candidates against the sample shopping list (step 6). Real
+    /// `ShoppingListItem` wiring lands with the review/save surfaces (step 7+).
+    func matchDeals() {
+        guard extractionState == .completed, matchState != .loading else {
+            return
+        }
+
+        matchState = .loading
+        let queries = Self.sampleQueries
+        matchLogger.log("phase=run-start items=\(queries.count) banners=\(extractions.count)")
+        let results = dealMatcher.match(queries: queries, extractions: Array(extractions.values))
+        for item in results {
+            matchLogger.log("item=\(item.displayName) deals=\(item.deals.count) best=\(item.bestDeal.map { CurrencyFormatter.shared.display($0.candidate.price) + " @ " + $0.banner.name } ?? "none")")
+        }
+        let itemsWithDeals = results.filter(\.hasDeals).count
+        let totalDeals = results.reduce(0) { $0 + $1.deals.count }
+        matchLogger.log("phase=run-finish items=\(results.count) withDeals=\(itemsWithDeals) totalDeals=\(totalDeals)")
+        matches = results
+        matchState = .completed
+    }
+
+    private var matchCompletedSummary: String {
+        let itemsWithDeals = matchedItemsWithDeals.count
+        let totalDeals = matches.reduce(0) { $0 + $1.deals.count }
+        return "Found \(totalDeals) flyer deal\(totalDeals == 1 ? "" : "s") for \(itemsWithDeals) of \(matches.count) sample list items."
     }
 
     private var completedSummary: String {
@@ -236,5 +308,12 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
 struct ConsoleFlyerExtractionLogger: FlyerAcquisitionLogging {
     func log(_ message: String) {
         print("[FlyerExtraction] \(message)")
+    }
+}
+
+/// Console logging for deal matching, emitting a `[FlyerMatch]` trail.
+struct ConsoleFlyerMatchLogger: FlyerAcquisitionLogging {
+    func log(_ message: String) {
+        print("[FlyerMatch] \(message)")
     }
 }

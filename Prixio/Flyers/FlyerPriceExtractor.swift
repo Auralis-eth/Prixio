@@ -137,6 +137,11 @@ struct FlyerPriceExtractor {
             return nil
         }
 
+        // A name must read like a product: at least two letters. This drops
+        // non-product objects the generic scan also reaches (SKU-only entries,
+        // numeric ids, single-glyph labels) that could never match a list item.
+        guard hasProductName(name) else { return nil }
+
         let regular = lookup.firstPrice(Self.regularKeys).flatMap { isPlausiblePrice($0) && $0 != price ? $0 : nil }
         let brand = lookup.firstString(Self.brandKeys, maxLength: 80)
         let size = lookup.firstString(Self.sizeKeys, maxLength: 80)
@@ -154,10 +159,15 @@ struct FlyerPriceExtractor {
             kind = .regular
         }
 
-        let source = brand.map { "\($0) \(name)" } ?? name
+        let combined = brand.map { "\($0) \(name)" } ?? name
+        let normalizedKey = ItemKeyNormalizer.normalize(combined)
+        // An empty normalized key (unit-only / punctuation-only name) can never
+        // match a list item, so it's noise — drop it.
+        guard !normalizedKey.isEmpty else { return nil }
+
         return FlyerPriceCandidate(
             productName: name,
-            normalizedItemKey: ItemKeyNormalizer.normalize(brand.map { "\($0) \(name)" } ?? name),
+            normalizedItemKey: normalizedKey,
             brand: brand,
             price: price,
             regularPrice: regular,
@@ -167,7 +177,7 @@ struct FlyerPriceExtractor {
             saleStartDate: from,
             saleEndDate: to,
             memberOnly: memberOnly,
-            sourceText: String(source.prefix(maxSourceTextLength)),
+            sourceText: String(combined.prefix(maxSourceTextLength)),
             confidence: 0.9
         )
     }
@@ -188,15 +198,16 @@ struct FlyerPriceExtractor {
                 .replacingOccurrences(of: #"\$\s?\d{1,4}(\.\d{2})?"#, with: " ", options: .regularExpression)
                 .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
                 .trimmingCharacters(in: CharacterSet(charactersIn: " -–—•|/.,"))
-            guard name.count >= 2, name.count <= 120,
-                  name.rangeOfCharacter(from: .letters) != nil else {
+            guard name.count <= 120, hasProductName(name) else {
                 continue
             }
+            let normalizedKey = ItemKeyNormalizer.normalize(name)
+            guard !normalizedKey.isEmpty else { continue }
             let lowered = line.lowercased()
             let memberOnly = ["member", "with card", "loyalty", "points card"].contains { lowered.contains($0) }
             out.append(FlyerPriceCandidate(
                 productName: name,
-                normalizedItemKey: ItemKeyNormalizer.normalize(name),
+                normalizedItemKey: normalizedKey,
                 brand: nil,
                 price: price,
                 regularPrice: nil,
@@ -219,13 +230,25 @@ struct FlyerPriceExtractor {
         value >= Decimal(string: "0.01")! && value <= 9999
     }
 
-    /// Drops exact duplicates (same normalized key + price + kind + end date),
-    /// keeping the first (highest-confidence) occurrence and preserving order.
+    /// Whether a string reads like a product name: at least two letters. Rejects
+    /// SKU/numeric/punctuation-only "names" the generic JSON scan can reach.
+    private func hasProductName(_ name: String) -> Bool {
+        name.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count >= 2
+    }
+
+    /// Collapses duplicates on normalized item key + price, keeping the first
+    /// occurrence and preserving order. Keying on (key, price) — rather than also
+    /// kind/dates — folds the same product appearing in several captured sections
+    /// (main grid, "recommended", related items) into one candidate, which is the
+    /// dominant inflation source for the 100+-item banners.
     private func dedupe(_ candidates: [FlyerPriceCandidate]) -> [FlyerPriceCandidate] {
         var seen = Set<String>()
         var out: [FlyerPriceCandidate] = []
-        for candidate in candidates where seen.insert(candidate.id).inserted {
-            out.append(candidate)
+        for candidate in candidates {
+            let key = "\(candidate.normalizedItemKey)|\(candidate.price)"
+            if seen.insert(key).inserted {
+                out.append(candidate)
+            }
         }
         return out
     }

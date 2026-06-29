@@ -59,6 +59,15 @@ struct FlyerProcessingPOCRootView: View {
                         .buttonStyle(.bordered)
                         .disabled(!viewModel.canExtractContent)
                         .accessibilityIdentifier("flyerPOCExtractCandidatesButton")
+
+                        Button {
+                            viewModel.matchDeals()
+                        } label: {
+                            Label("Find Deals for Sample List", systemImage: "cart.badge.plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!viewModel.canMatchDeals)
+                        .accessibilityIdentifier("flyerPOCMatchDealsButton")
                     }
                     .padding(.vertical, 8)
                 } footer: {
@@ -107,6 +116,24 @@ struct FlyerProcessingPOCRootView: View {
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
+
+                    HStack(spacing: 12) {
+                        Image(systemName: "cart")
+                            .foregroundStyle(.secondary)
+
+                        Text(viewModel.matchSummary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+
+                if !viewModel.matchedItemsWithDeals.isEmpty {
+                    Section("Sample List Deals") {
+                        ForEach(viewModel.matchedItemsWithDeals) { item in
+                            FlyerDealMatchRow(item: item)
+                        }
+                    }
                 }
 
                 Section("Alberta Source Catalog") {
@@ -380,6 +407,51 @@ private struct FlyerExtractionRowView: View {
             }
         }
         .padding(.top, 2)
+    }
+}
+
+private struct FlyerDealMatchRow: View {
+    let item: ShoppingItemFlyerMatches
+
+    /// Cap deals shown inline so a generic item ("milk") that matches many products
+    /// doesn't flood the row.
+    private let previewLimit = 5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(item.displayName.capitalized)
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 4)
+                if let best = item.bestDeal {
+                    Text("best \(CurrencyFormatter.shared.display(best.candidate.price))")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+            }
+
+            ForEach(Array(item.deals.prefix(previewLimit))) { deal in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(deal.banner.name)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 96, alignment: .leading)
+                        .lineLimit(1)
+                    Text(deal.candidate.productName)
+                        .font(.caption2)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(CurrencyFormatter.shared.display(deal.candidate.price))
+                        .font(.caption2.weight(.medium))
+                }
+            }
+            if item.deals.count > previewLimit {
+                Text("+ \(item.deals.count - previewLimit) more")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
