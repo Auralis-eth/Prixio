@@ -6,6 +6,17 @@ import Foundation
 struct FlyerDeal: Identifiable, Equatable {
     let banner: FlyerBanner
     let candidate: FlyerPriceCandidate
+    /// Provenance carried from the extraction result, so a saved deal records where
+    /// and when it came from without re-looking-up the source.
+    let sourceURL: URL?
+    let fetchedAt: Date?
+
+    init(banner: FlyerBanner, candidate: FlyerPriceCandidate, sourceURL: URL? = nil, fetchedAt: Date? = nil) {
+        self.banner = banner
+        self.candidate = candidate
+        self.sourceURL = sourceURL
+        self.fetchedAt = fetchedAt
+    }
 
     var id: String { "\(banner.id.rawValue)|\(candidate.id)" }
 }
@@ -49,7 +60,9 @@ struct FlyerDealMatcher {
     func match(queries: [Query], extractions: [FlyerExtractionResult]) -> [ShoppingItemFlyerMatches] {
         // Flatten candidates once, tagged with their banner.
         let allDeals: [FlyerDeal] = extractions.flatMap { result in
-            result.candidates.map { FlyerDeal(banner: result.banner, candidate: $0) }
+            result.candidates.map {
+                FlyerDeal(banner: result.banner, candidate: $0, sourceURL: result.sourceURL, fetchedAt: result.fetchedAt)
+            }
         }
 
         return queries.map { query in

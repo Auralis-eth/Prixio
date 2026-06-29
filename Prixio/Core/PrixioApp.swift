@@ -33,7 +33,8 @@ struct PrixioApp: App {
                 ReceiptLineItem.self,
                 ExpenseEntry.self,
                 IncomeEntry.self,
-                RecurringExpenseRule.self
+                RecurringExpenseRule.self,
+                FlyerPriceRecord.self
             ]
         )
     }

@@ -1,7 +1,9 @@
 import SwiftUI
+import SwiftData
 
 struct FlyerProcessingPOCRootView: View {
     @StateObject private var viewModel = FlyerProcessingPOCViewModel()
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         NavigationStack {
@@ -61,9 +63,9 @@ struct FlyerProcessingPOCRootView: View {
                         .accessibilityIdentifier("flyerPOCExtractCandidatesButton")
 
                         Button {
-                            viewModel.matchDeals()
+                            viewModel.matchDeals(context: modelContext)
                         } label: {
-                            Label("Find Deals for Sample List", systemImage: "cart.badge.plus")
+                            Label("Find Deals for My List", systemImage: "cart.badge.plus")
                         }
                         .buttonStyle(.bordered)
                         .disabled(!viewModel.canMatchDeals)
@@ -129,10 +131,20 @@ struct FlyerProcessingPOCRootView: View {
                 }
 
                 if !viewModel.matchedItemsWithDeals.isEmpty {
-                    Section("Sample List Deals") {
+                    Section {
                         ForEach(viewModel.matchedItemsWithDeals) { item in
-                            FlyerDealMatchRow(item: item)
+                            FlyerDealMatchRow(
+                                item: item,
+                                isSaved: { viewModel.isDealSaved($0) },
+                                onSave: { viewModel.saveDeal($0, forItemKey: item.itemKey, context: modelContext) }
+                            )
                         }
+                    } header: {
+                        Text(viewModel.matchedAgainstRealList ? "Your List Deals" : "Sample List Deals")
+                    } footer: {
+                        Text(viewModel.matchedAgainstRealList
+                             ? "Matched against your shopping list. Tap + to save a deal as a flyer price."
+                             : "Your shopping list is empty, so a sample list was used. Tap + to save a deal as a flyer price.")
                     }
                 }
 
@@ -147,6 +159,9 @@ struct FlyerProcessingPOCRootView: View {
                 }
             }
             .navigationTitle("Flyer POC")
+            .task {
+                viewModel.loadSavedDealKeys(context: modelContext)
+            }
         }
     }
 }
@@ -412,13 +427,15 @@ private struct FlyerExtractionRowView: View {
 
 private struct FlyerDealMatchRow: View {
     let item: ShoppingItemFlyerMatches
+    let isSaved: (FlyerDeal) -> Bool
+    let onSave: (FlyerDeal) -> Void
 
     /// Cap deals shown inline so a generic item ("milk") that matches many products
     /// doesn't flood the row.
     private let previewLimit = 5
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(item.displayName.capitalized)
                     .font(.subheadline.weight(.semibold))
@@ -431,19 +448,7 @@ private struct FlyerDealMatchRow: View {
             }
 
             ForEach(Array(item.deals.prefix(previewLimit))) { deal in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(deal.banner.name)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 96, alignment: .leading)
-                        .lineLimit(1)
-                    Text(deal.candidate.productName)
-                        .font(.caption2)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(CurrencyFormatter.shared.display(deal.candidate.price))
-                        .font(.caption2.weight(.medium))
-                }
+                FlyerDealLine(deal: deal, isSaved: isSaved(deal)) { onSave(deal) }
             }
             if item.deals.count > previewLimit {
                 Text("+ \(item.deals.count - previewLimit) more")
@@ -452,6 +457,64 @@ private struct FlyerDealMatchRow: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+private struct FlyerDealLine: View {
+    let deal: FlyerDeal
+    let isSaved: Bool
+    let onSave: () -> Void
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(deal.banner.name)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 96, alignment: .leading)
+                    .lineLimit(1)
+                Text(deal.candidate.productName)
+                    .font(.caption2)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(CurrencyFormatter.shared.display(deal.candidate.price))
+                    .font(.caption2.weight(.medium))
+                Button(action: onSave) {
+                    Image(systemName: isSaved ? "checkmark.circle.fill" : "plus.circle")
+                        .foregroundStyle(isSaved ? .green : .accentColor)
+                }
+                .buttonStyle(.plain)
+                .disabled(isSaved)
+                .accessibilityLabel(isSaved ? "Saved" : "Save deal")
+            }
+            if let provenance = provenanceLine {
+                Text(provenance)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    /// Provenance + sale context, for at-a-glance review.
+    private var provenanceLine: String? {
+        var parts: [String] = []
+        if let regular = deal.candidate.regularPrice {
+            parts.append("reg \(CurrencyFormatter.shared.display(regular))")
+        }
+        if let size = deal.candidate.packageSize { parts.append(size) }
+        if deal.candidate.memberOnly { parts.append("member") }
+        if let end = deal.candidate.saleEndDate {
+            parts.append("until \(Self.dateFormatter.string(from: end))")
+        }
+        parts.append("conf \(Int(deal.candidate.confidence * 100))%")
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

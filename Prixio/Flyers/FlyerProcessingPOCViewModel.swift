@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SwiftData
 
 @MainActor
 final class FlyerProcessingPOCViewModel: ObservableObject {
@@ -17,6 +18,11 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
     @Published private(set) var extractions: [FlyerBannerID: FlyerExtractionResult] = [:]
     @Published private(set) var matchState: RunState = .idle
     @Published private(set) var matches: [ShoppingItemFlyerMatches] = []
+    /// Whether the last match ran against the user's real shopping list or fell back
+    /// to the built-in sample list (empty list).
+    @Published private(set) var matchedAgainstRealList = false
+    /// `dealKey`s already saved to the flyer price store, for marking review rows.
+    @Published private(set) var savedDealKeys: Set<String> = []
 
     private let coordinator: FlyerDiscoveryCoordinator
     private let acquirer: FlyerContentAcquiring
@@ -231,9 +237,9 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
     var matchSummary: String {
         switch matchState {
         case .idle:
-            "Extract candidates first, then match them against the sample shopping list."
+            "Extract candidates first, then match them against your shopping list."
         case .loading:
-            "Matching flyer candidates to the sample shopping list..."
+            "Matching flyer candidates to your shopping list..."
         case .completed:
             matchCompletedSummary
         }
@@ -244,16 +250,17 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         matches.filter(\.hasDeals)
     }
 
-    /// Matches extracted candidates against the sample shopping list (step 6). Real
-    /// `ShoppingListItem` wiring lands with the review/save surfaces (step 7+).
-    func matchDeals() {
+    /// Matches extracted candidates against the user's real shopping list (step 6/7),
+    /// falling back to the built-in sample list when the list is empty so the POC
+    /// still demonstrates. Pass the SwiftData context from the view environment.
+    func matchDeals(context: ModelContext) {
         guard extractionState == .completed, matchState != .loading else {
             return
         }
 
         matchState = .loading
-        let queries = Self.sampleQueries
-        matchLogger.log("phase=run-start items=\(queries.count) banners=\(extractions.count)")
+        let queries = shoppingListQueries(context: context)
+        matchLogger.log("phase=run-start items=\(queries.count) realList=\(matchedAgainstRealList) banners=\(extractions.count)")
         let results = dealMatcher.match(queries: queries, extractions: Array(extractions.values))
         for item in results {
             matchLogger.log("item=\(item.displayName) deals=\(item.deals.count) best=\(item.bestDeal.map { CurrencyFormatter.shared.display($0.candidate.price) + " @ " + $0.banner.name } ?? "none")")
@@ -263,12 +270,62 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         matchLogger.log("phase=run-finish items=\(results.count) withDeals=\(itemsWithDeals) totalDeals=\(totalDeals)")
         matches = results
         matchState = .completed
+        loadSavedDealKeys(context: context)
     }
+
+    /// Builds match queries from the user's active (not-done) shopping-list items;
+    /// falls back to the sample list when the real list is empty. Sets
+    /// `matchedAgainstRealList` accordingly.
+    private func shoppingListQueries(context: ModelContext) -> [FlyerDealMatcher.Query] {
+        let repository = ShoppingListRepository(context: context)
+        let items = (try? repository.fetchOrCreateDefaultList())?.items ?? []
+        let activeQueries = items
+            .filter { !$0.isDone }
+            .map { FlyerDealMatcher.Query(itemKey: $0.itemKey, displayName: $0.displayName) }
+
+        if activeQueries.isEmpty {
+            matchedAgainstRealList = false
+            return Self.sampleQueries
+        }
+        matchedAgainstRealList = true
+        return activeQueries
+    }
+
+    /// Whether a given deal has already been saved (for the review row's saved state).
+    func isDealSaved(_ deal: FlyerDeal) -> Bool {
+        savedDealKeys.contains(FlyerPriceRecord.dealKey(
+            bannerID: deal.banner.id.rawValue,
+            normalizedItemKey: deal.candidate.normalizedItemKey,
+            price: deal.candidate.price
+        ))
+    }
+
+    /// Saves a reviewed deal to the dedicated flyer price store (step 8).
+    func saveDeal(_ deal: FlyerDeal, forItemKey itemKey: String, context: ModelContext) {
+        let repository = FlyerPriceRecordRepository(context: context)
+        do {
+            try repository.save(deal, matchedItemKey: itemKey, storeContext: storeContextLabel)
+            loadSavedDealKeys(context: context)
+            matchLogger.log("phase=save dealKey=\(deal.banner.id.rawValue)|\(deal.candidate.normalizedItemKey)|\(deal.candidate.price) ok")
+        } catch {
+            matchLogger.log("phase=save error=\(error.localizedDescription)")
+        }
+    }
+
+    /// Refreshes the set of saved deal keys from the store.
+    func loadSavedDealKeys(context: ModelContext) {
+        let repository = FlyerPriceRecordRepository(context: context)
+        savedDealKeys = (try? repository.savedDealKeys()) ?? []
+    }
+
+    /// Geography the POC acquires under, recorded as provenance on saved deals.
+    private var storeContextLabel: String { FlyerStoreContext.defaultAlberta.label }
 
     private var matchCompletedSummary: String {
         let itemsWithDeals = matchedItemsWithDeals.count
         let totalDeals = matches.reduce(0) { $0 + $1.deals.count }
-        return "Found \(totalDeals) flyer deal\(totalDeals == 1 ? "" : "s") for \(itemsWithDeals) of \(matches.count) sample list items."
+        let listLabel = matchedAgainstRealList ? "shopping list" : "sample list"
+        return "Found \(totalDeals) flyer deal\(totalDeals == 1 ? "" : "s") for \(itemsWithDeals) of \(matches.count) \(listLabel) items."
     }
 
     private var completedSummary: String {
