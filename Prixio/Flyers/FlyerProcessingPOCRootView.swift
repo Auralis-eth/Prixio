@@ -44,6 +44,21 @@ struct FlyerProcessingPOCRootView: View {
                         .buttonStyle(.bordered)
                         .disabled(!viewModel.canAcquireContent)
                         .accessibilityIdentifier("flyerPOCAcquireContentButton")
+
+                        Button {
+                            Task {
+                                await viewModel.extractContent()
+                            }
+                        } label: {
+                            if viewModel.isExtracting {
+                                Label("Extracting Candidates", systemImage: "list.bullet.rectangle")
+                            } else {
+                                Label("Extract Price Candidates", systemImage: "list.bullet.rectangle")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!viewModel.canExtractContent)
+                        .accessibilityIdentifier("flyerPOCExtractCandidatesButton")
                     }
                     .padding(.vertical, 8)
                 } footer: {
@@ -78,13 +93,28 @@ struct FlyerProcessingPOCRootView: View {
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
+
+                    HStack(spacing: 12) {
+                        if viewModel.isExtracting {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "list.bullet.rectangle")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Text(viewModel.extractionSummary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
 
                 Section("Alberta Source Catalog") {
                     ForEach(viewModel.results) { result in
                         FlyerDiscoveryResultRow(
                             result: result,
-                            acquisition: viewModel.acquisition(for: result.banner)
+                            acquisition: viewModel.acquisition(for: result.banner),
+                            extraction: viewModel.extraction(for: result.banner)
                         )
                     }
                 }
@@ -97,6 +127,7 @@ struct FlyerProcessingPOCRootView: View {
 private struct FlyerDiscoveryResultRow: View {
     let result: FlyerDiscoveryResult
     let acquisition: FlyerAcquiredContent?
+    let extraction: FlyerExtractionResult?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -111,6 +142,10 @@ private struct FlyerDiscoveryResultRow: View {
 
             if let acquisition {
                 FlyerAcquisitionRow(acquisition: acquisition)
+            }
+
+            if let extraction {
+                FlyerExtractionRowView(extraction: extraction)
             }
         }
         .padding(.vertical, 4)
@@ -307,6 +342,83 @@ private struct FlyerAcquisitionRow: View {
             .secondary
         case .failed:
             .red
+        }
+    }
+}
+
+private struct FlyerExtractionRowView: View {
+    let extraction: FlyerExtractionResult
+
+    /// Cap on candidates shown inline so a 120-item banner doesn't flood the list.
+    private let previewLimit = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Candidates: \(extraction.candidateCount)", systemImage: extraction.candidateCount > 0 ? "list.bullet.rectangle.fill" : "list.bullet.rectangle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(extraction.candidateCount > 0 ? Color.green : .orange)
+
+            if extraction.candidateCount > 0 {
+                DisclosureGroup("Sample candidates") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(extraction.candidates.prefix(previewLimit))) { candidate in
+                            FlyerCandidateLine(candidate: candidate)
+                        }
+                        if extraction.candidateCount > previewLimit {
+                            Text("+ \(extraction.candidateCount - previewLimit) more")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+                .font(.caption)
+            } else {
+                Text(extraction.message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 2)
+    }
+}
+
+private struct FlyerCandidateLine: View {
+    let candidate: FlyerPriceCandidate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(candidate.productName)
+                    .font(.caption2.weight(.medium))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(CurrencyFormatter.shared.display(candidate.price))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+
+            HStack(spacing: 6) {
+                Text(candidate.priceKind.rawValue)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let regular = candidate.regularPrice {
+                    Text("reg \(CurrencyFormatter.shared.display(regular))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                if let size = candidate.packageSize {
+                    Text("· \(size)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                if candidate.memberOnly {
+                    Text("· member")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
         }
     }
 }

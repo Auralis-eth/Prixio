@@ -81,6 +81,11 @@ struct FlyerAcquiredContent: Identifiable, Equatable {
     let priceTokenCount: Int
     /// Bounded sample of the rendered visible text, for debugging/review.
     let renderedTextSnippet: String?
+    /// The full acquired payload — captured flyer JSON or harvested text — handed to
+    /// the extraction phase to mine `FlyerPriceCandidate`s. Held transiently in memory
+    /// (not persisted) and bounded by the acquirer's own caps. `nil` when there is no
+    /// extractable payload (failed/unsupported/binary-awaiting-OCR).
+    let extractionPayload: String?
     let message: String
 
     var id: FlyerBannerID { banner.id }
@@ -97,6 +102,7 @@ struct FlyerAcquiredContent: Identifiable, Equatable {
         payloadByteCount: Int = 0,
         priceTokenCount: Int = 0,
         renderedTextSnippet: String? = nil,
+        extractionPayload: String? = nil,
         message: String
     ) {
         self.banner = banner
@@ -110,6 +116,7 @@ struct FlyerAcquiredContent: Identifiable, Equatable {
         self.payloadByteCount = payloadByteCount
         self.priceTokenCount = priceTokenCount
         self.renderedTextSnippet = renderedTextSnippet
+        self.extractionPayload = extractionPayload
         self.message = message
     }
 

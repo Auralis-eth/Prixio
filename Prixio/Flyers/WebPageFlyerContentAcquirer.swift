@@ -285,6 +285,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
                 payloadByteCount: payloadBytes,
                 priceTokenCount: bestPriceCount,
                 renderedTextSnippet: snippet,
+                extractionPayload: trimmedText.isEmpty ? nil : trimmedText,
                 message: "Read \(payloadBytes) bytes of \(readLabel) with \(bestPriceCount) price tokens."
             )
         }
@@ -327,6 +328,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
             payloadByteCount: payloadBytes,
             priceTokenCount: bestPriceCount,
             renderedTextSnippet: snippet,
+            extractionPayload: trimmedText.isEmpty ? nil : trimmedText,
             message: "Rendered but no usable flyer prices: \(reason)."
         )
     }

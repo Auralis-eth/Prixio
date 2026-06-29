@@ -304,7 +304,7 @@ A useful first implementation is now split into milestones:
 2. Hard-code the Alberta banner set listed above as the initial source catalog. Status: implemented.
 3. Implement official source connectors in rank order, with URLSession checks and Brave Search fallback limited to official domains. Status: implemented for source discovery.
 4. Fetch active flyer pages, product pages, images, or PDFs depending on each connector's source shape. Status: implemented. Content acquisition became its own milestone (`FlyerContentAcquisitionPlan.md`) and ships a per-destination router (`FlyerContentAcquisitionRouter`): static HTML/JSON/PDF/image are processed in-app (`StaticFlyerContentAcquirer`), and only JS-rendered (`dynamicHTML`) sources use an on-device rendered fetch (`WebPageFlyerContentAcquirer`). Both produce flyer text + price-token signals. Per the 2026-06-25 audit all ten banners are currently `dynamicHTML`, so they route to the rendered path today; the static path is ready for any destination that returns processable content.
-5. Extract product-price candidates using OCR/NLP/computer vision. Status: pending (now unblocked — rendered flyer content is available).
+5. Extract product-price candidates using OCR/NLP/computer vision. Status: implemented (deterministic v1). `FlyerPriceExtractor` turns acquired content into structured `FlyerPriceCandidate`s. Captured flyer JSON (`.endpointJSON`) is mined by a generic recursive walker that finds every object carrying both a name-ish and a price-ish field — handling Flipp/Salesforce/Walmart schemas without hardcoding each — capturing name, brand, sale + regular price, package size, sale dates, and member-only condition (high confidence). Harvested text (`.renderedHTML`/`.imageOCR`/`.staticHTML`) is mined by pairing `$X.XX` tokens with surrounding product text (lower confidence). The POC tab gains an "Extract Price Candidates" phase + per-banner candidate rows; a `[FlyerExtraction]` log trail correlates with discovery/acquisition. 12 unit tests over Flipp/Salesforce/text fixtures. Deferred to later: model-assisted enrichment of the messy text/OCR path, unit-price derivation, and multi-buy parsing.
 6. Match candidates against current shopping-list item keys. Status: pending.
 7. Show a review list with source, confidence, sale dates, geography, and unit price. Status: pending.
 8. Let the user save selected flyer prices or use them for list estimates. Status: pending.
@@ -329,6 +329,28 @@ Do not include in MVP:
 - What legal/terms review is required before shipping retailer-specific connectors?
 
 ## Tracking Log
+
+### 2026-06-29 - Step 5 device run #2: balanced-object scan validated (247 candidates)
+
+The fix landed. Extraction jumped from 10 total candidates (run #1) to **247** across 5 banners: Walmart **121** (was 0), Safeway **114** (was 0), Save-On **6**, RCSS **3**, No Frills **3**. The balanced-`{ }`-object scanner turned the previously-blind `endpointJSON` banners into the richest sources.
+
+Residuals (neither blocking step 5):
+- **Co-op** captured 357 KB / `prices=4` but extracted **0** — its captured payloads appear to be store/publication metadata, not the item list (Co-op has only ever shown the borderline `prices=4`), so 0 is most likely honest rather than a parser miss; confirming needs its raw payload.
+- **Sobeys / FreshCo** were `acquiredNoPrices` this run (didn't reach the store-locator) — acquisition-side variance, not extraction; when they capture, the JSON path now mines them (run #9d showed Sobeys at 49 prices).
+
+Follow-ups: spot-check candidate *quality* for the 100+ banners (dedupe/noise), and consider whether the candidate count vs. acquisition `priceSignalCount` gap needs reconciling. Next milestone: step 6 (match candidates against shopping-list item keys — the normalized item key is already on every candidate).
+
+### 2026-06-29 - Step 5 device run #1: JSON path fixed (strict parse → balanced-object scan)
+
+First device run of extraction exposed the core bug: every `endpointJSON` banner extracted **0** candidates (Safeway 41 prices captured → 0, Sobeys 49 → 0, Walmart 8 → 0, Co-op 4 → 0), while the text-path banners worked (RCSS 5, No Frills 5). Cause: captured payloads are **several JSON docs joined by newlines, each individually truncated at the capture byte cap**, so strict `JSONSerialization` (whole-doc and per-line) failed on exactly the priced documents — the `priceSignalCount` regex saw the prices, but the parser couldn't.
+
+Fix: replaced the strict-parse + recursive-walk JSON strategy with a **balanced-`{ }`-object scanner** over raw UTF-8 bytes (tracking string/escape state so braces inside strings are ignored). It recovers intact item objects even when the enclosing document is truncated or concatenated, and skips objects larger than `maxObjectBytes` (containers / the truncated outer doc) so only leaf items are parsed. Two new tests lock it in (truncated+concatenated recovery; braces-inside-strings); 14 extraction tests pass. Next device run should turn Safeway/Sobeys/Walmart/Co-op from 0 → dozens of candidates.
+
+### 2026-06-29 - Step 5: Deterministic Price-Candidate Extraction
+
+Extraction (MVP step 5) is implemented as a deterministic pass over acquired content — `FlyerPriceExtractor` → `[FlyerPriceCandidate]`, wrapped per banner in `FlyerExtractionResult`. Chose deterministic parsing over a FoundationModels pass because the captured payloads are already structured JSON: a generic recursive walker that emits a candidate for any object holding both a name-ish and a price-ish field handles Flipp, Salesforce, and Walmart schemas without hardcoding each, and is reliable, free, and unit-testable. The messy harvested-text path (Loblaw alt-text, OCR) uses `$X.XX`-token-to-line pairing at lower confidence; model-assisted enrichment of that path is the natural later upgrade.
+
+Plumbing change: acquisition discarded the full payload (only a 300-char debug snippet survived), so a bounded `extractionPayload` was added to `FlyerAcquiredContent`, populated by both acquirers, and consumed by the extractor — preserving the doc's "acquisition gets bytes, extraction turns bytes into candidates" boundary. The POC tab gains a third "Extract Price Candidates" phase with per-banner candidate rows and a `[FlyerExtraction]` log trail. 12 extraction unit tests (Flipp/Salesforce/nested/text/dedupe/member/implausible-price/empty); the 16 acquisition tests still pass. Next: device run to see real candidate counts per banner, then step 6 (match candidates against shopping-list item keys).
 
 ### 2026-06-24 - Direction Captured
 

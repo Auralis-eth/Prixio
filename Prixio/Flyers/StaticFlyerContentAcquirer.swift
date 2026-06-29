@@ -207,6 +207,7 @@ final class StaticFlyerContentAcquirer: FlyerContentAcquiring {
             payloadByteCount: raw.byteCount,
             priceTokenCount: priceCount,
             renderedTextSnippet: snippet(from: visible),
+            extractionPayload: visible.isEmpty ? nil : visible,
             message: hasPrices
                 ? "Processed static HTML in-app with \(priceCount) price tokens."
                 : "Static HTML had no readable prices; rendered extraction may be needed."
@@ -236,6 +237,7 @@ final class StaticFlyerContentAcquirer: FlyerContentAcquiring {
             payloadByteCount: raw.byteCount,
             priceTokenCount: priceCount,
             renderedTextSnippet: snippet(from: body),
+            extractionPayload: body.isEmpty ? nil : body,
             message: "Processed JSON endpoint payload (\(raw.byteCount) bytes, \(priceCount) price tokens)."
         )
     }
