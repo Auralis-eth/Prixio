@@ -9,6 +9,7 @@ struct ItemDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \PriceEntry.capturedAt, order: .reverse) private var allEntries: [PriceEntry]
+    @Query(sort: \FlyerPriceRecord.savedAt, order: .reverse) private var allFlyerRecords: [FlyerPriceRecord]
 
     /// Entries that satisfy this item. A generic name (e.g. "sour cream") rolls up more-specific
     /// scanned products (e.g. "Daisy Sour Cream") via `ItemKeyNormalizer.matches`. Filtered in memory
@@ -22,6 +23,7 @@ struct ItemDetailView: View {
     @StateObject private var viewModel = CompareViewModel()
     @State private var mode: CompareDisplayMode = .perUnit
     @State private var comparisonState = CompareViewModel.ItemComparisonState(rows: [], showsMixedUnitFamilyNote: false)
+    @State private var flyerRows: [CompareViewModel.FlyerComparisonRow] = []
     @State private var history: ItemPriceHistory?
     @State private var historyScope: PriceHistoryScope = .allStores
     @State private var availableScopes: [PriceHistoryScope] = [.allStores]
@@ -72,11 +74,26 @@ struct ItemDetailView: View {
                     }
                 }
             }
+
+            if !flyerRows.isEmpty {
+                Section {
+                    ForEach(flyerRows) { row in
+                        FlyerComparisonRowView(row: row)
+                    }
+                } header: {
+                    Label("Flyer prices", systemImage: "newspaper")
+                } footer: {
+                    Text("Advertised flyer prices saved from a recent flyer check. Region and availability may differ from an in-store scan — treat as a guide, not a confirmed price.")
+                }
+            }
         }
         .navigationTitle(displayName)
         .navigationBarTitleDisplayMode(.large)
         .onAppear(perform: recompute)
         .onChange(of: itemEntries.count) { _, _ in
+            recompute()
+        }
+        .onChange(of: allFlyerRecords.count) { _, _ in
             recompute()
         }
         .onChange(of: mode) { _, _ in
@@ -198,6 +215,8 @@ struct ItemDetailView: View {
             userLocation: userLocation
         )
 
+        flyerRows = viewModel.flyerComparisonRows(itemKey: itemKey, records: allFlyerRecords)
+
         availableScopes = viewModel.availableHistoryScopes(itemKey: itemKey, entries: itemEntries)
         // Reset to the all-stores view if the previously selected scope no longer has data (e.g. its
         // last entry was deleted), so the picker never points at a vanished store.
@@ -245,5 +264,61 @@ struct ItemDetailView: View {
         } catch {
             saveErrorMessage = "Couldn’t delete this price. Please try again."
         }
+    }
+}
+
+private struct FlyerComparisonRowView: View {
+    let row: CompareViewModel.FlyerComparisonRow
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(row.bannerName)
+                    .font(.headline.weight(.semibold))
+
+                Text(row.productName)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                HStack(spacing: 6) {
+                    Label("Flyer price", systemImage: "newspaper")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.blue)
+                    if row.memberOnly {
+                        Text("· member")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
+
+                if let end = row.saleEndDate {
+                    Text("Until \(Self.dateFormatter.string(from: end))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(CurrencyFormatter.shared.display(row.price))
+                    .font(.headline.weight(.semibold))
+
+                if let regular = row.regularPrice {
+                    Text(CurrencyFormatter.shared.display(regular))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .strikethrough()
+                }
+            }
+        }
+        .padding(.vertical, 8)
     }
 }

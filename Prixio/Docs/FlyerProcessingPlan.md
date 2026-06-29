@@ -330,6 +330,12 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-29 - Promotion: saved flyer prices appear in Compare
+
+Saved `FlyerPriceRecord`s now surface in the Compare item-detail screen as a dedicated, clearly-labeled **"Flyer prices"** section (best price first, with regular-price strikethrough, sale-end date, and member flag). Per the plan's trust guardrails, flyer prices are kept visually and structurally separate from in-person `StoreComparisonRow` captures — never merged into the unit-normalized store comparison — with a footer that they're advertised prices and may differ from an in-store scan. Matching reuses `ItemKeyNormalizer.matches` (same head-noun rollup), via a pure `CompareViewModel.flyerComparisonRows(itemKey:records:)` builder; `ItemDetailView` `@Query`s `FlyerPriceRecord` and recomputes when records change. 4 promotion tests; build green.
+
+Follow-ups: flyer-only items (no captures) don't yet appear in the Compare browse/suggested lists (those are still `PriceEntry`-derived); basket/shopping estimates don't yet factor flyer prices; and a saved-flyer-prices management surface is still pending.
+
 ### 2026-06-29 - Steps 7 & 8 (real-list review + save to dedicated store)
 
 Step 7: deal matching now runs against the user's real default shopping list (active items, via `ShoppingListRepository`), falling back to the sample list only when empty. Review rows surface per-deal provenance (regular price, size, member-only, sale-end, confidence) and label which list was matched.

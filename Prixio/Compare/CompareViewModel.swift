@@ -46,6 +46,23 @@ final class CompareViewModel: ObservableObject {
         let showsMixedUnitFamilyNote: Bool
     }
 
+    /// A saved flyer price promoted into the comparison surface. Kept distinct from
+    /// `StoreComparisonRow` (in-person captures) so it can be labeled "Flyer price"
+    /// and never presented as an equal-confidence scanned price.
+    struct FlyerComparisonRow: Identifiable, Equatable {
+        let recordID: UUID
+        let bannerName: String
+        let productName: String
+        let price: Decimal
+        let regularPrice: Decimal?
+        let saleEndDate: Date?
+        let memberOnly: Bool
+        let confidence: Float
+        let storeContext: String?
+
+        var id: UUID { recordID }
+    }
+
     @Published private(set) var suggestedCards: [SuggestedComparisonCard] = []
     @Published private(set) var recentCaptures: [RecentCaptureRow] = []
     @Published private(set) var browseItems: [BrowseItemRow] = []
@@ -169,6 +186,39 @@ final class CompareViewModel: ObservableObject {
             scope: scope,
             now: now
         )
+    }
+
+    /// Saved flyer prices that match this item, promoted into the comparison surface
+    /// as clearly-labeled "Flyer price" rows (best price first). Uses the same
+    /// generic-query→specific-product rule as captured comparisons, so "cheese" rolls
+    /// up "Marble Cheddar". Kept separate from `StoreComparisonRow` so scraped flyer
+    /// data is never shown as an equal-confidence in-person scan.
+    func flyerComparisonRows(
+        itemKey: String,
+        records: [FlyerPriceRecord]
+    ) -> [FlyerComparisonRow] {
+        let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
+        return records
+            .filter { ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.normalizedItemKey) }
+            .map { record in
+                FlyerComparisonRow(
+                    recordID: record.id,
+                    bannerName: record.bannerName,
+                    productName: record.productName,
+                    price: record.priceValue,
+                    regularPrice: record.regularPriceValue,
+                    saleEndDate: record.saleEndDate,
+                    memberOnly: record.memberOnly,
+                    confidence: record.confidence,
+                    storeContext: record.storeContext
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.price != rhs.price {
+                    return lhs.price < rhs.price
+                }
+                return lhs.bannerName.localizedCaseInsensitiveCompare(rhs.bannerName) == .orderedAscending
+            }
     }
 
     /// Store scopes (all-stores plus per-chain/-location) that have history for this item, used to
