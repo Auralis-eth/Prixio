@@ -330,6 +330,10 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-29 - Promotion follow-up: flyer-only items surface in Compare Browse/Search
+
+Fixed the gap where a saved flyer deal was invisible in Compare unless the user had already scanned that item: `CompareViewModel.recompute` now also takes `flyerRecords` and synthesizes Browse rows for items that exist **only** as saved flyer prices (no captured `PriceEntry` for that key), flagged `isFlyerOnly` and labeled "Flyer only · N banners" with the cheapest banner price. These rows are searchable and tappable (the item-detail "Flyer prices" section then shows them). Dedup is by exact normalized key so an item with both a capture and a flyer price isn't double-listed. `CompareRootView` `@Query`s `FlyerPriceRecord`, the empty-state gate now considers flyer records, and the empty "Recent Captures" section is hidden when there are no captures. 3 new tests (flyer-only appears/flagged/cheapest, no dup vs capture, searchable); 7 promotion tests total, build green.
+
 ### 2026-06-29 - Promotion: saved flyer prices appear in Compare
 
 Saved `FlyerPriceRecord`s now surface in the Compare item-detail screen as a dedicated, clearly-labeled **"Flyer prices"** section (best price first, with regular-price strikethrough, sale-end date, and member flag). Per the plan's trust guardrails, flyer prices are kept visually and structurally separate from in-person `StoreComparisonRow` captures — never merged into the unit-normalized store comparison — with a footer that they're advertised prices and may differ from an in-store scan. Matching reuses `ItemKeyNormalizer.matches` (same head-noun rollup), via a pure `CompareViewModel.flyerComparisonRows(itemKey:records:)` builder; `ItemDetailView` `@Query`s `FlyerPriceRecord` and recomputes when records change. 4 promotion tests; build green.

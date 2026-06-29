@@ -4,6 +4,7 @@ import SwiftUI
 struct CompareRootView: View {
     @EnvironmentObject private var navigationModel: AppNavigationModel
     @Query(sort: \PriceEntry.capturedAt, order: .reverse) private var entries: [PriceEntry]
+    @Query(sort: \FlyerPriceRecord.savedAt, order: .reverse) private var flyerRecords: [FlyerPriceRecord]
 
     @StateObject private var viewModel = CompareViewModel()
     @StateObject private var locationManager = LocationManager()
@@ -12,13 +13,15 @@ struct CompareRootView: View {
     var body: some View {
         NavigationStack {
             List {
-                if entries.isEmpty {
+                if entries.isEmpty && flyerRecords.isEmpty {
                     emptyStateSection
                 } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     searchResultsSection
                 } else {
                     suggestedSection
-                    recentCapturesSection
+                    if !viewModel.recentCaptures.isEmpty {
+                        recentCapturesSection
+                    }
                     browseSection
                 }
             }
@@ -30,6 +33,9 @@ struct CompareRootView: View {
             recompute()
         }
         .onChange(of: entries.count) { _, _ in
+            recompute()
+        }
+        .onChange(of: flyerRecords.count) { _, _ in
             recompute()
         }
         .onChange(of: searchText) { _, _ in
@@ -121,24 +127,7 @@ struct CompareRootView: View {
                         userLocation: locationManager.currentLocation
                     )
                 } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.displayName)
-                                .font(.headline)
-                            Text("\(item.storeCount) stores")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        if let bestPrice = item.bestPrice,
-                           let bestPriceUnitLabel = item.bestPriceUnitLabel {
-                            Text("\(CurrencyFormatter.shared.display(bestPrice))/\(bestPriceUnitLabel)")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.teal)
-                        }
-                    }
+                    BrowseItemLabel(item: item)
                 }
             }
         }
@@ -161,13 +150,7 @@ struct CompareRootView: View {
                             userLocation: locationManager.currentLocation
                         )
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.displayName)
-                                .font(.headline)
-                            Text("\(item.storeCount) stores")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        BrowseItemLabel(item: item)
                     }
                 }
             }
@@ -175,12 +158,50 @@ struct CompareRootView: View {
     }
 
     private func recompute() {
-        viewModel.recompute(entries: entries, query: searchText)
+        viewModel.recompute(entries: entries, flyerRecords: flyerRecords, query: searchText)
     }
 
     private func relativeDateLabel(for date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: .now)
+    }
+}
+
+/// A browse/search row label shared by both lists. Flyer-only items (no in-person
+/// capture) are labeled "Flyer only" and show their advertised price without a unit.
+private struct BrowseItemLabel: View {
+    let item: CompareViewModel.BrowseItemRow
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.displayName)
+                    .font(.headline)
+                if item.isFlyerOnly {
+                    Label("Flyer only · \(item.storeCount) banner\(item.storeCount == 1 ? "" : "s")", systemImage: "newspaper")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                } else {
+                    Text("\(item.storeCount) stores")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if let bestPrice = item.bestPrice {
+                if let unitLabel = item.bestPriceUnitLabel {
+                    Text("\(CurrencyFormatter.shared.display(bestPrice))/\(unitLabel)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.teal)
+                } else {
+                    Text(CurrencyFormatter.shared.display(bestPrice))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(item.isFlyerOnly ? .blue : .teal)
+                }
+            }
+        }
     }
 }

@@ -35,6 +35,9 @@ final class CompareViewModel: ObservableObject {
         let bestPrice: Decimal?
         let bestPriceUnitLabel: String?
         let storeCount: Int
+        /// True when this item has no in-person captures and is shown purely from
+        /// saved flyer prices, so the UI can label it "Flyer only".
+        var isFlyerOnly: Bool = false
 
         var id: String {
             itemKey
@@ -70,6 +73,7 @@ final class CompareViewModel: ObservableObject {
 
     func recompute(
         entries: [PriceEntry],
+        flyerRecords: [FlyerPriceRecord] = [],
         query: String,
         now: Date = .now
     ) {
@@ -91,8 +95,12 @@ final class CompareViewModel: ObservableObject {
             .sorted { $0.capturedAt > $1.capturedAt }
             .map(makeRecentCaptureRow(from:))
 
-        browseItems = groupedEntries.values
-            .map { makeBrowseRow(for: $0, now: now) }
+        let capturedRows = groupedEntries.values.map { makeBrowseRow(for: $0, now: now) }
+        // Add items that exist only as saved flyer prices (no in-person capture), so a
+        // saved deal is reachable in Compare even before the user has scanned it.
+        let capturedKeys = Set(capturedRows.map(\.itemKey))
+        let flyerOnlyRows = makeFlyerOnlyBrowseRows(records: flyerRecords, excludingKeys: capturedKeys)
+        browseItems = (capturedRows + flyerOnlyRows)
             .sorted {
                 $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
             }
@@ -268,8 +276,33 @@ final class CompareViewModel: ObservableObject {
             displayName: representativeEntry?.itemNameRaw ?? "",
             bestPrice: bestSuggestion?.comparablePrice,
             bestPriceUnitLabel: bestSuggestion.map { unitLabel(for: $0.comparableUnitType) },
-            storeCount: distinctStoreCount(for: entries)
+            storeCount: distinctStoreCount(for: entries),
+            isFlyerOnly: false
         )
+    }
+
+    /// Browse rows for items that exist only as saved flyer prices (no captured key in
+    /// `excludingKeys`). Each row uses the cheapest saved record as its representative,
+    /// with the distinct banner count as its "store" count.
+    private func makeFlyerOnlyBrowseRows(
+        records: [FlyerPriceRecord],
+        excludingKeys: Set<String>
+    ) -> [BrowseItemRow] {
+        let grouped = Dictionary(grouping: records, by: \.normalizedItemKey)
+        return grouped.compactMap { key, group in
+            guard !key.isEmpty, !excludingKeys.contains(key),
+                  let cheapest = group.min(by: { $0.priceValue < $1.priceValue }) else {
+                return nil
+            }
+            return BrowseItemRow(
+                itemKey: key,
+                displayName: cheapest.productName,
+                bestPrice: cheapest.priceValue,
+                bestPriceUnitLabel: nil,
+                storeCount: Set(group.map(\.bannerID)).count,
+                isFlyerOnly: true
+            )
+        }
     }
 
     private func distinctStoreCount(for entries: [PriceEntry]) -> Int {

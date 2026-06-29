@@ -74,4 +74,58 @@ struct FlyerComparisonPromotionTests {
         )
         #expect(rows.isEmpty)
     }
+
+    // MARK: - Browse-list promotion (flyer-only items)
+
+    private func priceEntry(_ name: String, price: String) -> PriceEntry {
+        PriceEntry(
+            capturedAt: .now,
+            itemNameRaw: name,
+            itemNameNormalized: ItemKeyNormalizer.normalize(name),
+            priceValue: Decimal(string: price)!,
+            unitType: .each,
+            photoAssetId: "test"
+        )
+    }
+
+    @Test("Flyer-only items appear in Browse, flagged, with the cheapest banner price")
+    func flyerOnlyItemsAppearInBrowse() {
+        viewModel.recompute(
+            entries: [priceEntry("Whole Milk", price: "3.49")],
+            flyerRecords: [
+                record("Orange Juice", banner: "Walmart", price: "3.99"),
+                record("Orange Juice", banner: "Safeway", price: "4.49")
+            ],
+            query: ""
+        )
+        let oj = viewModel.browseItems.first { $0.displayName == "Orange Juice" }
+        #expect(oj != nil)
+        #expect(oj?.isFlyerOnly == true)
+        #expect(oj?.bestPrice == Decimal(string: "3.99"))   // cheapest banner
+        #expect(oj?.storeCount == 2)                          // distinct banners
+        // The captured item is still present and not flagged.
+        #expect(viewModel.browseItems.first { $0.displayName == "Whole Milk" }?.isFlyerOnly == false)
+    }
+
+    @Test("A flyer item that matches a captured item is not duplicated as flyer-only")
+    func capturedItemNotDuplicated() {
+        viewModel.recompute(
+            entries: [priceEntry("Butter", price: "5.49")],
+            flyerRecords: [record("Butter", banner: "Walmart", price: "3.99")],
+            query: ""
+        )
+        let butterRows = viewModel.browseItems.filter { $0.itemKey == ItemKeyNormalizer.normalize("Butter") }
+        #expect(butterRows.count == 1)
+        #expect(butterRows.first?.isFlyerOnly == false)
+    }
+
+    @Test("Flyer-only items are searchable")
+    func flyerOnlyItemsAreSearchable() {
+        viewModel.recompute(
+            entries: [],
+            flyerRecords: [record("Sourdough Bread", banner: "Sobeys", price: "2.99")],
+            query: "bread"
+        )
+        #expect(viewModel.searchResults.contains { $0.displayName == "Sourdough Bread" && $0.isFlyerOnly })
+    }
 }
