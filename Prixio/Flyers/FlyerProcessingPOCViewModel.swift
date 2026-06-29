@@ -250,6 +250,74 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         matches.filter(\.hasDeals)
     }
 
+    /// One line per pipeline stage with at-a-glance counts, so a device run shows
+    /// where data narrows (e.g. lots of candidates but few matches, or matches saved
+    /// but nothing in Compare).
+    struct PipelineStageSummary: Identifiable, Equatable {
+        let stage: String
+        let detail: String
+        let systemImage: String
+        var id: String { stage }
+    }
+
+    var pipelineSummary: [PipelineStageSummary] {
+        // Discovery
+        let discovery: String
+        if runState == .completed {
+            let found = results.filter { $0.state == .found }.count
+            let render = results.filter { $0.state == .needsRenderedExtraction }.count
+            let unsupported = results.filter { $0.state == .unsupported }.count
+            discovery = "\(results.count) banners · \(found) found · \(render) need render · \(unsupported) unsupported"
+        } else {
+            discovery = "Not run yet"
+        }
+
+        // Acquisition
+        let acquisition: String
+        if acquisitionState == .completed {
+            let values = acquisitions.values
+            let acquired = values.filter { $0.state == .acquired }.count
+            let noPrices = values.filter { $0.state == .acquiredNoPrices }.count
+            let failed = values.filter { $0.state == .failed }.count
+            acquisition = "\(acquired) acquired · \(noPrices) no-prices · \(failed) failed"
+        } else {
+            acquisition = "Not run yet"
+        }
+
+        // Extraction
+        let extraction: String
+        if extractionState == .completed {
+            let total = extractions.values.reduce(0) { $0 + $1.candidateCount }
+            let withCandidates = extractions.values.filter { $0.candidateCount > 0 }.count
+            extraction = "\(total) candidates · \(withCandidates) banners"
+        } else {
+            extraction = "Not run yet"
+        }
+
+        // Match
+        let match: String
+        if matchState == .completed {
+            let totalDeals = matches.reduce(0) { $0 + $1.deals.count }
+            let listLabel = matchedAgainstRealList ? "your list" : "sample list"
+            match = "\(matchedItemsWithDeals.count)/\(matches.count) \(listLabel) items · \(totalDeals) deals"
+        } else {
+            match = "Not run yet"
+        }
+
+        // Saved
+        let saved = savedDealKeys.isEmpty
+            ? "No flyer prices saved"
+            : "\(savedDealKeys.count) flyer price\(savedDealKeys.count == 1 ? "" : "s") saved"
+
+        return [
+            PipelineStageSummary(stage: "1 · Discovery", detail: discovery, systemImage: "magnifyingglass"),
+            PipelineStageSummary(stage: "2 · Acquisition", detail: acquisition, systemImage: "square.and.arrow.down"),
+            PipelineStageSummary(stage: "3 · Extraction", detail: extraction, systemImage: "list.bullet.rectangle"),
+            PipelineStageSummary(stage: "4 · Match", detail: match, systemImage: "cart"),
+            PipelineStageSummary(stage: "5 · Saved", detail: saved, systemImage: "tray.full")
+        ]
+    }
+
     /// Matches extracted candidates against the user's real shopping list (step 6/7),
     /// falling back to the built-in sample list when the list is empty so the POC
     /// still demonstrates. Pass the SwiftData context from the view environment.

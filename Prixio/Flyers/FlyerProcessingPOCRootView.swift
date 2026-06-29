@@ -130,6 +130,24 @@ struct FlyerProcessingPOCRootView: View {
                     .accessibilityElement(children: .combine)
                 }
 
+                Section("Pipeline Summary") {
+                    ForEach(viewModel.pipelineSummary) { stage in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: stage.systemImage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(stage.stage)
+                                    .font(.caption.weight(.semibold))
+                                Text(stage.detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
                 if !viewModel.matchedItemsWithDeals.isEmpty {
                     Section {
                         ForEach(viewModel.matchedItemsWithDeals) { item in
