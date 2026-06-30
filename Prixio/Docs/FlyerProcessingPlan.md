@@ -330,6 +330,12 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Saved-prices management + normalizer enrichment
+
+Two quality items:
+- **Saved flyer prices management:** new `SavedFlyerPricesView` (reached from the Flyer POC's "Manage saved flyer prices" link) lists every saved `FlyerPriceRecord` with full provenance (banner, price + regular strikethrough, member, sale-end, region, confidence, saved date), swipe-to-delete, and Clear All — backed by `FlyerPriceRecordRepository.delete`.
+- **Normalizer enrichment (match recall):** `ItemKeyNormalizer` now strips decimal pack sizes ("1.89 L", "454.5 g") *before* the non-alphanumeric fold, fixing the bug where the decimal split into a dangling number that became the head noun ("Almond Milk 1.89L" now matches "milk"). Added `dozen`/`doz` to the removable units. Verified against 64 normalization-dependent tests across normalizer/basket/price-insight/shopping/trip/flyer suites — no regressions. Remaining known gap: word-quantities ("Eggs One Dozen") still displace the head noun; that needs lexical handling, deferred.
+
 ### 2026-06-29 - Promotion follow-up: flyer-only items surface in Compare Browse/Search
 
 Fixed the gap where a saved flyer deal was invisible in Compare unless the user had already scanned that item: `CompareViewModel.recompute` now also takes `flyerRecords` and synthesizes Browse rows for items that exist **only** as saved flyer prices (no captured `PriceEntry` for that key), flagged `isFlyerOnly` and labeled "Flyer only · N banners" with the cheapest banner price. These rows are searchable and tappable (the item-detail "Flyer prices" section then shows them). Dedup is by exact normalized key so an item with both a capture and a flyer price isn't double-listed. `CompareRootView` `@Query`s `FlyerPriceRecord`, the empty-state gate now considers flyer records, and the empty "Recent Captures" section is hidden when there are no captures. 3 new tests (flyer-only appears/flagged/cheapest, no dup vs capture, searchable); 7 promotion tests total, build green.

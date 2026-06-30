@@ -146,6 +146,13 @@ struct FlyerProcessingPOCRootView: View {
                             }
                         }
                     }
+
+                    NavigationLink {
+                        SavedFlyerPricesView()
+                    } label: {
+                        Label("Manage saved flyer prices", systemImage: "tray.full")
+                            .font(.caption.weight(.semibold))
+                    }
                 }
 
                 if !viewModel.matchedItemsWithDeals.isEmpty {
