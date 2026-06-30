@@ -330,6 +330,13 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Co-op SOLVED + Flipp banners de-flaked (device-verified)
+
+The flyers-ng client works on device. Co-op finally yields prices:
+`banner=9-Co-op phase=flyerkit merchant=2051 bytes=65634 prices=111` → **111 candidates** (was always 0). Because the fallback fires whenever the live capture falls short, it also rescued the other Flipp banners the same run: Save-On `flyerkit 2062` → 276 candidates (capture was noPrices), Walmart `flyerkit 234` → 245 (capture partial at 4), FreshCo `flyerkit 2267` → 32 (Flipp iframe didn't load). Extraction hit **993 total candidates across 8 banners** (was ~500). Matching the real list: Cheese → 15 deals (best $4.49 @ Co-op), Strawberry → 1 deal ($5.99 @ Save-On) — both list items now match (Strawberry was 0).
+
+`run-finish total=10 acquired=8 noPrices=1 unsupported=1`. Remaining: **Freson** (its `rendered-requests` show no flippenterprise calls at all — it's not a Flipp merchant, so flyerkit can't help; needs its own platform investigation) and **Costco** (intentionally unsupported). Optional follow-up: add Safeway's flyers-ng merchant_id (its flyerkit slug is `safewaycanada`, publication 8000978) so it gets the same render-free fallback — its live capture works today, so it's not urgent.
+
 ### 2026-06-30 - Flipp client fixed via flippscrape: flyers-ng API (no token)
 
 Device run showed the `dam.flippenterprise.net/flyerkit` client returned `badResponse` for every banner — wrong endpoint/token (the `b349aa77…` I used is the JS-bundle path segment, not an API token). Studied `Kiizon/flippscrape` (`app.py`) and verified the live API: it uses a different, **token-free** endpoint —
