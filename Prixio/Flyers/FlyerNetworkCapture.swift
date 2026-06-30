@@ -27,11 +27,22 @@ final class FlyerNetworkCapture: NSObject, WKScriptMessageHandler {
               let dict = message.body as? [String: Any],
               let body = dict["body"] as? String,
               !body.isEmpty,
+              Self.isJSONPayload(body),
               totalBytes < maxBytes else {
             return
         }
         payloads.append(body)
         totalBytes += body.utf8.count
+    }
+
+    /// Whether a captured body is JSON (object/array) rather than JavaScript/HTML.
+    /// Flyer item data is always JSON; this rejects code (e.g. Flipp's webpack
+    /// bundles, which start with `(self.webpack…`) that merely mentions price-like
+    /// words in source text. Mirrors the `looksJSON` gate in the injected interceptor.
+    static func isJSONPayload(_ body: String) -> Bool {
+        let trimmed = body.drop { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" || $0 == "\u{FEFF}" }
+        guard let first = trimmed.first else { return false }
+        return first == "{" || first == "["
     }
 
     /// Counts flyer price signals across both `$X.XX` text and JSON `"price": 3.99`
@@ -64,9 +75,18 @@ final class FlyerNetworkCapture: NSObject, WKScriptMessageHandler {
             || s.indexOf('"price"')>=0 || s.indexOf('/items')>=0 || s.indexOf('product')>=0
             || s.indexOf('wishabi')>=0 || s.indexOf('backflipp')>=0;
       }
+      function looksJSON(body){
+        // Flyer item data is always a JSON object/array. Reject JavaScript bundles
+        // (e.g. Flipp's webpack chunks start with "(self.webpack..."), HTML, and
+        // other code that merely mentions "price"/"flipp" in source text — they
+        // pollute the price signal and waste the capture budget.
+        var c = (body||"").replace(/^[\\s\\ufeff]+/, "").charAt(0);
+        return c === '{' || c === '[';
+      }
       function post(u, body){
         try {
           if (!body || body.length < 40) { return; }
+          if (!looksJSON(body)) { return; }
           if (!looksFlyer(u, body)) { return; }
           window.webkit.messageHandlers.\(messageHandlerName).postMessage({ url: ""+u, body: body.substring(0, 250000) });
         } catch(e){}

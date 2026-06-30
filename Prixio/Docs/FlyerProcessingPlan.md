@@ -330,6 +330,14 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Co-op diagnosed: capture was JavaScript, not data (JSON-only gate)
+
+The zero-candidate diagnostic paid off. Co-op's sample was `(self.webpackChunkFlipp=…)` — **JavaScript**, not flyer data. food.crs is Flipp-powered and the capture was grabbing Flipp's minified **webpack JS chunks** (their source text contains "flipp"/"price"/"product", so they passed `looksFlyer`); Co-op's real item payload was never captured, and the "prices=4" were `$`/`"price"` tokens inside code. So Co-op's 0 candidates was **correct**.
+
+Fix: the network capture now keeps **JSON only** (body's first non-whitespace char is `{`/`[`) — added to both the injected interceptor (`looksJSON`) and a testable Swift guard (`FlyerNetworkCapture.isJSONPayload`). This stops JS/HTML from being mistaken for flyer data anywhere (no more misleading price counts, and the 800 KB budget is reserved for real item fetches). 1 new test (keeps JSON incl. BOM/whitespace, rejects webpack/`!function`/HTML); 17 acquisition tests green.
+
+Remaining Co-op gap (acquisition, not extraction/data-quality): its Flipp **items** fetch is never hooked under food.crs — it loads items via a path our fetch/XHR interceptor doesn't see in budget. That needs per-banner network investigation, logged as future work; the other 6 banners are unaffected (run #N still: Sobeys 146, FreshCo 179, Walmart 121, Save-On 6, RCSS/No Frills 2 — 456 candidates).
+
 ### 2026-06-30 - Word-quantity normalizer + Co-op extraction hardening
 
 - **Word-quantity gap closed:** `ItemKeyNormalizer` now strips a spelled-out count before a unit ("One Dozen", "Six Pack") the same way it already stripped "6 pack", so "Eggs One Dozen" → "egg" and rolls up under "eggs". Number words are only dropped when a unit follows, so brands like "One A Day" are preserved. (Covers the gap left by the decimal-size fix.)

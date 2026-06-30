@@ -356,6 +356,22 @@ struct FlyerContentAcquisitionTests {
         #expect(FlyerNetworkCapture.interceptorScript.contains(FlyerNetworkCapture.messageHandlerName))
     }
 
+    @Test
+    func networkCaptureKeepsJSONAndRejectsJavaScript() {
+        // Real flyer payloads are JSON objects/arrays (incl. leading whitespace/BOM).
+        #expect(FlyerNetworkCapture.isJSONPayload("{\"items\":[]}"))
+        #expect(FlyerNetworkCapture.isJSONPayload("  [1,2,3]"))
+        #expect(FlyerNetworkCapture.isJSONPayload("\u{FEFF}{\"a\":1}"))
+        // JavaScript bundles (e.g. Flipp's webpack chunks) and HTML must be rejected,
+        // even though their source text mentions price-like words.
+        #expect(!FlyerNetworkCapture.isJSONPayload("(self.webpackChunkFlipp=self.webpackChunkFlipp||[]).push([[4736],{5023:function(){var price}}"))
+        #expect(!FlyerNetworkCapture.isJSONPayload("!function(e){\"price\"}"))
+        #expect(!FlyerNetworkCapture.isJSONPayload("<!DOCTYPE html><div>$3.99</div>"))
+        #expect(!FlyerNetworkCapture.isJSONPayload(""))
+        // The injected interceptor carries the same gate.
+        #expect(FlyerNetworkCapture.interceptorScript.contains("looksJSON"))
+    }
+
     private func seededResult(_ banner: FlyerBanner) -> FlyerDiscoveryResult {
         FlyerDiscoveryResult(
             banner: banner,
