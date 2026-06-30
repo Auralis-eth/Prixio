@@ -46,27 +46,41 @@ struct FlyerStorePreparation: Equatable {
     /// Whether this banner is known to sit behind an anti-bot wall (Akamai) that a
     /// store context cannot clear. Used to label the result honestly.
     var antiBotWalled: Bool = false
+    /// The Flipp **flyerkit** merchant slug, when this banner serves its flyer via
+    /// Flipp (`dam.flippenterprise.net/flyerkit/...`). Lets the acquirer fetch items
+    /// directly from the flyerkit API as a deterministic fallback when the rendered
+    /// widget never fetches products — slugs read from device request diagnostics.
+    var flippMerchant: String? = nil
 }
 
 enum FlyerStorePreparationCatalog {
     static func preparation(for banner: FlyerBannerID, context: FlyerStoreContext) -> FlyerStorePreparation {
         switch banner {
-        case .safeway, .sobeys, .freshCo, .fresonBros:
-            // Empire/independent banners embed a Flipp flyer viewer. The universal
-            // postal seed + geolocation help Flipp auto-locate, but the rendered
-            // prices live in a cross-origin iframe `innerText` can't read.
+        case .safeway:
+            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchant: "safeway")
+        case .sobeys:
+            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchant: "sobeys")
+        case .freshCo:
+            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchant: "freshco")
+        case .fresonBros:
+            // Flipp family, but its merchant slug isn't confirmed yet (iframe stays
+            // about:blank); no flyerkit fallback until a slug is known.
             return FlyerStorePreparation(flyerInCrossOriginIframe: true)
         case .realCanadianSuperstore, .noFrills:
-            // Loblaw banners return an Akamai bot-wall shell even through WebKit.
+            // Loblaw banners return an Akamai bot-wall shell even through WebKit, and
+            // serve items via the pcexpress API (not Flipp).
             return FlyerStorePreparation(antiBotWalled: true)
         case .saveOnFoods:
-            // Run #3 showed Save-On is NOT Flipp: choosing a store navigates to a
-            // Salesforce `/sm/planning/rsid/<id>/circular` page whose flyer text is
-            // readable in the main document. Universal levers + nav-follow apply.
-            return FlyerStorePreparation()
-        case .walmartSupercentre, .coOp:
-            // Render flyer content in the main document; universal levers apply.
-            return FlyerStorePreparation()
+            // Save-On renders a Salesforce circular, but also exposes a Flipp flyerkit
+            // feed; the merchant slug backs the direct-fetch fallback.
+            return FlyerStorePreparation(flippMerchant: "saveonfoods")
+        case .walmartSupercentre:
+            return FlyerStorePreparation(flippMerchant: "walmartcanada")
+        case .coOp:
+            // food.crs loads only its Flipp merchant config and never selects a
+            // publication, so the rendered capture comes up empty — the flyerkit
+            // direct fetch (slug "coopfood") is its reliable source.
+            return FlyerStorePreparation(flippMerchant: "coopfood")
         case .costco:
             return FlyerStorePreparation()
         }

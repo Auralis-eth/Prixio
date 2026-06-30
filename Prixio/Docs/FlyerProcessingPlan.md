@@ -330,6 +330,14 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Co-op cracked: direct Flipp flyerkit fetch
+
+The request diagnostics revealed the answer. Every Flipp banner loads items from `dam.flippenterprise.net/flyerkit/publication/<id>/products` with a shared public `access_token` (`b349aa77…`, in every banner's `aq.flippenterprise.net/a/<token>/lib/…` URL) and a per-merchant slug. **Co-op's widget loads only `flyerkit/merchant/coopfood` and never selects a publication**, so it never fetches `/products` — hence 0 candidates.
+
+Fix: `FlippFlyerKitClient` fetches the flyerkit API directly — `publications/<merchant>` → pick the publication whose validity window contains now → `publication/<id>/products` → products JSON (fed to the same extractor). Wired as a deterministic fallback in the rendered acquirer for any Flipp banner with a known merchant slug (`flippMerchant` on `FlyerStorePreparation`) when the capture comes up short of the price threshold. Slugs from diagnostics: Co-op `coopfood`, Sobeys `sobeys`, Walmart `walmartcanada`, Save-On `saveonfoods`, FreshCo `freshco`, Safeway `safeway` (Freson's slug still unknown). This also gives every Flipp banner a reliable, render-free path (capture timing was flaky run-to-run). 6 flyerkit-client tests (URL building, publication selection incl. wrapped/fallback/none, products fetch → extractor); 23 acquisition tests green.
+
+Expected next run: Co-op `phase=flyerkit merchant=coopfood ... prices=N` → candidates. (If the public token/postal is rejected, the `flyerkit-error` line will say so.)
+
 ### 2026-06-30 - Co-op items-fetch: request diagnostics + flyer-open click
 
 Working the real Co-op gap (its Flipp **items** fetch never lands in the capture under food.crs). Two changes:

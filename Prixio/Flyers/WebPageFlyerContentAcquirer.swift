@@ -29,6 +29,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
     private let captureAcquireThreshold: Int
     private let enableOCR: Bool
     private let storeContext: FlyerStoreContext
+    private let flyerKitClient: FlippFlyerKitClient
     private let logger: FlyerAcquisitionLogging
 
     init(
@@ -47,6 +48,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
         // network-capture + text/attribute harvest are the real price sources.
         enableOCR: Bool = false,
         storeContext: FlyerStoreContext? = nil,
+        flyerKitClient: FlippFlyerKitClient = FlippFlyerKitClient(),
         logger: FlyerAcquisitionLogging? = nil
     ) {
         self.tickInterval = tickInterval
@@ -55,6 +57,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
         self.maxStoreLocatorTicks = maxStoreLocatorTicks
         self.captureAcquireThreshold = captureAcquireThreshold
         self.enableOCR = enableOCR
+        self.flyerKitClient = flyerKitClient
         // Default to the classifier's static threshold so the "real flyer content"
         // bar matches discovery. Resolved here (main-actor isolated) rather than as
         // a default argument, which would evaluate in a nonisolated context.
@@ -201,6 +204,29 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
                 bestPriceCount = capturedPrices
                 bestText = capturedText
                 method = .endpointJSON
+            }
+        }
+
+        // Flipp flyerkit direct fetch: a deterministic fallback when the rendered
+        // widget didn't yield enough captured items. Device diagnostics showed every
+        // Flipp banner serves items from `flyerkit/publication/<id>/products`; Co-op's
+        // widget loads only its merchant config and never selects a publication, so
+        // this is its reliable source. Only Flipp banners with a known merchant slug.
+        if bestPriceCount < priceThreshold, let merchant = prep.flippMerchant {
+            do {
+                let json = try await flyerKitClient.fetchProductsJSON(
+                    merchant: merchant,
+                    postalCode: storeContext.postalCode
+                )
+                let prices = FlyerNetworkCapture.priceSignalCount(in: json)
+                logger.log("banner=\(label) phase=flyerkit merchant=\(merchant) bytes=\(json.utf8.count) prices=\(prices)")
+                if prices > bestPriceCount {
+                    bestPriceCount = prices
+                    bestText = json
+                    method = .endpointJSON
+                }
+            } catch {
+                logger.log("banner=\(label) phase=flyerkit-error merchant=\(merchant) error=\(description(for: error))")
             }
         }
 
