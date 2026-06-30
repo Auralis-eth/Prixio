@@ -46,41 +46,42 @@ struct FlyerStorePreparation: Equatable {
     /// Whether this banner is known to sit behind an anti-bot wall (Akamai) that a
     /// store context cannot clear. Used to label the result honestly.
     var antiBotWalled: Bool = false
-    /// The Flipp **flyerkit** merchant slug, when this banner serves its flyer via
-    /// Flipp (`dam.flippenterprise.net/flyerkit/...`). Lets the acquirer fetch items
-    /// directly from the flyerkit API as a deterministic fallback when the rendered
-    /// widget never fetches products — slugs read from device request diagnostics.
-    var flippMerchant: String? = nil
+    /// The Flipp `merchant_id`, when this banner serves its flyer via Flipp. Lets the
+    /// acquirer fetch items directly from the public `flyers-ng.flippback.com` API
+    /// (`FlippFlyerKitClient`) as a deterministic fallback when the rendered widget
+    /// never fetches items — ids read from the live Flipp `data` response.
+    var flippMerchantID: Int? = nil
 }
 
 enum FlyerStorePreparationCatalog {
     static func preparation(for banner: FlyerBannerID, context: FlyerStoreContext) -> FlyerStorePreparation {
+        // Flipp `merchant_id`s read from the live flyers-ng `data` response (T2P1J9).
         switch banner {
         case .safeway:
-            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchant: "safeway")
+            // Capture works for Safeway; its grocery merchant_id isn't confirmed, so no
+            // flyerkit fallback yet.
+            return FlyerStorePreparation(flyerInCrossOriginIframe: true)
         case .sobeys:
-            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchant: "sobeys")
+            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchantID: 2072)
         case .freshCo:
-            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchant: "freshco")
+            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchantID: 2267)
         case .fresonBros:
-            // Flipp family, but its merchant slug isn't confirmed yet (iframe stays
-            // about:blank); no flyerkit fallback until a slug is known.
+            // Flipp iframe stays about:blank; merchant_id unknown.
             return FlyerStorePreparation(flyerInCrossOriginIframe: true)
         case .realCanadianSuperstore, .noFrills:
             // Loblaw banners return an Akamai bot-wall shell even through WebKit, and
             // serve items via the pcexpress API (not Flipp).
             return FlyerStorePreparation(antiBotWalled: true)
         case .saveOnFoods:
-            // Save-On renders a Salesforce circular, but also exposes a Flipp flyerkit
-            // feed; the merchant slug backs the direct-fetch fallback.
-            return FlyerStorePreparation(flippMerchant: "saveonfoods")
+            // Save-On renders a Salesforce circular, but also has a Flipp flyer.
+            return FlyerStorePreparation(flippMerchantID: 2062)
         case .walmartSupercentre:
-            return FlyerStorePreparation(flippMerchant: "walmartcanada")
+            return FlyerStorePreparation(flippMerchantID: 234)
         case .coOp:
             // food.crs loads only its Flipp merchant config and never selects a
-            // publication, so the rendered capture comes up empty — the flyerkit
-            // direct fetch (slug "coopfood") is its reliable source.
-            return FlyerStorePreparation(flippMerchant: "coopfood")
+            // publication, so the rendered capture is empty — the direct flyers-ng
+            // fetch (Calgary Co-op, merchant_id 2051) is its reliable source.
+            return FlyerStorePreparation(flippMerchantID: 2051)
         case .costco:
             return FlyerStorePreparation()
         }

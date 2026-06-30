@@ -212,21 +212,21 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
         // Flipp banner serves items from `flyerkit/publication/<id>/products`; Co-op's
         // widget loads only its merchant config and never selects a publication, so
         // this is its reliable source. Only Flipp banners with a known merchant slug.
-        if bestPriceCount < priceThreshold, let merchant = prep.flippMerchant {
+        if bestPriceCount < priceThreshold, let merchantID = prep.flippMerchantID {
             do {
-                let json = try await flyerKitClient.fetchProductsJSON(
-                    merchant: merchant,
+                let json = try await flyerKitClient.fetchItemsJSON(
+                    merchantID: merchantID,
                     postalCode: storeContext.postalCode
                 )
                 let prices = FlyerNetworkCapture.priceSignalCount(in: json)
-                logger.log("banner=\(label) phase=flyerkit merchant=\(merchant) bytes=\(json.utf8.count) prices=\(prices)")
+                logger.log("banner=\(label) phase=flyerkit merchant=\(merchantID) bytes=\(json.utf8.count) prices=\(prices)")
                 if prices > bestPriceCount {
                     bestPriceCount = prices
                     bestText = json
                     method = .endpointJSON
                 }
             } catch {
-                logger.log("banner=\(label) phase=flyerkit-error merchant=\(merchant) error=\(description(for: error))")
+                logger.log("banner=\(label) phase=flyerkit-error merchant=\(merchantID) error=\(description(for: error))")
             }
         }
 

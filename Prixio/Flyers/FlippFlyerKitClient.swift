@@ -1,20 +1,23 @@
 import Foundation
 
-/// Fetches flyer items directly from Flipp's public **flyerkit** REST API — the same
-/// endpoints the on-page Flipp widget uses. Device diagnostics showed every Flipp
-/// banner (Sobeys, Walmart, FreshCo, Save-On, Co-op) loads items from
-/// `dam.flippenterprise.net/flyerkit/publication/<id>/products`, with a shared public
-/// `access_token` and a per-merchant slug.
+/// Fetches flyer items directly from Flipp's public legacy API (`flyers-ng.flippback.com`)
+/// — the endpoint the `Kiizon/flippscrape` project uses, which needs only a postal code
+/// and a random 16-digit session id (`sid`), no access token.
 ///
-/// This is a deterministic fallback for banners whose rendered widget never fetches
-/// products in budget — notably Co-op (`coopfood`), which loads only its merchant
-/// config and never selects a publication. Returns the products JSON, which feeds the
-/// same `FlyerPriceExtractor` (endpointJSON) path as captured payloads.
+/// Two steps, verified against the live API:
+/// 1. `…/api/flipp/data?locale=en&postal_code=<pc>&sid=<sid>` → `{"flyers":[…]}`, each
+///    flyer carrying `id`, `merchant`, `merchant_id`, `valid_from`, `valid_to`.
+/// 2. `…/api/flipp/flyers/<flyerID>/flyer_items?locale=en&sid=<sid>` → a JSON array of
+///    items shaped `{name, brand, price, valid_from, valid_to, …}`.
+///
+/// This is the deterministic source for banners whose rendered widget never fetches
+/// items in budget — notably Co-op (`merchant_id` 2051, "Calgary Co-op"), which loads
+/// only its Flipp merchant config and never selects a publication. The returned items
+/// JSON feeds the same `FlyerPriceExtractor` (endpointJSON) path as captured payloads.
 struct FlippFlyerKitClient {
-    /// Public flyerkit access token observed across every Flipp banner's bundle URL
-    /// (`aq.flippenterprise.net/a/<token>/lib/…`).
-    var accessToken = "b349aa77564405f1fa8b432dc9d639e3258c6b9f"
-    var locale = "en-ca"
+    var locale = "en"
+    /// Random 16-digit session id, mirroring flippscrape. Injectable for tests.
+    var makeSessionID: () -> String = { (0..<16).map { _ in String(Int.random(in: 0...9)) }.joined() }
     /// Injectable for tests; defaults to a bounded URLSession GET.
     var fetch: (URL) async throws -> Data = { url in
         var request = URLRequest(url: url)
@@ -27,61 +30,60 @@ struct FlippFlyerKitClient {
         return data
     }
 
-    private let host = "https://dam.flippenterprise.net/flyerkit"
+    private let host = "https://flyers-ng.flippback.com/api/flipp"
 
-    /// Resolves the merchant's current publication and returns its products JSON.
-    func fetchProductsJSON(merchant: String, postalCode: String, now: Date = .now) async throws -> String {
-        let publicationsData = try await fetch(publicationsURL(merchant: merchant, postalCode: postalCode))
-        let publications = try Self.parseArray(publicationsData)
-        guard let publicationID = Self.currentPublicationID(from: publications, now: now) else {
+    /// Resolves the merchant's current flyer for the postal code and returns its items
+    /// JSON. `merchantID` is the Flipp `merchant_id` (e.g. Co-op 2051).
+    func fetchItemsJSON(merchantID: Int, postalCode: String, now: Date = .now) async throws -> String {
+        let sid = makeSessionID()
+        let flyersData = try await fetch(dataURL(postalCode: postalCode, sid: sid))
+        let flyers = try Self.parseFlyers(flyersData)
+        guard let flyerID = Self.currentFlyerID(from: flyers, merchantID: merchantID, now: now) else {
             throw FlippFlyerKitError.noPublication
         }
-        let productsData = try await fetch(productsURL(publicationID: publicationID))
-        guard let json = String(data: productsData, encoding: .utf8), !json.isEmpty else {
+        let itemsData = try await fetch(itemsURL(flyerID: flyerID, sid: sid))
+        guard let json = String(data: itemsData, encoding: .utf8), !json.isEmpty else {
             throw FlippFlyerKitError.emptyProducts
         }
         return json
     }
 
-    func publicationsURL(merchant: String, postalCode: String) -> URL {
-        var components = URLComponents(string: "\(host)/publications/\(merchant)")!
+    func dataURL(postalCode: String, sid: String) -> URL {
+        var components = URLComponents(string: "\(host)/data")!
         components.queryItems = [
             URLQueryItem(name: "locale", value: locale),
-            URLQueryItem(name: "access_token", value: accessToken),
-            URLQueryItem(name: "postal_code", value: postalCode)
+            URLQueryItem(name: "postal_code", value: postalCode),
+            URLQueryItem(name: "sid", value: sid)
         ]
         return components.url!
     }
 
-    func productsURL(publicationID: Int) -> URL {
-        var components = URLComponents(string: "\(host)/publication/\(publicationID)/products")!
+    func itemsURL(flyerID: Int, sid: String) -> URL {
+        var components = URLComponents(string: "\(host)/flyers/\(flyerID)/flyer_items")!
         components.queryItems = [
             URLQueryItem(name: "locale", value: locale),
-            URLQueryItem(name: "access_token", value: accessToken)
+            URLQueryItem(name: "sid", value: sid)
         ]
         return components.url!
     }
 
-    private static func parseArray(_ data: Data) throws -> [[String: Any]] {
+    private static func parseFlyers(_ data: Data) throws -> [[String: Any]] {
         let object = try JSONSerialization.jsonObject(with: data)
-        if let array = object as? [[String: Any]] { return array }
-        // Some flyerkit responses wrap the list, e.g. {"publications":[…]}.
-        if let dict = object as? [String: Any] {
-            for value in dict.values {
-                if let array = value as? [[String: Any]] { return array }
-            }
+        if let dict = object as? [String: Any], let flyers = dict["flyers"] as? [[String: Any]] {
+            return flyers
         }
+        if let array = object as? [[String: Any]] { return array }
         throw FlippFlyerKitError.badResponse
     }
 
-    /// Picks the publication whose validity window contains `now`; falls back to the
-    /// first one with an id (Flipp lists the current flyer first).
-    static func currentPublicationID(from publications: [[String: Any]], now: Date) -> Int? {
+    /// Among the merchant's flyers, the one whose validity window contains `now`; falls
+    /// back to the merchant's first flyer (Flipp lists the current run first).
+    static func currentFlyerID(from flyers: [[String: Any]], merchantID: Int, now: Date) -> Int? {
         var fallback: Int?
-        for publication in publications {
-            guard let id = intValue(publication["id"]) else { continue }
+        for flyer in flyers where intValue(flyer["merchant_id"]) == merchantID {
+            guard let id = intValue(flyer["id"]) else { continue }
             if fallback == nil { fallback = id }
-            if let from = day(publication["valid_from"]), let to = day(publication["valid_to"]),
+            if let from = day(flyer["valid_from"]), let to = day(flyer["valid_to"]),
                now >= from, now < to.addingTimeInterval(86_400) {
                 return id
             }

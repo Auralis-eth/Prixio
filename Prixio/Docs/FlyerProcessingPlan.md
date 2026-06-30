@@ -330,6 +330,16 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Flipp client fixed via flippscrape: flyers-ng API (no token)
+
+Device run showed the `dam.flippenterprise.net/flyerkit` client returned `badResponse` for every banner — wrong endpoint/token (the `b349aa77…` I used is the JS-bundle path segment, not an API token). Studied `Kiizon/flippscrape` (`app.py`) and verified the live API: it uses a different, **token-free** endpoint —
+- `https://flyers-ng.flippback.com/api/flipp/data?locale=en&postal_code=<pc>&sid=<16 random digits>` → `{"flyers":[{id, merchant, merchant_id, valid_from, valid_to, …}]}`
+- `https://flyers-ng.flippback.com/api/flipp/flyers/<flyerID>/flyer_items?locale=en&sid=<sid>` → JSON array of `{name, brand, price, valid_from, valid_to, …}` (Co-op: ~170 items).
+
+Confirmed against the live API for T2P1J9: **Calgary Co-op is present (merchant_id 2051, flyer 7988986)**. Rewrote `FlippFlyerKitClient` to this flow (random `sid`, filter `data` flyers by `merchant_id`, pick the validity-window flyer, fetch its items). `FlyerStorePreparation.flippMerchantID` now holds the Flipp `merchant_id` (Co-op 2051, Sobeys 2072, FreshCo 2267, Walmart 234, Save-On 2062 — read from the live `data` response). The items shape (`name`/`brand`/`price`) feeds the existing extractor unchanged. 6 client tests rewritten; 23 acquisition tests green.
+
+Expected next run: Co-op `phase=flyerkit merchant=2051 ... prices=N` → ~170 candidates; the fallback also rescues any Flipp banner whose capture fell short this run (Save-On, Walmart, Safeway-when-flaky).
+
 ### 2026-06-30 - Co-op cracked: direct Flipp flyerkit fetch
 
 The request diagnostics revealed the answer. Every Flipp banner loads items from `dam.flippenterprise.net/flyerkit/publication/<id>/products` with a shared public `access_token` (`b349aa77…`, in every banner's `aq.flippenterprise.net/a/<token>/lib/…` URL) and a per-merchant slug. **Co-op's widget loads only `flyerkit/merchant/coopfood` and never selects a publication**, so it never fetches `/products` — hence 0 candidates.
