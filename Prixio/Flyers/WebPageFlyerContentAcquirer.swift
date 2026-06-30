@@ -182,6 +182,13 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
             logger.log("banner=\(label) phase=rendered-iframes \(iframeHosts)")
         }
 
+        // Diagnostic: the data-API-looking request URLs the page made. Reveals whether
+        // a banner's item fetch fired (and where) when the JSON capture comes up empty.
+        let requestSummary = capture.requestSummary
+        if !requestSummary.isEmpty {
+            logger.log("banner=\(label) phase=rendered-requests \(requestSummary)")
+        }
+
         var method: FlyerAcquisitionMethod = .renderedHTML
 
         // First, the page's own flyer fetch/XHR (captured from every frame, incl. the

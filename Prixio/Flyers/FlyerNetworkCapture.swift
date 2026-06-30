@@ -19,13 +19,38 @@ final class FlyerNetworkCapture: NSObject, WKScriptMessageHandler {
     private var totalBytes = 0
     private let maxBytes = 800_000
 
+    /// Diagnostic: "interesting" request URLs the page made (data-API-looking), so a
+    /// device run shows whether a banner's item fetch fired at all and at what
+    /// endpoint — the key to fixing banners (e.g. Co-op/food.crs) whose items never
+    /// land in the JSON capture.
+    private(set) var noticedURLs: [String] = []
+    private let maxNoticedURLs = 60
+
     var payloadCount: Int { payloads.count }
     var capturedText: String { payloads.joined(separator: "\n") }
 
+    /// Distinct noticed request URLs (query stripped), bounded, for one log line.
+    var requestSummary: String {
+        var seen = Set<String>()
+        var out: [String] = []
+        for url in noticedURLs {
+            let trimmed = String(url.split(separator: "?").first ?? Substring(url))
+            if seen.insert(trimmed).inserted { out.append(trimmed) }
+        }
+        return out.prefix(20).joined(separator: " | ")
+    }
+
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == Self.messageHandlerName,
-              let dict = message.body as? [String: Any],
-              let body = dict["body"] as? String,
+              let dict = message.body as? [String: Any] else {
+            return
+        }
+        // A lightweight request-URL note (no body) for diagnostics.
+        if let note = dict["note"] as? String {
+            if noticedURLs.count < maxNoticedURLs { noticedURLs.append(note) }
+            return
+        }
+        guard let body = dict["body"] as? String,
               !body.isEmpty,
               Self.isJSONPayload(body),
               totalBytes < maxBytes else {
@@ -91,12 +116,27 @@ final class FlyerNetworkCapture: NSObject, WKScriptMessageHandler {
           window.webkit.messageHandlers.\(messageHandlerName).postMessage({ url: ""+u, body: body.substring(0, 250000) });
         } catch(e){}
       }
+      function note(u){
+        // Diagnostic only: report data-API-looking request URLs (regardless of
+        // response shape) so a device run reveals whether a banner's item fetch
+        // fired and at what endpoint.
+        try {
+          var s = (""+u).toLowerCase();
+          if (s.indexOf('flipp')>=0 || s.indexOf('wishabi')>=0 || s.indexOf('backflipp')>=0
+              || s.indexOf('/api')>=0 || s.indexOf('graphql')>=0 || s.indexOf('item')>=0
+              || s.indexOf('product')>=0 || s.indexOf('publication')>=0 || s.indexOf('merchant')>=0
+              || s.indexOf('flyer')>=0 || s.indexOf('circular')>=0){
+            window.webkit.messageHandlers.\(messageHandlerName).postMessage({ note: ""+u });
+          }
+        } catch(e){}
+      }
       try {
         var origFetch = window.fetch;
         if (origFetch) {
           window.fetch = function(){
             var a0 = arguments[0];
             var url = (a0 && a0.url) ? a0.url : a0;
+            note(url);
             return origFetch.apply(this, arguments).then(function(resp){
               try { resp.clone().text().then(function(t){ post(""+url, t); }).catch(function(){}); } catch(e){}
               return resp;
@@ -107,7 +147,7 @@ final class FlyerNetworkCapture: NSObject, WKScriptMessageHandler {
       try {
         var oOpen = XMLHttpRequest.prototype.open;
         var oSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.open = function(m, u){ this.__prixioURL = u; return oOpen.apply(this, arguments); };
+        XMLHttpRequest.prototype.open = function(m, u){ this.__prixioURL = u; try { note(u); } catch(e){} return oOpen.apply(this, arguments); };
         XMLHttpRequest.prototype.send = function(){
           var xhr = this;
           try {

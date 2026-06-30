@@ -370,6 +370,9 @@ struct FlyerContentAcquisitionTests {
         #expect(!FlyerNetworkCapture.isJSONPayload(""))
         // The injected interceptor carries the same gate.
         #expect(FlyerNetworkCapture.interceptorScript.contains("looksJSON"))
+        // ...and notes data-API request URLs for diagnostics on both fetch and XHR.
+        #expect(FlyerNetworkCapture.interceptorScript.contains("function note"))
+        #expect(FlyerNetworkCapture.interceptorScript.contains("note(url)"))
     }
 
     private func seededResult(_ banner: FlyerBanner) -> FlyerDiscoveryResult {

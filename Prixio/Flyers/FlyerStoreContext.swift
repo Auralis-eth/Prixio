@@ -129,7 +129,7 @@ enum FlyerStoreInjection {
                 } catch(e){}
               }
             }
-            var re=/(set( my)? store|use (my )?location|shop this store|select( a)? store|confirm store|find( a)? store|use this store|accept|i agree)/i;
+            var re=/(set( my)? store|use (my )?location|shop this store|select( a)? store|confirm store|find( a)? store|use this store|accept|i agree|view (the |this )?flyer|see (the |this )?flyer|open (the |this )?flyer|shop (the |this )?flyer|weekly flyer|view all flyers)/i;
             var btns=document.querySelectorAll('button,[role=button],a');
             for (var j=0;j<btns.length && did<10;j++){
               var t=(btns[j].innerText||btns[j].textContent||"").trim();

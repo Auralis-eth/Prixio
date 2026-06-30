@@ -330,6 +330,14 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Co-op items-fetch: request diagnostics + flyer-open click
+
+Working the real Co-op gap (its Flipp **items** fetch never lands in the capture under food.crs). Two changes:
+- **Request-URL diagnostics:** the interceptor now `note()`s every data-API-looking request URL (flipp/wishabi/api/graphql/item/product/publication/merchant/flyer/circular) on both fetch and XHR — independent of response shape — collected in `FlyerNetworkCapture.noticedURLs` and logged once per banner as `phase=rendered-requests`. The next device run will show whether Co-op makes an items/backflipp request at all and at what endpoint, which determines the targeted fix (drive a click vs. seed a key vs. hit the endpoint directly).
+- **Flyer-open click (general):** Co-op's `/more/foodflyers` rendered only ~665 chars — a flyer *list* page whose Flipp widget never advanced to the item view. The post-load click driver now also matches flyer-open verbs ("view/see/open/shop flyer", "weekly flyer") so it clicks through to the item-level flyer that triggers the items fetch. General to any inline-Flipp banner; low risk (only clicks clearly flyer/store actions). 17 acquisition tests green.
+
+Expected next run: either Co-op opens its flyer and the items JSON is captured (→ candidates), or `phase=rendered-requests` reveals the exact endpoint to target.
+
 ### 2026-06-30 - Co-op diagnosed: capture was JavaScript, not data (JSON-only gate)
 
 The zero-candidate diagnostic paid off. Co-op's sample was `(self.webpackChunkFlipp=…)` — **JavaScript**, not flyer data. food.crs is Flipp-powered and the capture was grabbing Flipp's minified **webpack JS chunks** (their source text contains "flipp"/"price"/"product", so they passed `looksFlyer`); Co-op's real item payload was never captured, and the "prices=4" were `$`/`"price"` tokens inside code. So Co-op's 0 candidates was **correct**.
