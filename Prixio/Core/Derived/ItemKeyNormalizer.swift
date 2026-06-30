@@ -5,13 +5,24 @@ enum ItemKeyNormalizer {
         "g", "gram", "grams", "kg", "kilogram", "kilograms",
         "ml", "l", "liter", "liters", "litre", "litres",
         "oz", "lb", "lbs", "pound", "pounds",
-        "pk", "pack", "packs", "ct", "count", "counts", "each", "ea"
+        "pk", "pack", "packs", "ct", "count", "counts", "each", "ea",
+        "dozen", "doz"
     ]
+
+    /// Matches a size/quantity measurement — a number (with an optional decimal) and
+    /// an optional space, then a unit — as a whole token. Stripped *before* the
+    /// non-alphanumeric fold so a decimal pack size ("1.89 L", "454.5 g") is removed
+    /// intact rather than splitting into a dangling number ("1") that would become the
+    /// item's head noun and break generic-query rollup. Longer unit spellings are
+    /// listed before their prefixes (e.g. "ml" before "l") so the right one matches.
+    private static let sizeMeasurementPattern =
+        #"\b\d+(?:\.\d+)?\s?(?:kilograms?|kgs?|grams?|g|millilitres?|milliliters?|mls?|litres?|liters?|lbs?|pounds?|ounces?|oz|l|counts?|cts?|packs?|pk|dozen|doz)\b"#
 
     static func normalize(_ value: String) -> String {
         let folded = value
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .lowercased()
+            .replacingOccurrences(of: sizeMeasurementPattern, with: " ", options: .regularExpression)
             .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
 
         let tokens = folded.split(whereSeparator: \.isWhitespace).map(String.init)

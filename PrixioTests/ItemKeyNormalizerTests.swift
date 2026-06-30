@@ -44,6 +44,23 @@ struct ItemKeyNormalizerTests {
     }
 
     @Test
+    func stripsDecimalPackSizesWithoutLeavingADanglingNumber() {
+        // A decimal size must be removed intact rather than splitting into a dangling
+        // number that becomes the head noun (the bug that broke generic-query rollup).
+        #expect(ItemKeyNormalizer.normalize("Almond Milk 1.89L") == "almond milk")
+        #expect(ItemKeyNormalizer.normalize("Salted Butter 454.5 g") == "salted butter")
+        #expect(ItemKeyNormalizer.normalize("Orange Juice 1.75 litre") == "orange juice")
+    }
+
+    @Test
+    func decimalSizedProductsRollUpUnderTheirGenericName() {
+        // The payoff: flyer items with decimal pack sizes now match a generic query.
+        #expect(ItemKeyNormalizer.matches(queryKey: "milk", entryKey: "Almond Milk 1.89L"))
+        #expect(ItemKeyNormalizer.matches(queryKey: "butter", entryKey: "Salted Butter 454.5 g"))
+        #expect(ItemKeyNormalizer.matches(queryKey: "juice", entryKey: "Orange Juice 1.75 L"))
+    }
+
+    @Test
     func genericQueryMatchesMoreSpecificProducts() {
         // A generic shopping name rolls up specific scanned products that satisfy it.
         #expect(ItemKeyNormalizer.matches(queryKey: "sour cream", entryKey: "Daisy Sour Cream"))
