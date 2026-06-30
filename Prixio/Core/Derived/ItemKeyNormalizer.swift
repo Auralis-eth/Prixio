@@ -9,6 +9,14 @@ enum ItemKeyNormalizer {
         "dozen", "doz"
     ]
 
+    /// Spelled-out counts that act as quantities when followed by a unit (e.g. "One
+    /// Dozen", "Six Pack"). Deliberately excludes "a"/"an" (articles) to avoid
+    /// stripping them from real names.
+    private static let numberWords: Set<String> = [
+        "one", "two", "three", "four", "five", "six", "seven", "eight",
+        "nine", "ten", "eleven", "twelve", "half"
+    ]
+
     /// Matches a size/quantity measurement — a number (with an optional decimal) and
     /// an optional space, then a unit — as a whole token. Stripped *before* the
     /// non-alphanumeric fold so a decimal pack size ("1.89 L", "454.5 g") is removed
@@ -33,7 +41,12 @@ enum ItemKeyNormalizer {
             let token = tokens[index]
             let next = tokens.indices.contains(index + 1) ? tokens[index + 1] : nil
 
-            if token.allSatisfy(\.isNumber), let next, removableUnitWords.contains(next) {
+            // A count (digit or spelled-out number word) immediately before a unit is
+            // a quantity, not part of the name: "6 pack", "One Dozen", "Twelve Pack".
+            // Number words are only dropped when a unit follows, so a brand like
+            // "One A Day" (no trailing unit) is preserved.
+            if token.allSatisfy(\.isNumber) || Self.numberWords.contains(token),
+               let next, removableUnitWords.contains(next) {
                 index += 2
                 continue
             }

@@ -53,6 +53,17 @@ struct ItemKeyNormalizerTests {
     }
 
     @Test
+    func stripsSpelledOutQuantitiesBeforeAUnit() {
+        // A spelled-out count before a unit is a quantity, so the head noun is the
+        // product — "Eggs One Dozen" now rolls up under "eggs".
+        #expect(ItemKeyNormalizer.normalize("Eggs One Dozen") == "egg")
+        #expect(ItemKeyNormalizer.normalize("Cola Six Pack") == "cola")
+        #expect(ItemKeyNormalizer.matches(queryKey: "eggs", entryKey: "Large Eggs One Dozen"))
+        // A number word NOT followed by a unit stays (brand names are preserved).
+        #expect(ItemKeyNormalizer.normalize("One A Day Vitamins") == "one a day vitamin")
+    }
+
+    @Test
     func decimalSizedProductsRollUpUnderTheirGenericName() {
         // The payoff: flyer items with decimal pack sizes now match a generic query.
         #expect(ItemKeyNormalizer.matches(queryKey: "milk", entryKey: "Almond Milk 1.89L"))

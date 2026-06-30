@@ -132,7 +132,7 @@ struct FlyerPriceExtractor {
     private func candidate(from dict: [String: Any]) -> FlyerPriceCandidate? {
         let lookup = CaseInsensitiveLookup(dict)
         guard let name = lookup.firstString(Self.nameKeys, maxLength: 160),
-              let price = lookup.firstPrice(Self.priceKeys),
+              let price = lookup.firstPrice(Self.priceKeys) ?? lookup.firstNestedPrice(),
               isPlausiblePrice(price) else {
             return nil
         }
@@ -324,6 +324,30 @@ private struct CaseInsensitiveLookup {
                 }
                 if let plain = firstPlainNumber(in: string) {
                     return plain
+                }
+            }
+        }
+        return nil
+    }
+
+    /// A price held in a price-named child object, e.g. `{"price":{"value":3.99}}`
+    /// or `{"pricing":{"current":3.99}}` — a common shape the top-level scan misses.
+    /// Only descends into children whose key suggests pricing and reads a numeric
+    /// from common inner keys, so a size object like `{"size":{"value":500}}` is
+    /// never mistaken for a price.
+    func firstNestedPrice() -> Decimal? {
+        let containerHints = ["price", "pricing", "cost", "amount", "offer"]
+        let innerKeys = ["current_price", "currentprice", "sale_price", "saleprice", "price", "current", "value", "amount", "now", "final"]
+        for (key, value) in lowered where containerHints.contains(where: { key.contains($0) }) {
+            if let child = value as? [String: Any],
+               let price = CaseInsensitiveLookup(child).firstPrice(innerKeys) {
+                return price
+            }
+            if let array = value as? [Any] {
+                for case let child as [String: Any] in array {
+                    if let price = CaseInsensitiveLookup(child).firstPrice(innerKeys) {
+                        return price
+                    }
                 }
             }
         }

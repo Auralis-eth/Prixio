@@ -74,6 +74,28 @@ struct FlyerPriceExtractionTests {
         #expect(result.candidates.first { $0.productName == "Canned Soup" }?.price == Decimal(string: "3.00"))
     }
 
+    @Test("Finds a price held in a price-named child object")
+    func findsNestedPriceObject() {
+        let payload = """
+        {"items":[
+          {"name":"Sliced Ham","price":{"value":4.99}},
+          {"title":"Cheddar Block","pricing":{"current":6.49}}
+        ]}
+        """
+        let result = extractor.extract(from: content(method: .endpointJSON, payload: payload))
+        #expect(result.candidates.first { $0.productName == "Sliced Ham" }?.price == Decimal(string: "4.99"))
+        #expect(result.candidates.first { $0.productName == "Cheddar Block" }?.price == Decimal(string: "6.49"))
+    }
+
+    @Test("Does not mistake a size object's value for a price")
+    func doesNotTreatSizeObjectAsPrice() {
+        // Only price-named child objects are descended into, so a numeric inside a
+        // size/quantity object must not produce a bogus candidate.
+        let payload = #"{"items":[{"name":"Mystery Item","size":{"value":500,"unit":"ml"}}]}"#
+        let result = extractor.extract(from: content(method: .endpointJSON, payload: payload))
+        #expect(result.candidateCount == 0)
+    }
+
     @Test("Recursively walks nested JSON structures to find item objects")
     func walksNestedStructures() {
         let payload = """

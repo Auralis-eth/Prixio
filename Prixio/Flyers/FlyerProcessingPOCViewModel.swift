@@ -214,6 +214,15 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
             let label = FlyerAcquisitionLogLabel.make(for: content.banner)
             let extraction = extractor.extract(from: content)
             extractionLogger.log("banner=\(label) method=\(content.acquisitionMethod?.rawValue ?? "none") state=\(content.state.rawValue) candidates=\(extraction.candidateCount)")
+            // Diagnostic: a captured-JSON banner that extracts nothing has a schema the
+            // generic walker doesn't recognize (e.g. Co-op). Log a bounded payload
+            // sample so the next device run reveals its item shape.
+            if extraction.candidateCount == 0,
+               content.acquisitionMethod == .endpointJSON,
+               let payload = content.extractionPayload, !payload.isEmpty {
+                let sample = payload.replacingOccurrences(of: "\n", with: " ").prefix(400)
+                extractionLogger.log("banner=\(label) phase=zero-candidate-sample bytes=\(payload.utf8.count) sample=\(sample)")
+            }
             output[result.banner.id] = extraction
             // Publish progressively so each banner's candidates appear as they land.
             extractions = output

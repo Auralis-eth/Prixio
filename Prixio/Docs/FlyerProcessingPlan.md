@@ -330,6 +330,11 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Word-quantity normalizer + Co-op extraction hardening
+
+- **Word-quantity gap closed:** `ItemKeyNormalizer` now strips a spelled-out count before a unit ("One Dozen", "Six Pack") the same way it already stripped "6 pack", so "Eggs One Dozen" → "egg" and rolls up under "eggs". Number words are only dropped when a unit follows, so brands like "One A Day" are preserved. (Covers the gap left by the decimal-size fix.)
+- **Co-op 0-candidate payload:** can't inspect its raw JSON from device logs (counts only), so shipped two safe, general improvements: (1) the extractor now finds a price held in a **price-named child object** (`{"name":..,"price":{"value":3.99}}` / `{"pricing":{"current":..}}`) — a common schema the top-level scan missed — guarded to only descend into price-named containers so a `size:{value:500}` object isn't mistaken for a price; (2) a **zero-candidate diagnostic** logs a bounded payload sample when an `endpointJSON` banner extracts nothing, so the next device run reveals Co-op's actual item shape. 4 new tests (nested price found, size object not mistaken, spelled-out quantity, decimal rollup); 47 flyer/normalizer tests green.
+
 ### 2026-06-30 - Saved-prices management + normalizer enrichment
 
 Two quality items:
