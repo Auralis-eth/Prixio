@@ -330,6 +330,12 @@ Do not include in MVP:
 
 ## Tracking Log
 
+### 2026-06-30 - Flyerkit-first for Flipp banners (skip rendering when it works)
+
+Since the flyers-ng flyerkit API proved deterministic and complete for all six Flipp banners, the acquirer now hits it **first**: if a banner has a `flippMerchantID`, `flyerKitFirst` fetches the items (two GETs, no WKWebView) and — when it clears the price threshold — builds the `.acquired` result and returns immediately, skipping the slow, flaky rendered capture entirely. Rendering remains the fallback only if the API errors or returns too little (and the old in-render flyerkit retry was removed as redundant). This makes the six Flipp banners fast and reliable (no more run-to-run capture flakiness / `acquiredNoPrices`), and only the two Loblaw banners (RCSS, No Frills — pcexpress) and Freson still render. 23 acquisition/flyerkit tests green.
+
+Coverage snapshot (of the named banners): strong via flyerkit — Walmart, Save-On, Safeway, Sobeys, Co-op, FreshCo; weak (rendered alt-text, pcexpress) — RCSS, No Frills; unsupported — Costco (no public flyer). A pcexpress client (per `FireBall1725/pcexpress-mcp-server`) is the clear next step to lift RCSS/No Frills to strong.
+
 ### 2026-06-30 - Co-op SOLVED + Flipp banners de-flaked (device-verified)
 
 The flyers-ng client works on device. Co-op finally yields prices:

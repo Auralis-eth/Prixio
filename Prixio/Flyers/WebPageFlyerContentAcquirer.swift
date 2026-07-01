@@ -75,6 +75,16 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
     ) async -> FlyerAcquiredContent {
         let label = FlyerAcquisitionLogLabel.make(for: banner)
         let prep = FlyerStorePreparationCatalog.preparation(for: banner.id, context: storeContext)
+
+        // Flipp banners: hit the deterministic flyerkit API first. It's fast (two
+        // GETs, no WKWebView), reliable, and returns the full item list — so we skip
+        // the flaky, slow rendered capture entirely when it succeeds. Rendering remains
+        // the fallback if the API errors or returns too little.
+        if let merchantID = prep.flippMerchantID,
+           let result = await flyerKitFirst(banner: banner, merchantID: merchantID, url: url, label: label) {
+            return result
+        }
+
         logger.log("banner=\(label) phase=rendered-start url=\(url.absoluteString) store=\(storeContext.label) maxTicks=\(maxTicks) iframeExpected=\(prep.flyerInCrossOriginIframe) botWalled=\(prep.antiBotWalled)")
 
         let navigation = NavigationDelegate()
@@ -207,29 +217,6 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
             }
         }
 
-        // Flipp flyerkit direct fetch: a deterministic fallback when the rendered
-        // widget didn't yield enough captured items. Device diagnostics showed every
-        // Flipp banner serves items from `flyerkit/publication/<id>/products`; Co-op's
-        // widget loads only its merchant config and never selects a publication, so
-        // this is its reliable source. Only Flipp banners with a known merchant slug.
-        if bestPriceCount < priceThreshold, let merchantID = prep.flippMerchantID {
-            do {
-                let json = try await flyerKitClient.fetchItemsJSON(
-                    merchantID: merchantID,
-                    postalCode: storeContext.postalCode
-                )
-                let prices = FlyerNetworkCapture.priceSignalCount(in: json)
-                logger.log("banner=\(label) phase=flyerkit merchant=\(merchantID) bytes=\(json.utf8.count) prices=\(prices)")
-                if prices > bestPriceCount {
-                    bestPriceCount = prices
-                    bestText = json
-                    method = .endpointJSON
-                }
-            } catch {
-                logger.log("banner=\(label) phase=flyerkit-error merchant=\(merchantID) error=\(description(for: error))")
-            }
-        }
-
         // If still short, optionally read the rendered pixels with OCR. Off by default:
         // OCR read only page chrome (0 prices) on every device run and stalled on
         // WEBP-failing pages. The web view is still mounted, so we can render it here.
@@ -274,6 +261,47 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
 
         logger.log("banner=\(label) phase=rendered-finish state=\(result.state.rawValue) prices=\(result.priceTokenCount) bytes=\(result.payloadByteCount) finalURL=\(finalURL.absoluteString)")
         return result
+    }
+
+    /// Fetches a Flipp banner's items straight from the flyerkit API. Returns an
+    /// `.acquired` result when it yields enough prices (so the caller can skip
+    /// rendering entirely); returns `nil` on error or too-few items so the caller
+    /// falls back to the rendered capture.
+    private func flyerKitFirst(
+        banner: FlyerBanner,
+        merchantID: Int,
+        url: URL,
+        label: String
+    ) async -> FlyerAcquiredContent? {
+        do {
+            let json = try await flyerKitClient.fetchItemsJSON(
+                merchantID: merchantID,
+                postalCode: storeContext.postalCode
+            )
+            let prices = FlyerNetworkCapture.priceSignalCount(in: json)
+            logger.log("banner=\(label) phase=flyerkit merchant=\(merchantID) bytes=\(json.utf8.count) prices=\(prices)")
+            guard prices >= captureAcquireThreshold else { return nil }
+
+            let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
+            let result = makeResult(
+                banner: banner,
+                url: url,
+                finalURL: url,
+                prep: FlyerStorePreparationCatalog.preparation(for: banner.id, context: storeContext),
+                method: .endpointJSON,
+                bestPriceCount: prices,
+                payloadBytes: trimmed.utf8.count,
+                trimmedText: trimmed,
+                snippet: renderedSnippet(from: trimmed),
+                iframeHosts: "",
+                navError: nil
+            )
+            logger.log("banner=\(label) phase=flyerkit-finish state=\(result.state.rawValue) prices=\(prices) bytes=\(trimmed.utf8.count)")
+            return result
+        } catch {
+            logger.log("banner=\(label) phase=flyerkit-error merchant=\(merchantID) error=\(description(for: error))")
+            return nil
+        }
     }
 
     private func makeResult(
