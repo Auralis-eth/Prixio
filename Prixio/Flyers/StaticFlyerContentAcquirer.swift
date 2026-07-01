@@ -287,22 +287,23 @@ final class StaticFlyerContentAcquirer: FlyerContentAcquiring {
 
 /// Picks the acquisition mechanism per destination from the source shape discovery
 /// classified: static HTML/JSON/PDF/image are processed in-app; JS-rendered
-/// (`dynamicHTML`) and `unknown` sources use a rendered web-view fetch. Static HTML
-/// that yields no readable prices escalates to a rendered fetch, since a page can
-/// become JS-gated after discovery.
+/// (`dynamicHTML`) and `unknown` sources are fetched from the banner's structured
+/// endpoint (Flipp / pcexpress) via `EndpointFlyerContentAcquirer`. Static HTML that
+/// yields no readable prices escalates to the endpoint path, since a page can become
+/// JS-gated after discovery (and the banner may still expose a Flipp/pcexpress source).
 final class FlyerContentAcquisitionRouter: FlyerContentAcquiring {
     private let staticAcquirer: FlyerContentAcquiring
-    private let renderedAcquirer: FlyerContentAcquiring
+    private let endpointAcquirer: FlyerContentAcquiring
     private let logger: FlyerAcquisitionLogging
 
     init(
         staticAcquirer: FlyerContentAcquiring? = nil,
-        renderedAcquirer: FlyerContentAcquiring? = nil,
+        endpointAcquirer: FlyerContentAcquiring? = nil,
         logger: FlyerAcquisitionLogging = ConsoleFlyerAcquisitionLogger()
     ) {
         self.logger = logger
         self.staticAcquirer = staticAcquirer ?? StaticFlyerContentAcquirer(logger: logger)
-        self.renderedAcquirer = renderedAcquirer ?? WebPageFlyerContentAcquirer(logger: logger)
+        self.endpointAcquirer = endpointAcquirer ?? EndpointFlyerContentAcquirer(logger: logger)
     }
 
     func acquire(
@@ -314,8 +315,8 @@ final class FlyerContentAcquisitionRouter: FlyerContentAcquiring {
         let label = FlyerAcquisitionLogLabel.make(for: banner)
         switch sourceShape {
         case .dynamicHTML?, .unknown?, .none:
-            logger.log("banner=\(label) phase=route shape=\(sourceShape?.rawValue ?? "none") path=rendered url=\(url.absoluteString)")
-            return await renderedAcquirer.acquire(
+            logger.log("banner=\(label) phase=route shape=\(sourceShape?.rawValue ?? "none") path=endpoint url=\(url.absoluteString)")
+            return await endpointAcquirer.acquire(
                 banner: banner,
                 from: url,
                 sourceShape: sourceShape,
@@ -329,9 +330,9 @@ final class FlyerContentAcquisitionRouter: FlyerContentAcquiring {
                 sourceShape: sourceShape,
                 storeContext: storeContext
             )
-            if shouldEscalateToRender(result, shape: sourceShape) {
-                logger.log("banner=\(label) phase=escalate reason=static-html-no-prices path=rendered")
-                return await renderedAcquirer.acquire(
+            if shouldEscalateToEndpoint(result, shape: sourceShape) {
+                logger.log("banner=\(label) phase=escalate reason=static-html-no-prices path=endpoint")
+                return await endpointAcquirer.acquire(
                     banner: banner,
                     from: url,
                     sourceShape: sourceShape,
@@ -342,9 +343,9 @@ final class FlyerContentAcquisitionRouter: FlyerContentAcquiring {
         }
     }
 
-    /// Only HTML escalates: JSON/PDF/image have their own downstream pipelines and a
-    /// rendered fetch would not help them.
-    private func shouldEscalateToRender(_ result: FlyerAcquiredContent, shape: FlyerSourceShape?) -> Bool {
+    /// Only HTML escalates: JSON/PDF/image have their own downstream pipelines and the
+    /// endpoint path would not help them.
+    private func shouldEscalateToEndpoint(_ result: FlyerAcquiredContent, shape: FlyerSourceShape?) -> Bool {
         shape == .html && result.state == .acquiredNoPrices
     }
 }

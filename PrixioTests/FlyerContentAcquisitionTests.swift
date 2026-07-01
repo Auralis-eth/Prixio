@@ -52,7 +52,7 @@ struct FlyerContentAcquisitionTests {
         // without any acquisition work.
         #expect(acquirer.requestedBanners == [.realCanadianSuperstore])
         #expect(viewModel.acquisition(for: supportedBanner)?.state == .acquired)
-        #expect(viewModel.acquisition(for: supportedBanner)?.acquisitionMethod == .renderedHTML)
+        #expect(viewModel.acquisition(for: supportedBanner)?.acquisitionMethod == .endpointJSON)
         #expect(viewModel.acquisition(for: unsupportedBanner)?.state == .unsupported)
     }
 
@@ -117,13 +117,13 @@ struct FlyerContentAcquisitionTests {
     }
 
     @Test
-    func routerProcessesStaticHTMLInAppWithoutRendering() async throws {
+    func routerProcessesStaticHTMLInAppWithoutEndpoint() async throws {
         let banner = try #require(FlyerBannerCatalog.banner(for: .realCanadianSuperstore))
         let staticAcquirer = RecordingFlyerContentAcquirer(cannedState: .acquired, method: .staticHTML)
-        let renderedAcquirer = RecordingFlyerContentAcquirer(cannedState: .acquired, method: .renderedHTML)
+        let endpointAcquirer = RecordingFlyerContentAcquirer(cannedState: .acquired, method: .endpointJSON)
         let router = FlyerContentAcquisitionRouter(
             staticAcquirer: staticAcquirer,
-            renderedAcquirer: renderedAcquirer
+            endpointAcquirer: endpointAcquirer
         )
 
         let result = await router.acquire(
@@ -134,18 +134,18 @@ struct FlyerContentAcquisitionTests {
         )
 
         #expect(staticAcquirer.requestedBanners == [banner.id])
-        #expect(renderedAcquirer.requestedBanners.isEmpty)
+        #expect(endpointAcquirer.requestedBanners.isEmpty)
         #expect(result.acquisitionMethod == .staticHTML)
     }
 
     @Test
-    func routerRendersDynamicHTMLSourcesWithWebView() async throws {
+    func routerRoutesDynamicHTMLToEndpoint() async throws {
         let banner = try #require(FlyerBannerCatalog.banner(for: .safeway))
         let staticAcquirer = RecordingFlyerContentAcquirer(method: .staticHTML)
-        let renderedAcquirer = RecordingFlyerContentAcquirer(method: .renderedHTML)
+        let endpointAcquirer = RecordingFlyerContentAcquirer(method: .endpointJSON)
         let router = FlyerContentAcquisitionRouter(
             staticAcquirer: staticAcquirer,
-            renderedAcquirer: renderedAcquirer
+            endpointAcquirer: endpointAcquirer
         )
 
         let result = await router.acquire(
@@ -155,20 +155,20 @@ struct FlyerContentAcquisitionTests {
             storeContext: nil
         )
 
-        #expect(renderedAcquirer.requestedBanners == [banner.id])
+        #expect(endpointAcquirer.requestedBanners == [banner.id])
         #expect(staticAcquirer.requestedBanners.isEmpty)
-        #expect(result.acquisitionMethod == .renderedHTML)
+        #expect(result.acquisitionMethod == .endpointJSON)
     }
 
     @Test
-    func routerEscalatesStaticHTMLWithoutPricesToRenderedFetch() async throws {
+    func routerEscalatesStaticHTMLWithoutPricesToEndpoint() async throws {
         let banner = try #require(FlyerBannerCatalog.banner(for: .noFrills))
         // Static HTML that yields no prices (JS-gated page) should escalate.
         let staticAcquirer = RecordingFlyerContentAcquirer(cannedState: .acquiredNoPrices, method: .staticHTML)
-        let renderedAcquirer = RecordingFlyerContentAcquirer(cannedState: .acquired, method: .renderedHTML)
+        let endpointAcquirer = RecordingFlyerContentAcquirer(cannedState: .acquired, method: .endpointJSON)
         let router = FlyerContentAcquisitionRouter(
             staticAcquirer: staticAcquirer,
-            renderedAcquirer: renderedAcquirer
+            endpointAcquirer: endpointAcquirer
         )
 
         let result = await router.acquire(
@@ -179,20 +179,20 @@ struct FlyerContentAcquisitionTests {
         )
 
         #expect(staticAcquirer.requestedBanners == [banner.id])
-        #expect(renderedAcquirer.requestedBanners == [banner.id])
-        #expect(result.acquisitionMethod == .renderedHTML)
+        #expect(endpointAcquirer.requestedBanners == [banner.id])
+        #expect(result.acquisitionMethod == .endpointJSON)
         #expect(result.state == .acquired)
     }
 
     @Test
     func routerDoesNotEscalateJSONWithoutDollarTokens() async throws {
         let banner = try #require(FlyerBannerCatalog.banner(for: .saveOnFoods))
-        // JSON has its own pipeline; a zero `$` count must not trigger a render.
+        // JSON has its own pipeline; a zero `$` count must not trigger the endpoint path.
         let staticAcquirer = RecordingFlyerContentAcquirer(cannedState: .acquiredNoPrices, method: .endpointJSON)
-        let renderedAcquirer = RecordingFlyerContentAcquirer(method: .renderedHTML)
+        let endpointAcquirer = RecordingFlyerContentAcquirer(method: .endpointJSON)
         let router = FlyerContentAcquisitionRouter(
             staticAcquirer: staticAcquirer,
-            renderedAcquirer: renderedAcquirer
+            endpointAcquirer: endpointAcquirer
         )
 
         let result = await router.acquire(
@@ -203,7 +203,7 @@ struct FlyerContentAcquisitionTests {
         )
 
         #expect(staticAcquirer.requestedBanners == [banner.id])
-        #expect(renderedAcquirer.requestedBanners.isEmpty)
+        #expect(endpointAcquirer.requestedBanners.isEmpty)
         #expect(result.acquisitionMethod == .endpointJSON)
     }
 
@@ -287,92 +287,56 @@ struct FlyerContentAcquisitionTests {
     }
 
     @Test
-    func preparationCatalogFlagsLoblawAntiBotAndFlippFamilyIframe() {
+    func preparationCatalogMapsBannersToTheirFlyerEndpoint() {
         let context = FlyerStoreContext.defaultAlberta
 
+        // Flipp banners carry a merchant id.
+        let flippMerchants: [FlyerBannerID: Int] = [
+            .safeway: 2126, .sobeys: 2072, .freshCo: 2267,
+            .saveOnFoods: 2062, .walmartSupercentre: 234, .coOp: 2051
+        ]
+        for (id, merchant) in flippMerchants {
+            let prep = FlyerStorePreparationCatalog.preparation(for: id, context: context)
+            #expect(prep.flippMerchantID == merchant)
+            #expect(prep.pcExpress == nil)
+        }
+
+        // Loblaw banners carry a pcexpress config; Flipp is not used.
         for id in [FlyerBannerID.realCanadianSuperstore, .noFrills] {
             let prep = FlyerStorePreparationCatalog.preparation(for: id, context: context)
-            #expect(prep.antiBotWalled)
-            #expect(!prep.flyerInCrossOriginIframe)
+            #expect(prep.flippMerchantID == nil)
+            #expect(prep.pcExpress != nil)
         }
 
-        for id in [FlyerBannerID.safeway, .sobeys, .freshCo, .fresonBros] {
+        // Unsupported banners have no endpoint at all.
+        for id in [FlyerBannerID.costco, .fresonBros] {
             let prep = FlyerStorePreparationCatalog.preparation(for: id, context: context)
-            #expect(prep.flyerInCrossOriginIframe)
-            #expect(!prep.antiBotWalled)
-        }
-
-        // Save-On is a Salesforce page (readable main-document text), not Flipp.
-        for id in [FlyerBannerID.saveOnFoods, .walmartSupercentre, .coOp] {
-            let prep = FlyerStorePreparationCatalog.preparation(for: id, context: context)
-            #expect(!prep.antiBotWalled)
-            #expect(!prep.flyerInCrossOriginIframe)
+            #expect(prep.flippMerchantID == nil)
+            #expect(prep.pcExpress == nil)
         }
     }
 
     @Test
-    func documentStartScriptSeedsPostalCodeAndGeolocationOverride() {
-        let context = FlyerStoreContext.defaultAlberta
-        let script = FlyerStoreInjection.documentStartScript(context, extra: "window.__extra=1;")
-
-        #expect(script.contains(context.postalCode))
-        #expect(script.contains("\(context.latitude)"))
-        #expect(script.contains("getCurrentPosition"))
-        #expect(script.contains("flipp_postal_code"))
-        // The per-banner extra is appended.
-        #expect(script.contains("window.__extra=1;"))
-    }
-
-    @Test
-    func postLoadScriptDrivesStorePickerWithSpacedPostalCode() {
-        let context = FlyerStoreContext.defaultAlberta
-        let script = FlyerStoreInjection.postLoadScript(context)
-
-        #expect(script.contains(context.postalCodeSpaced))
-        #expect(script.contains("set( my)? store"))
-        #expect(script.contains("postal"))
-    }
-
-    @Test
-    func storeLocatorScriptFillsPostalThenClicksStore() {
-        let context = FlyerStoreContext.defaultAlberta
-        let script = FlyerStoreInjection.storeLocatorScript(context)
-
-        #expect(script.contains(context.postalCodeSpaced))
-        #expect(script.contains("postal-filled"))
-        #expect(script.contains("shop this store"))
-    }
-
-    @Test
-    func networkCaptureCountsDollarAndJsonPriceForms() {
-        #expect(FlyerNetworkCapture.priceSignalCount(in: "Milk $3.99 Bread $2.49") == 2)
+    func priceSignalCountsDollarAndJsonPriceForms() {
+        #expect(FlyerPriceSignal.priceSignalCount(in: "Milk $3.99 Bread $2.49") == 2)
 
         let json = "{\"items\":[{\"name\":\"Milk\",\"current_price\":3.99},{\"name\":\"Eggs\",\"price\":4.49}]}"
         // Two JSON price fields, no `$` tokens.
-        #expect(FlyerNetworkCapture.priceSignalCount(in: json) == 2)
-
-        // The interceptor hooks both fetch and XHR and posts to the native handler.
-        #expect(FlyerNetworkCapture.interceptorScript.contains("XMLHttpRequest"))
-        #expect(FlyerNetworkCapture.interceptorScript.contains(FlyerNetworkCapture.messageHandlerName))
+        #expect(FlyerPriceSignal.priceSignalCount(in: json) == 2)
     }
 
     @Test
-    func networkCaptureKeepsJSONAndRejectsJavaScript() {
+    func priceSignalKeepsJSONAndRejectsJavaScript() {
         // Real flyer payloads are JSON objects/arrays (incl. leading whitespace/BOM).
-        #expect(FlyerNetworkCapture.isJSONPayload("{\"items\":[]}"))
-        #expect(FlyerNetworkCapture.isJSONPayload("  [1,2,3]"))
-        #expect(FlyerNetworkCapture.isJSONPayload("\u{FEFF}{\"a\":1}"))
+        #expect(FlyerPriceSignal.isJSONPayload("{\"items\":[]}"))
+        #expect(FlyerPriceSignal.isJSONPayload("  [1,2,3]"))
+        #expect(FlyerPriceSignal.isJSONPayload("\u{FEFF}{\"a\":1}"))
         // JavaScript bundles (e.g. Flipp's webpack chunks) and HTML must be rejected,
         // even though their source text mentions price-like words.
-        #expect(!FlyerNetworkCapture.isJSONPayload("(self.webpackChunkFlipp=self.webpackChunkFlipp||[]).push([[4736],{5023:function(){var price}}"))
-        #expect(!FlyerNetworkCapture.isJSONPayload("!function(e){\"price\"}"))
-        #expect(!FlyerNetworkCapture.isJSONPayload("<!DOCTYPE html><div>$3.99</div>"))
-        #expect(!FlyerNetworkCapture.isJSONPayload(""))
-        // The injected interceptor carries the same gate.
-        #expect(FlyerNetworkCapture.interceptorScript.contains("looksJSON"))
-        // ...and notes data-API request URLs for diagnostics on both fetch and XHR.
-        #expect(FlyerNetworkCapture.interceptorScript.contains("function note"))
-        #expect(FlyerNetworkCapture.interceptorScript.contains("note(url)"))
+        #expect(!FlyerPriceSignal.isJSONPayload("(self.webpackChunkFlipp=self.webpackChunkFlipp||[]).push([[4736],{5023:function(){var price}}"))
+        #expect(!FlyerPriceSignal.isJSONPayload("!function(e){\"price\"}"))
+        #expect(!FlyerPriceSignal.isJSONPayload("<!DOCTYPE html><div>$3.99</div>"))
+        #expect(!FlyerPriceSignal.isJSONPayload(""))
     }
 
     private func seededResult(_ banner: FlyerBanner) -> FlyerDiscoveryResult {
@@ -445,7 +409,7 @@ private final class RecordingFlyerContentAcquirer: FlyerContentAcquiring {
 
     init(
         cannedState: FlyerAcquisitionState = .acquired,
-        method: FlyerAcquisitionMethod = .renderedHTML
+        method: FlyerAcquisitionMethod = .endpointJSON
     ) {
         self.cannedState = cannedState
         self.method = method
