@@ -58,9 +58,7 @@ enum FlyerStorePreparationCatalog {
         // Flipp `merchant_id`s read from the live flyers-ng `data` response (T2P1J9).
         switch banner {
         case .safeway:
-            // Capture works for Safeway; its grocery merchant_id isn't confirmed, so no
-            // flyerkit fallback yet.
-            return FlyerStorePreparation(flyerInCrossOriginIframe: true)
+            return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchantID: 2126)
         case .sobeys:
             return FlyerStorePreparation(flyerInCrossOriginIframe: true, flippMerchantID: 2072)
         case .freshCo:
