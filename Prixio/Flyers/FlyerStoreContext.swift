@@ -51,6 +51,11 @@ struct FlyerStorePreparation: Equatable {
     /// (`FlippFlyerKitClient`) as a deterministic fallback when the rendered widget
     /// never fetches items — ids read from the live Flipp `data` response.
     var flippMerchantID: Int? = nil
+    /// The pcexpress banner + store, when this is a Loblaw banner whose flyer is served
+    /// by the `api.pcexpress.ca` BFF (not Flipp). Lets the acquirer fetch flyer items
+    /// directly via `PCExpressClient`, bypassing the Akamai bot-wall shell that WebKit
+    /// hits — request shape verified live with the public web apikey.
+    var pcExpress: PCExpressClient.BannerConfig? = nil
 }
 
 enum FlyerStorePreparationCatalog {
@@ -66,10 +71,31 @@ enum FlyerStorePreparationCatalog {
         case .fresonBros:
             // Flipp iframe stays about:blank; merchant_id unknown.
             return FlyerStorePreparation(flyerInCrossOriginIframe: true)
-        case .realCanadianSuperstore, .noFrills:
-            // Loblaw banners return an Akamai bot-wall shell even through WebKit, and
-            // serve items via the pcexpress API (not Flipp).
-            return FlyerStorePreparation(antiBotWalled: true)
+        case .realCanadianSuperstore:
+            // Loblaw's site is an Akamai bot-wall shell through WebKit, but its flyer
+            // items come from the public pcexpress BFF — fetched directly. Store 1521 is
+            // a Calgary superstore (verified live); antiBotWalled stays set so a pcexpress
+            // failure still labels the rendered fallback honestly.
+            return FlyerStorePreparation(
+                antiBotWalled: true,
+                pcExpress: PCExpressClient.BannerConfig(
+                    siteBanner: "superstore",
+                    storeID: "1521",
+                    origin: "https://www.realcanadiansuperstore.ca"
+                )
+            )
+        case .noFrills:
+            // Same pcexpress BFF as superstore. Store 6969 is "Cynthia's NOFRILLS
+            // Calgary" (870 11 St SW, downtown), read from the live pickup-locations
+            // endpoint and verified to return flyer items.
+            return FlyerStorePreparation(
+                antiBotWalled: true,
+                pcExpress: PCExpressClient.BannerConfig(
+                    siteBanner: "nofrills",
+                    storeID: "6969",
+                    origin: "https://www.nofrills.ca"
+                )
+            )
         case .saveOnFoods:
             // Save-On renders a Salesforce circular, but also has a Flipp flyer.
             return FlyerStorePreparation(flippMerchantID: 2062)

@@ -30,6 +30,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
     private let enableOCR: Bool
     private let storeContext: FlyerStoreContext
     private let flyerKitClient: FlippFlyerKitClient
+    private let pcExpressClient: PCExpressClient
     private let logger: FlyerAcquisitionLogging
 
     init(
@@ -49,6 +50,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
         enableOCR: Bool = false,
         storeContext: FlyerStoreContext? = nil,
         flyerKitClient: FlippFlyerKitClient = FlippFlyerKitClient(),
+        pcExpressClient: PCExpressClient = PCExpressClient(),
         logger: FlyerAcquisitionLogging? = nil
     ) {
         self.tickInterval = tickInterval
@@ -58,6 +60,7 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
         self.captureAcquireThreshold = captureAcquireThreshold
         self.enableOCR = enableOCR
         self.flyerKitClient = flyerKitClient
+        self.pcExpressClient = pcExpressClient
         // Default to the classifier's static threshold so the "real flyer content"
         // bar matches discovery. Resolved here (main-actor isolated) rather than as
         // a default argument, which would evaluate in a nonisolated context.
@@ -82,6 +85,14 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
         // the fallback if the API errors or returns too little.
         if let merchantID = prep.flippMerchantID,
            let result = await flyerKitFirst(banner: banner, merchantID: merchantID, url: url, label: label) {
+            return result
+        }
+
+        // Loblaw banners (RCSS / No Frills): the site is an Akamai bot-wall shell through
+        // WebKit, but flyer items come from the public pcexpress BFF. Fetch them directly
+        // — same deterministic, no-render path as Flipp's flyerkit.
+        if let pcx = prep.pcExpress,
+           let result = await pcExpressFirst(banner: banner, config: pcx, url: url, label: label) {
             return result
         }
 
@@ -300,6 +311,43 @@ final class WebPageFlyerContentAcquirer: FlyerContentAcquiring {
             return result
         } catch {
             logger.log("banner=\(label) phase=flyerkit-error merchant=\(merchantID) error=\(description(for: error))")
+            return nil
+        }
+    }
+
+    /// Fetches a Loblaw banner's flyer items straight from the pcexpress BFF. Returns an
+    /// `.acquired` result when it yields enough prices (so the caller skips the bot-walled
+    /// render entirely); returns `nil` on error or too-few items so the caller falls back.
+    private func pcExpressFirst(
+        banner: FlyerBanner,
+        config: PCExpressClient.BannerConfig,
+        url: URL,
+        label: String
+    ) async -> FlyerAcquiredContent? {
+        do {
+            let json = try await pcExpressClient.fetchItemsJSON(config: config)
+            let prices = FlyerNetworkCapture.priceSignalCount(in: json)
+            logger.log("banner=\(label) phase=pcexpress banner=\(config.siteBanner) store=\(config.storeID) bytes=\(json.utf8.count) prices=\(prices)")
+            guard prices >= captureAcquireThreshold else { return nil }
+
+            let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
+            let result = makeResult(
+                banner: banner,
+                url: url,
+                finalURL: url,
+                prep: FlyerStorePreparationCatalog.preparation(for: banner.id, context: storeContext),
+                method: .endpointJSON,
+                bestPriceCount: prices,
+                payloadBytes: trimmed.utf8.count,
+                trimmedText: trimmed,
+                snippet: renderedSnippet(from: trimmed),
+                iframeHosts: "",
+                navError: nil
+            )
+            logger.log("banner=\(label) phase=pcexpress-finish state=\(result.state.rawValue) prices=\(prices) bytes=\(trimmed.utf8.count)")
+            return result
+        } catch {
+            logger.log("banner=\(label) phase=pcexpress-error banner=\(config.siteBanner) store=\(config.storeID) error=\(description(for: error))")
             return nil
         }
     }
