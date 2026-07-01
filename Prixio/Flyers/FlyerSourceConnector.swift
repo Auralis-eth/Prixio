@@ -129,17 +129,16 @@ enum FlyerSourceConnectorCatalog {
                 ]
             )
         case .fresonBros:
+            // Freson serves its flyer as a 16 MB image-only PDF via the dFlip WordPress
+            // flipbook plugin (no text layer, no structured API) — the one supported
+            // banner whose prices are reachable only by OCR, which reads flyer price
+            // graphics unreliably. Unsupported for v1 rather than shipping a flaky OCR path.
             return connector(
                 banner: banner,
-                urls: [
-                    "https://www.freson.com/weekly-flyer/",
-                    "https://www.freson.com/flyers/"
-                ],
-                allowedDomains: ["freson.com"],
-                queries: [
-                    "Freson Bros weekly flyer official",
-                    "Freson Bros Alberta flyer official"
-                ]
+                urls: [],
+                allowedDomains: [],
+                queries: [],
+                unsupportedReason: "No structured flyer source for v1; Freson serves an image-only PDF flipbook (dFlip) that needs OCR."
             )
         }
     }
