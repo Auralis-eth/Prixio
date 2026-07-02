@@ -108,6 +108,14 @@ private struct SavedFlyerPriceRow: View {
                 Text(record.bannerName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if record.isExpired() {
+                    Text("Expired")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(.red.opacity(0.15), in: Capsule())
+                        .foregroundStyle(.red)
+                }
                 if record.memberOnly {
                     Text("· member")
                         .font(.caption2)

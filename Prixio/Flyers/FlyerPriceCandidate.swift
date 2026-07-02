@@ -1,9 +1,9 @@
 import Foundation
 
 /// A structured, reviewable price candidate extracted from acquired flyer content
-/// (captured flyer JSON or harvested text). This is step 5's output: acquisition
-/// produced bytes, extraction turns them into provenance-rich candidates the user
-/// can review before any are promoted into trusted price history (steps 6–8).
+/// (captured flyer JSON or harvested text): acquisition produced bytes, extraction
+/// turns them into provenance-rich candidates the user can review before any are
+/// promoted into trusted price history.
 ///
 /// Provenance that is uniform across a banner's run (merchant, source URL, fetch
 /// time, method) lives on `FlyerExtractionResult`; per-item fields live here.
@@ -11,7 +11,7 @@ struct FlyerPriceCandidate: Identifiable, Equatable {
     /// Product name as advertised in the flyer.
     let productName: String
     /// Normalized item key (via `ItemKeyNormalizer`) for matching against shopping
-    /// list / price history in step 6.
+    /// list / price history.
     let normalizedItemKey: String
     let brand: String?
     /// Advertised price.

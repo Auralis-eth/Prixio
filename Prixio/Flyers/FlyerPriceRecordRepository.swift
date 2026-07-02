@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-/// Persists user-reviewed flyer deals into the dedicated `FlyerPriceRecord` store
-/// (step 8). Saves are idempotent on `dealKey`, so re-saving the same deal updates
+/// Persists user-reviewed flyer deals into the dedicated `FlyerPriceRecord` store.
+/// Saves are idempotent on `dealKey`, so re-saving the same deal updates
 /// the existing record rather than duplicating it. Mirrors `ShoppingListRepository`'s
 /// commit/rollback discipline.
 @MainActor
@@ -87,5 +87,20 @@ struct FlyerPriceRecordRepository {
     func delete(_ record: FlyerPriceRecord) throws {
         context.delete(record)
         try commit()
+    }
+
+    /// Deletes records that have been expired for longer than
+    /// `FlyerPriceRecord.deletionGraceDays`. Recently-expired records are kept so the
+    /// saved-prices manager can still show them. Intended to run once per launch;
+    /// returns the number deleted.
+    @discardableResult
+    func deleteLongExpired(asOf now: Date = .now) throws -> Int {
+        let graceCutoff = now.addingTimeInterval(-TimeInterval(FlyerPriceRecord.deletionGraceDays) * 86_400)
+        // Expired as of the cutoff ⇔ expired for at least the grace period now.
+        let expired = try fetchAll().filter { $0.isExpired(asOf: graceCutoff) }
+        guard !expired.isEmpty else { return 0 }
+        expired.forEach(context.delete)
+        try commit()
+        return expired.count
     }
 }

@@ -3,8 +3,7 @@ import Foundation
 /// How a banner's flyer content was obtained, chosen per destination from the
 /// source shape discovery classified. Static shapes (`html`/`json`/`pdf`/`image`)
 /// are processed in-app without a web view; only JS-rendered (`dynamicHTML`) or
-/// `unknown` sources fall back to `renderedHTML`. See the strategy table in
-/// `FlyerContentAcquisitionPlan.md`.
+/// `unknown` sources fall back to `renderedHTML`.
 enum FlyerAcquisitionMethod: String, Equatable {
     case staticHTML
     case endpointJSON

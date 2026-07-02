@@ -33,8 +33,8 @@ struct ShoppingItemFlyerMatches: Identifiable, Equatable {
     var hasDeals: Bool { !deals.isEmpty }
 }
 
-/// Matches extracted flyer price candidates against shopping-list items — step 6 of
-/// `FlyerProcessingPlan.md`. Pure and deterministic.
+/// Matches extracted flyer price candidates against shopping-list items. Pure and
+/// deterministic.
 ///
 /// Matching reuses `ItemKeyNormalizer.matches(queryKey:entryKey:)`, the same
 /// generic-query→specific-product rule `PriceInsightEngine` uses: the shopping-list

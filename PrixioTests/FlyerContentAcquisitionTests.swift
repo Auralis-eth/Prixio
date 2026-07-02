@@ -56,6 +56,48 @@ struct FlyerContentAcquisitionTests {
         #expect(viewModel.acquisition(for: unsupportedBanner)?.state == .unsupported)
     }
 
+    @Test("Concurrent acquisition publishes a result for every supported banner")
+    func acquiresAllSupportedBannersConcurrently() async throws {
+        // The acquisition run fans out in a task group; every banner must still
+        // land a published result regardless of completion order.
+        let bannerIDs: [FlyerBannerID] = [.safeway, .sobeys, .walmartSupercentre]
+        let banners = try bannerIDs.map { try #require(FlyerBannerCatalog.banner(for: $0)) }
+        let connectors = try banners.map { banner in
+            FlyerSourceConnector(
+                banner: banner,
+                officialEntryURLs: [try #require(URL(string: "https://\(banner.id.rawValue)-grocer.ca/flyer"))],
+                allowedDomains: ["\(banner.id.rawValue)-grocer.ca"],
+                searchQueries: [],
+                unsupportedReason: nil
+            )
+        }
+        let documents = try connectors.reduce(into: [URL: Result<FlyerFetchedDocument, Error>]()) { docs, connector in
+            let url = try #require(connector.officialEntryURLs.first)
+            docs[url] = foundDocument(url: url)
+        }
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: connectors,
+            fetcher: FakeAcquisitionFetcher(documents: documents),
+            searchProvider: EmptyFlyerSearchProvider()
+        )
+        let acquirer = RecordingFlyerContentAcquirer()
+        let viewModel = FlyerProcessingPOCViewModel(
+            coordinator: coordinator,
+            acquirer: acquirer,
+            initialResults: banners.map(seededResult)
+        )
+
+        await viewModel.checkFlyers()
+        await viewModel.acquireContent()
+
+        #expect(viewModel.acquisitionState == .completed)
+        // Completion order is nondeterministic under the task group — compare as sets.
+        #expect(Set(acquirer.requestedBanners) == Set(bannerIDs))
+        for banner in banners {
+            #expect(viewModel.acquisition(for: banner)?.state == .acquired)
+        }
+    }
+
     @Test
     func recordsMissingSourceWhenDiscoveryHasNoSelectedURL() async throws {
         let banner = try #require(FlyerBannerCatalog.banner(for: .safeway))
@@ -337,6 +379,119 @@ struct FlyerContentAcquisitionTests {
         #expect(!FlyerPriceSignal.isJSONPayload("!function(e){\"price\"}"))
         #expect(!FlyerPriceSignal.isJSONPayload("<!DOCTYPE html><div>$3.99</div>"))
         #expect(!FlyerPriceSignal.isJSONPayload(""))
+    }
+
+    // MARK: - EndpointFlyerContentAcquirer (the structured-API dispatcher)
+
+    @Test("Flipp banner acquires items via the flyers-ng client")
+    func endpointAcquirerFetchesFlippItems() async throws {
+        let banner = try #require(FlyerBannerCatalog.banner(for: .coOp))
+        var client = FlippFlyerKitClient()
+        client.makeSessionID = { "1234567890123456" }
+        client.fetch = { url in
+            if url.absoluteString.contains("flyer_items") {
+                return Data(#"[{"name":"Milk","price":3.99},{"name":"Eggs","price":4.49},{"name":"Bread","price":2.99}]"#.utf8)
+            }
+            return Data(#"{"flyers":[{"id":42,"merchant_id":2051,"valid_from":"2000-01-01","valid_to":"2999-12-31"}]}"#.utf8)
+        }
+        let acquirer = EndpointFlyerContentAcquirer(flyerKitClient: client)
+
+        let result = await acquirer.acquire(
+            banner: banner,
+            from: try #require(URL(string: "https://food.crs/more/foodflyers")),
+            sourceShape: .dynamicHTML,
+            storeContext: nil
+        )
+
+        #expect(result.state == .acquired)
+        #expect(result.acquisitionMethod == .endpointJSON)
+        #expect(result.priceTokenCount == 3)
+        #expect(result.extractionPayload?.contains("Milk") == true)
+    }
+
+    @Test("Loblaw banner acquires items via the pcexpress client")
+    func endpointAcquirerFetchesPCExpressItems() async throws {
+        let banner = try #require(FlyerBannerCatalog.banner(for: .noFrills))
+        var client = PCExpressClient()
+        client.fetch = { _ in
+            Data(#"{"layout":{"sections":{"productListingSection":{"components":[{"data":{"productGrid":{"productTiles":[{"title":"Milk","pricing":{"price":"3.99"}},{"title":"Eggs","pricing":{"price":"4.49"}},{"title":"Bread","pricing":{"price":"2.99"}}]}}}]}}}}"#.utf8)
+        }
+        let acquirer = EndpointFlyerContentAcquirer(pcExpressClient: client)
+
+        let result = await acquirer.acquire(
+            banner: banner,
+            from: try #require(URL(string: "https://www.nofrills.ca/print-flyer")),
+            sourceShape: .dynamicHTML,
+            storeContext: nil
+        )
+
+        #expect(result.state == .acquired)
+        #expect(result.acquisitionMethod == .endpointJSON)
+        #expect(result.priceTokenCount == 3)
+        #expect(result.extractionPayload?.contains("Eggs") == true)
+    }
+
+    @Test("A configured endpoint that errors reports an honest no-prices result")
+    func endpointAcquirerReportsEndpointFailureHonestly() async throws {
+        let banner = try #require(FlyerBannerCatalog.banner(for: .coOp))
+        var client = FlippFlyerKitClient()
+        client.fetch = { _ in throw FlippFlyerKitError.badResponse }
+        let acquirer = EndpointFlyerContentAcquirer(flyerKitClient: client)
+
+        let result = await acquirer.acquire(
+            banner: banner,
+            from: try #require(URL(string: "https://food.crs/more/foodflyers")),
+            sourceShape: .dynamicHTML,
+            storeContext: nil
+        )
+
+        #expect(result.state == .acquiredNoPrices)
+        #expect(result.acquisitionMethod == nil)
+        // The endpoint exists but failed — the message must not claim it is unconfigured.
+        #expect(result.message.contains("returned no usable items"))
+    }
+
+    @Test("Items below the price threshold do not acquire")
+    func endpointAcquirerRespectsPriceThreshold() async throws {
+        let banner = try #require(FlyerBannerCatalog.banner(for: .coOp))
+        var client = FlippFlyerKitClient()
+        client.makeSessionID = { "1234567890123456" }
+        client.fetch = { url in
+            if url.absoluteString.contains("flyer_items") {
+                return Data(#"[{"name":"Milk","price":3.99},{"name":"Eggs","price":4.49}]"#.utf8)
+            }
+            return Data(#"{"flyers":[{"id":42,"merchant_id":2051,"valid_from":"2000-01-01","valid_to":"2999-12-31"}]}"#.utf8)
+        }
+        let acquirer = EndpointFlyerContentAcquirer(acquireThreshold: 3, flyerKitClient: client)
+
+        let result = await acquirer.acquire(
+            banner: banner,
+            from: try #require(URL(string: "https://food.crs/more/foodflyers")),
+            sourceShape: .dynamicHTML,
+            storeContext: nil
+        )
+
+        #expect(result.state == .acquiredNoPrices)
+        #expect(result.message.contains("returned no usable items"))
+    }
+
+    @Test("A banner with no endpoint reports the configuration gap")
+    func endpointAcquirerReportsMissingEndpoint() async throws {
+        // Freson has neither a Flipp merchant id nor a pcexpress config, so the
+        // acquirer makes no network calls and reports the gap explicitly.
+        let banner = try #require(FlyerBannerCatalog.banner(for: .fresonBros))
+        let acquirer = EndpointFlyerContentAcquirer()
+
+        let result = await acquirer.acquire(
+            banner: banner,
+            from: try #require(URL(string: "https://fresonbros.com/weekly-flyer/")),
+            sourceShape: .dynamicHTML,
+            storeContext: nil
+        )
+
+        #expect(result.state == .acquiredNoPrices)
+        #expect(result.acquisitionMethod == nil)
+        #expect(result.message.contains("No structured flyer endpoint"))
     }
 
     private func seededResult(_ banner: FlyerBanner) -> FlyerDiscoveryResult {

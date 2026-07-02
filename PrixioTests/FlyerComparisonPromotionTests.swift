@@ -3,7 +3,7 @@ import Testing
 @testable import Prixio
 
 /// Tests for promoting saved `FlyerPriceRecord`s into the Compare item surface as
-/// labeled "Flyer price" rows (the promotion step after MVP step 8).
+/// labeled "Flyer price" rows.
 @MainActor
 @Suite
 struct FlyerComparisonPromotionTests {
@@ -127,5 +127,31 @@ struct FlyerComparisonPromotionTests {
             query: "bread"
         )
         #expect(viewModel.searchResults.contains { $0.displayName == "Sourdough Bread" && $0.isFlyerOnly })
+    }
+
+    // MARK: - Expiry
+
+    @Test("Expired flyer prices are hidden from item-detail flyer rows")
+    func expiredRecordsHiddenFromFlyerRows() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let expired = record("Whole Milk 2L", banner: "Safeway", price: "3.99")
+        expired.saleEndDate = now.addingTimeInterval(-3 * 86_400)
+        let active = record("Whole Milk 2L", banner: "Walmart", price: "4.29")
+        active.saleEndDate = now.addingTimeInterval(3 * 86_400)
+
+        let rows = viewModel.flyerComparisonRows(itemKey: "whole milk", records: [expired, active], now: now)
+
+        #expect(rows.map(\.bannerName) == ["Walmart"])
+    }
+
+    @Test("Expired flyer-only items disappear from Browse")
+    func expiredFlyerOnlyItemsHiddenFromBrowse() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let expired = record("Orange Juice", banner: "Walmart", price: "3.99")
+        expired.saleEndDate = now.addingTimeInterval(-3 * 86_400)
+
+        viewModel.recompute(entries: [], flyerRecords: [expired], query: "", now: now)
+
+        #expect(viewModel.browseItems.isEmpty)
     }
 }

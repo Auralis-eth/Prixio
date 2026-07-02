@@ -8,10 +8,14 @@ final class ShoppingListViewModel: ObservableObject {
     @Published private(set) var completedRows: [ShoppingListRowData] = []
     @Published private(set) var tripRecommendation: TripRecommendation = .insufficientData
     @Published private(set) var basketEstimate: BasketEstimate = .empty
+    /// Advisory-only flyer line ("Flyer deals could save ~$X at Y"); never feeds the
+    /// basket totals.
+    @Published private(set) var flyerAdvisory: FlyerDealAdvisory?
 
     func recompute(
         items: [ShoppingListItem],
         entries: [PriceEntry],
+        flyerRecords: [FlyerPriceRecord] = [],
         userLocation: CLLocation?,
         now: Date = .now
     ) {
@@ -40,10 +44,18 @@ final class ShoppingListViewModel: ObservableObject {
         tripRecommendation = makeTripRecommendation(from: activeRows)
 
         // Basket totals use package prices (you buy a package, not a normalized unit).
+        let basketItems = activeRows.map { BasketItemInput(itemKey: $0.itemKey, displayName: $0.displayName) }
         basketEstimate = PriceInsightEngine.computeBasketEstimate(
-            items: activeRows.map { BasketItemInput(itemKey: $0.itemKey, displayName: $0.displayName) },
+            items: basketItems,
             useNormalizedPricing: false,
             allEntries: entries,
+            now: now
+        )
+
+        flyerAdvisory = FlyerDealAdvisory.compute(
+            items: basketItems,
+            records: flyerRecords,
+            entries: entries,
             now: now
         )
     }

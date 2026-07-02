@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Prixio
 
-/// Tests for `FlyerPriceExtractor` (flyer-processing step 5): turning acquired
+/// Tests for `FlyerPriceExtractor`: turning acquired
 /// payloads (captured JSON + harvested text) into structured `FlyerPriceCandidate`s.
 @Suite("Flyer price extraction")
 struct FlyerPriceExtractionTests {

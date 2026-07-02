@@ -60,7 +60,11 @@ final class EndpointFlyerContentAcquirer: FlyerContentAcquiring {
             return result
         }
 
-        logger.log("banner=\(label) phase=endpoint-none url=\(url.absoluteString)")
+        // Reaching here means either no endpoint is configured, or the configured
+        // endpoint errored / returned too few prices — say which, so a device log
+        // reads honestly.
+        let hasEndpoint = prep.flippMerchantID != nil || prep.pcExpress != nil
+        logger.log("banner=\(label) phase=\(hasEndpoint ? "endpoint-short" : "endpoint-none") url=\(url.absoluteString)")
         return FlyerAcquiredContent(
             banner: banner,
             state: .acquiredNoPrices,
@@ -69,7 +73,9 @@ final class EndpointFlyerContentAcquirer: FlyerContentAcquiring {
             finalURL: url,
             storeContext: storeContext.label,
             fetchedAt: Date(),
-            message: "No structured flyer endpoint (Flipp/pcexpress) is configured for this banner."
+            message: hasEndpoint
+                ? "The banner's structured flyer endpoint returned no usable items (fetch error or below the price threshold)."
+                : "No structured flyer endpoint (Flipp/pcexpress) is configured for this banner."
         )
     }
 

@@ -6,6 +6,7 @@ struct ShoppingListRootView: View {
     @EnvironmentObject private var navigationModel: AppNavigationModel
     @Query(sort: \ShoppingList.updatedAt, order: .reverse) private var lists: [ShoppingList]
     @Query(sort: \PriceEntry.capturedAt, order: .reverse) private var entries: [PriceEntry]
+    @Query(sort: \FlyerPriceRecord.savedAt, order: .reverse) private var flyerRecords: [FlyerPriceRecord]
 
     @StateObject private var viewModel = ShoppingListViewModel()
     @State private var isShowingAddSheet = false
@@ -33,6 +34,22 @@ struct ShoppingListRootView: View {
                             )
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             .listRowBackground(Color.clear)
+                        }
+
+                        // Advisory only: flyer deals never change the basket totals.
+                        if let advisory = viewModel.flyerAdvisory {
+                            Section {
+                                Label {
+                                    Text(advisory.message)
+                                        .font(.subheadline)
+                                } icon: {
+                                    Image(systemName: "newspaper")
+                                        .foregroundStyle(.orange)
+                                }
+                                .accessibilityElement(children: .combine)
+                            } footer: {
+                                Text("Advertised flyer prices — not included in estimates and may differ in store.")
+                            }
                         }
 
                         Section("Checklist") {
@@ -80,6 +97,9 @@ struct ShoppingListRootView: View {
             recompute()
         }
         .onChange(of: lists.count) { _, _ in
+            recompute()
+        }
+        .onChange(of: flyerRecords.count) { _, _ in
             recompute()
         }
         .sheet(isPresented: $isShowingAddSheet) {
@@ -233,7 +253,7 @@ struct ShoppingListRootView: View {
 
     private func recompute() {
         let items = (activeList?.items ?? []).sorted { $0.createdAt < $1.createdAt }
-        viewModel.recompute(items: items, entries: entries, userLocation: nil)
+        viewModel.recompute(items: items, entries: entries, flyerRecords: flyerRecords, userLocation: nil)
     }
 
     private func addItem(displayName: String, brand: String?, quantityNote: String?) {

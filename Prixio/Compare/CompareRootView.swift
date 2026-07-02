@@ -10,10 +10,16 @@ struct CompareRootView: View {
     @StateObject private var locationManager = LocationManager()
     @State private var searchText = ""
 
+    /// Expired flyer prices are hidden from Compare (they stay in the saved-prices
+    /// manager until the deletion sweep), so the empty-state gate must not count them.
+    private var activeFlyerRecords: [FlyerPriceRecord] {
+        flyerRecords.filter { !$0.isExpired() }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                if entries.isEmpty && flyerRecords.isEmpty {
+                if entries.isEmpty && activeFlyerRecords.isEmpty {
                     emptyStateSection
                 } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     searchResultsSection

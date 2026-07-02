@@ -19,6 +19,7 @@ extension Tag {
     @Tag static var shipGate: Self
     @Tag static var evaluation: Self
     @Tag static var realWorldOCR: Self
+    @Tag static var simulatorCrash: Self
 }
 
 @MainActor

@@ -5,10 +5,12 @@
 //  Created by Daniel Bell on 3/1/26.
 //
 
+import SwiftData
 import SwiftUI
 
 struct MainView: View {
     @EnvironmentObject private var navigationModel: AppNavigationModel
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         TabView(selection: $navigationModel.selectedTab) {
@@ -47,6 +49,12 @@ struct MainView: View {
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
+        }
+        .task {
+            // Launch sweep: flyer prices expired past the grace period are deleted so
+            // the store doesn't grow forever (recently-expired ones stay visible in
+            // the saved-prices manager).
+            _ = try? FlyerPriceRecordRepository(context: modelContext).deleteLongExpired()
         }
     }
 }

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Prixio
 
-/// Tests for `FlyerDealMatcher` (flyer-processing step 6): matching extracted
+/// Tests for `FlyerDealMatcher`: matching extracted
 /// candidates against shopping-list item keys.
 @Suite("Flyer deal matching")
 struct FlyerDealMatchingTests {

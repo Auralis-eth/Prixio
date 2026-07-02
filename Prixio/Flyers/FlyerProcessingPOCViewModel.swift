@@ -32,9 +32,9 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
     private let dealMatcher = FlyerDealMatcher()
     private let matchLogger: FlyerAcquisitionLogging
 
-    /// A stand-in shopping list for the POC: until the flow reads real
-    /// `ShoppingListItem`s from SwiftData (step 7+), matching is demonstrated
-    /// against a fixed set of common Alberta grocery items.
+    /// A stand-in shopping list for the POC, used as a fallback when the user's
+    /// real list has no active items: matching is demonstrated against a fixed
+    /// set of common Alberta grocery items.
     static let sampleQueries: [FlyerDealMatcher.Query] = [
         "milk", "eggs", "butter", "bread", "bananas", "chicken breast",
         "ground beef", "coffee", "cheese", "apples", "potatoes", "yogurt"
@@ -139,27 +139,42 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         matchState = .idle
         acquisitionLogger.log("phase=run-start banners=\(results.count)")
         var output: [FlyerBannerID: FlyerAcquiredContent] = [:]
-        for result in results {
-            let content: FlyerAcquiredContent
-            switch result.state {
-            case .unsupported:
-                content = .unsupported(banner: result.banner, reason: result.message)
-            default:
-                if let url = result.selectedURL {
-                    content = await acquirer.acquire(
-                        banner: result.banner,
-                        from: url,
-                        sourceShape: result.sourceShape,
-                        storeContext: nil
-                    )
-                } else {
-                    content = .missingSource(banner: result.banner)
+
+        // Banners with no network work (unsupported / no source URL) resolve up front.
+        // The rest fetch concurrently: each acquire is independent network I/O, so a
+        // task group overlaps all of them (run time ≈ the slowest banner, not the sum)
+        // while still publishing each result as it lands.
+        let acquirer = self.acquirer
+        await withTaskGroup(of: (FlyerBannerID, FlyerAcquiredContent).self) { group in
+            for result in results {
+                switch result.state {
+                case .unsupported:
+                    output[result.banner.id] = .unsupported(banner: result.banner, reason: result.message)
+                default:
+                    guard let url = result.selectedURL else {
+                        output[result.banner.id] = .missingSource(banner: result.banner)
+                        continue
+                    }
+                    let banner = result.banner
+                    let shape = result.sourceShape
+                    group.addTask {
+                        let content = await acquirer.acquire(
+                            banner: banner,
+                            from: url,
+                            sourceShape: shape,
+                            storeContext: nil
+                        )
+                        return (banner.id, content)
+                    }
                 }
             }
-
-            output[result.banner.id] = content
-            // Publish progressively so each banner's result appears as it lands.
+            // Publish the synchronously-resolved banners immediately, then each fetched
+            // banner as its task completes.
             acquisitions = output
+            for await (id, content) in group {
+                output[id] = content
+                acquisitions = output
+            }
         }
 
         let tally = output.values.reduce(into: [FlyerAcquisitionState: Int]()) { counts, content in
@@ -327,7 +342,7 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         ]
     }
 
-    /// Matches extracted candidates against the user's real shopping list (step 6/7),
+    /// Matches extracted candidates against the user's real shopping list,
     /// falling back to the built-in sample list when the list is empty so the POC
     /// still demonstrates. Pass the SwiftData context from the view environment.
     func matchDeals(context: ModelContext) {
@@ -377,7 +392,7 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         ))
     }
 
-    /// Saves a reviewed deal to the dedicated flyer price store (step 8).
+    /// Saves a reviewed deal to the dedicated flyer price store.
     func saveDeal(_ deal: FlyerDeal, forItemKey itemKey: String, context: ModelContext) {
         let repository = FlyerPriceRecordRepository(context: context)
         do {

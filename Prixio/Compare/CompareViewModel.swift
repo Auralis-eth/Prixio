@@ -98,8 +98,10 @@ final class CompareViewModel: ObservableObject {
         let capturedRows = groupedEntries.values.map { makeBrowseRow(for: $0, now: now) }
         // Add items that exist only as saved flyer prices (no in-person capture), so a
         // saved deal is reachable in Compare even before the user has scanned it.
+        // Expired flyer prices are hidden here (they remain in the saved-prices manager).
         let capturedKeys = Set(capturedRows.map(\.itemKey))
-        let flyerOnlyRows = makeFlyerOnlyBrowseRows(records: flyerRecords, excludingKeys: capturedKeys)
+        let activeFlyerRecords = flyerRecords.filter { !$0.isExpired(asOf: now) }
+        let flyerOnlyRows = makeFlyerOnlyBrowseRows(records: activeFlyerRecords, excludingKeys: capturedKeys)
         browseItems = (capturedRows + flyerOnlyRows)
             .sorted {
                 $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
@@ -203,10 +205,12 @@ final class CompareViewModel: ObservableObject {
     /// data is never shown as an equal-confidence in-person scan.
     func flyerComparisonRows(
         itemKey: String,
-        records: [FlyerPriceRecord]
+        records: [FlyerPriceRecord],
+        now: Date = .now
     ) -> [FlyerComparisonRow] {
         let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
         return records
+            .filter { !$0.isExpired(asOf: now) }
             .filter { ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.normalizedItemKey) }
             .map { record in
                 FlyerComparisonRow(

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Turns acquired flyer content into structured `FlyerPriceCandidate`s — step 5 of
-/// `FlyerProcessingPlan.md`. Deterministic and pure (no network, no rendering, no
+/// Turns acquired flyer content into structured `FlyerPriceCandidate`s.
+/// Deterministic and pure (no network, no rendering, no
 /// model), so it's fully unit-testable against captured-payload fixtures.
 ///
 /// Two strategies, dispatched on how the content was acquired:

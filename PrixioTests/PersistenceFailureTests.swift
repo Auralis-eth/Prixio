@@ -31,7 +31,7 @@ struct PersistenceFailureTests {
         return ModelContext(container)
     }
 
-    @Test
+    @Test(.tags(.simulatorCrash), .disabled("Crashes test host (signal abrt) on iOS 27 beta simulator even in isolation; recheck after next beta"))
     @MainActor
     func shoppingAddItem_throwsAndPersistsNothing_whenSaveFails() throws {
         let context = try makeShoppingContext()
