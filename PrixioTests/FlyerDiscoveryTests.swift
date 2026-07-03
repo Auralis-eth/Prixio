@@ -476,7 +476,7 @@ struct FlyerDiscoveryTests {
             fetcher: fetcher,
             searchProvider: FakeFlyerSearchProvider(results: [])
         )
-        let viewModel = FlyerProcessingPOCViewModel(
+        let viewModel = FlyerCheckViewModel(
             coordinator: coordinator,
             initialResults: [
                 FlyerDiscoveryResult(

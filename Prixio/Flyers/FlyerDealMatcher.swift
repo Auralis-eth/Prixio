@@ -78,8 +78,9 @@ struct FlyerDealMatcher {
     }
 
     /// Best price first; ties broken by higher confidence, then better-ranked banner,
-    /// then product name for stable ordering.
-    private static func dealOrder(_ lhs: FlyerDeal, _ rhs: FlyerDeal) -> Bool {
+    /// then product name for stable ordering. Shared with `FlyerAlternativeFinder`
+    /// so alternatives sort exactly like direct deals.
+    static func dealOrder(_ lhs: FlyerDeal, _ rhs: FlyerDeal) -> Bool {
         if lhs.candidate.price != rhs.candidate.price {
             return lhs.candidate.price < rhs.candidate.price
         }

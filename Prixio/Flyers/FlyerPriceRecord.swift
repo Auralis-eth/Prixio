@@ -107,17 +107,23 @@ extension FlyerPriceRecord {
     /// saved-prices manager, labeled expired) before the launch sweep deletes it.
     static let deletionGraceDays = 30
 
-    /// Whether this record's sale window has passed. The sale-end date is inclusive —
-    /// a flyer "valid to July 5" is still active on July 5. Without an end date, the
-    /// record expires `fallbackShelfLifeDays` after it was fetched (or saved).
+    /// The instant this record's sale window passes. The sale-end date is inclusive —
+    /// a flyer "valid to July 5" is still active on July 5, so the record expires at
+    /// the start of July 6. Without an end date, the record expires
+    /// `fallbackShelfLifeDays` after it was fetched (or saved).
+    var expiresAt: Date {
+        if let end = saleEndDate {
+            return end.addingTimeInterval(86_400)
+        }
+        let reference = fetchedAt ?? savedAt
+        return reference.addingTimeInterval(TimeInterval(Self.fallbackShelfLifeDays) * 86_400)
+    }
+
+    /// Whether this record's sale window has passed (see `expiresAt`).
     ///
     /// Expired records are hidden from Compare and shopping estimates but kept in the
     /// saved-prices manager until the deletion grace period lapses.
     func isExpired(asOf now: Date = .now) -> Bool {
-        if let end = saleEndDate {
-            return now >= end.addingTimeInterval(86_400)
-        }
-        let reference = fetchedAt ?? savedAt
-        return now >= reference.addingTimeInterval(TimeInterval(Self.fallbackShelfLifeDays) * 86_400)
+        now >= expiresAt
     }
 }

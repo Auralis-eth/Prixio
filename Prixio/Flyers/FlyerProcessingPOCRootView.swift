@@ -1,8 +1,11 @@
 import SwiftUI
 import SwiftData
 
+/// Developer workbench for the flyer pipeline, reachable from Settings → Developer
+/// Tools in DEBUG builds. Runs the same `FlyerCheckViewModel` stages the user-facing
+/// Check Flyers sheet runs, but individually and with per-banner diagnostics.
 struct FlyerProcessingPOCRootView: View {
-    @StateObject private var viewModel = FlyerProcessingPOCViewModel()
+    @StateObject private var viewModel = FlyerCheckViewModel()
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {

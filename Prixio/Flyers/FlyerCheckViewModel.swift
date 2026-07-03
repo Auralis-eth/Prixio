@@ -2,8 +2,12 @@ import Combine
 import Foundation
 import SwiftData
 
+/// Drives the flyer pipeline (discovery → acquisition → extraction → deal matching →
+/// review/save) behind the Shopping List's "Check Flyers" sheet. Each stage can still
+/// run individually (the pipeline tests exercise them stage by stage); the product
+/// surface runs them in sequence via `runFullCheck`.
 @MainActor
-final class FlyerProcessingPOCViewModel: ObservableObject {
+final class FlyerCheckViewModel: ObservableObject {
     enum RunState: Equatable {
         case idle
         case loading
@@ -18,11 +22,16 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
     @Published private(set) var extractions: [FlyerBannerID: FlyerExtractionResult] = [:]
     @Published private(set) var matchState: RunState = .idle
     @Published private(set) var matches: [ShoppingItemFlyerMatches] = []
+    /// Similar-but-different deal suggestions per list item, computed alongside
+    /// `matches` (see `FlyerAlternativeFinder`).
+    @Published private(set) var alternatives: [ShoppingItemFlyerAlternatives] = []
     /// Whether the last match ran against the user's real shopping list or fell back
     /// to the built-in sample list (empty list).
     @Published private(set) var matchedAgainstRealList = false
     /// `dealKey`s already saved to the flyer price store, for marking review rows.
     @Published private(set) var savedDealKeys: Set<String> = []
+    /// Whether `runFullCheck` is mid-flight (drives the Check Flyers sheet's progress UI).
+    @Published private(set) var isRunningFullCheck = false
 
     private let coordinator: FlyerDiscoveryCoordinator
     private let acquirer: FlyerContentAcquiring
@@ -30,11 +39,12 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
     private let extractor: FlyerPriceExtractor
     private let extractionLogger: FlyerAcquisitionLogging
     private let dealMatcher = FlyerDealMatcher()
+    private let alternativeFinder = FlyerAlternativeFinder()
     private let matchLogger: FlyerAcquisitionLogging
 
-    /// A stand-in shopping list for the POC, used as a fallback when the user's
-    /// real list has no active items: matching is demonstrated against a fixed
-    /// set of common Alberta grocery items.
+    /// A stand-in shopping list used as a fallback when the user's real list has no
+    /// active items: matching is demonstrated against a fixed set of common Alberta
+    /// grocery items. Product surfaces should gate on a non-empty list instead.
     static let sampleQueries: [FlyerDealMatcher.Query] = [
         "milk", "eggs", "butter", "bread", "bananas", "chicken breast",
         "ground beef", "coffee", "cheese", "apples", "potatoes", "yogurt"
@@ -117,6 +127,7 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         extractions = [:]
         extractionState = .idle
         matches = []
+        alternatives = []
         matchState = .idle
         let discoveredResults = await coordinator.discoverSources()
         results = discoveredResults.sorted { $0.banner.rank < $1.banner.rank }
@@ -136,6 +147,7 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         extractions = [:]
         extractionState = .idle
         matches = []
+        alternatives = []
         matchState = .idle
         acquisitionLogger.log("phase=run-start banners=\(results.count)")
         var output: [FlyerBannerID: FlyerAcquiredContent] = [:]
@@ -220,6 +232,7 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         extractionState = .loading
         // Re-extracting invalidates any prior deal matching.
         matches = []
+        alternatives = []
         matchState = .idle
         extractionLogger.log("phase=run-start banners=\(acquisitions.count)")
         var output: [FlyerBannerID: FlyerExtractionResult] = [:]
@@ -361,8 +374,43 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         let totalDeals = results.reduce(0) { $0 + $1.deals.count }
         matchLogger.log("phase=run-finish items=\(results.count) withDeals=\(itemsWithDeals) totalDeals=\(totalDeals)")
         matches = results
+        // Alternatives ride alongside direct matches: similar products worth a look
+        // when the exact item has no deal (or a similar one beats its best deal).
+        alternatives = alternativeFinder.findAlternatives(matches: results, extractions: Array(extractions.values))
         matchState = .completed
         loadSavedDealKeys(context: context)
+    }
+
+    /// The alternative suggestions for one matched item, if any.
+    func alternatives(forItemKey itemKey: String) -> ShoppingItemFlyerAlternatives? {
+        alternatives.first { $0.itemKey == itemKey }
+    }
+
+    /// Items worth showing in the review list: a direct deal, an alternative, or both.
+    var reviewableItems: [ShoppingItemFlyerMatches] {
+        matches.filter { $0.hasDeals || alternatives(forItemKey: $0.itemKey) != nil }
+    }
+
+    /// Runs the whole pipeline as one user action (the Check Flyers surface): each
+    /// stage's guard makes a stage that couldn't start fall through, leaving the
+    /// pipeline exactly as far as it got.
+    func runFullCheck(context: ModelContext) async {
+        guard !isRunningFullCheck else { return }
+        isRunningFullCheck = true
+        defer { isRunningFullCheck = false }
+
+        await checkFlyers()
+        await acquireContent()
+        await extractContent()
+        matchDeals(context: context)
+    }
+
+    /// The in-flight stage, for the Check Flyers progress UI.
+    var fullCheckPhaseDescription: String {
+        if runState == .loading { return "Checking retailer flyer sources…" }
+        if acquisitionState == .loading { return "Fetching this week's flyers…" }
+        if extractionState == .loading { return "Reading advertised prices…" }
+        return "Matching deals to your list…"
     }
 
     /// Builds match queries from the user's active (not-done) shopping-list items;
@@ -392,8 +440,11 @@ final class FlyerProcessingPOCViewModel: ObservableObject {
         ))
     }
 
-    /// Saves a reviewed deal to the dedicated flyer price store.
-    func saveDeal(_ deal: FlyerDeal, forItemKey itemKey: String, context: ModelContext) {
+    /// Saves a reviewed deal to the dedicated flyer price store. Pass a nil `itemKey`
+    /// for an alternative suggestion: the record is always stored under the flyer
+    /// product's own item key, and `matchedItemKey` must not claim a list match that
+    /// didn't happen.
+    func saveDeal(_ deal: FlyerDeal, forItemKey itemKey: String?, context: ModelContext) {
         let repository = FlyerPriceRecordRepository(context: context)
         do {
             try repository.save(deal, matchedItemKey: itemKey, storeContext: storeContextLabel)

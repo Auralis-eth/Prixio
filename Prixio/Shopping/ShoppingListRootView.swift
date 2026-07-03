@@ -10,6 +10,7 @@ struct ShoppingListRootView: View {
 
     @StateObject private var viewModel = ShoppingListViewModel()
     @State private var isShowingAddSheet = false
+    @State private var isShowingFlyerCheck = false
     @State private var isShowingCompleted = false
     @State private var selectedRow: ShoppingListRowData?
     @State private var scanNudgeRow: ShoppingListRowData?
@@ -37,14 +38,20 @@ struct ShoppingListRootView: View {
                         }
 
                         // Advisory only: flyer deals never change the basket totals.
+                        // Tapping it opens the Check Flyers sheet for the full review.
                         if let advisory = viewModel.flyerAdvisory {
                             Section {
-                                Label {
-                                    Text(advisory.message)
-                                        .font(.subheadline)
-                                } icon: {
-                                    Image(systemName: "newspaper")
-                                        .foregroundStyle(.orange)
+                                Button {
+                                    isShowingFlyerCheck = true
+                                } label: {
+                                    Label {
+                                        Text(advisory.message)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.primary)
+                                    } icon: {
+                                        Image(systemName: "newspaper")
+                                            .foregroundStyle(.orange)
+                                    }
                                 }
                                 .accessibilityElement(children: .combine)
                             } footer: {
@@ -82,6 +89,15 @@ struct ShoppingListRootView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        isShowingFlyerCheck = true
+                    } label: {
+                        Image(systemName: "newspaper")
+                    }
+                    .accessibilityLabel("Check Flyers")
+                    .accessibilityIdentifier("shoppingCheckFlyersButton")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         isShowingAddSheet = true
                     } label: {
                         Image(systemName: "plus")
@@ -99,8 +115,25 @@ struct ShoppingListRootView: View {
         .onChange(of: lists.count) { _, _ in
             recompute()
         }
-        .onChange(of: flyerRecords.count) { _, _ in
+        // Content fingerprint, not count: an in-place record edit (idempotent re-save
+        // with a new price or sale window) must refresh the advisory too.
+        .onChange(of: flyerRecordsFingerprint) { _, _ in
             recompute()
+        }
+        // Recompute when the next flyer deal expires while the view is open, so the
+        // advisory can't keep advertising a sale that has ended. Re-arms itself: the
+        // recompute re-evaluates body, which recomputes the next boundary.
+        .task(id: nextFlyerExpiry) {
+            guard let nextFlyerExpiry else { return }
+            let interval = nextFlyerExpiry.timeIntervalSinceNow
+            if interval > 0 {
+                try? await Task.sleep(for: .seconds(interval))
+            }
+            guard !Task.isCancelled else { return }
+            recompute()
+        }
+        .sheet(isPresented: $isShowingFlyerCheck, onDismiss: recompute) {
+            FlyerCheckView(activeItemCount: viewModel.activeRows.count)
         }
         .sheet(isPresented: $isShowingAddSheet) {
             AddShoppingListItemSheet(
@@ -146,6 +179,28 @@ struct ShoppingListRootView: View {
         } message: { message in
             Text(message)
         }
+    }
+
+    /// Hash of every field the flyer advisory reads, so `onChange` fires on in-place
+    /// edits (same record count) and not just inserts/deletes.
+    private var flyerRecordsFingerprint: Int {
+        var hasher = Hasher()
+        for record in flyerRecords {
+            hasher.combine(record.dealKey)
+            hasher.combine(record.priceValue)
+            hasher.combine(record.saleEndDate)
+            hasher.combine(record.fetchedAt)
+        }
+        return hasher.finalize()
+    }
+
+    /// The next moment a currently-active flyer record expires, or nil when none will.
+    /// Recomputing at each body evaluation keeps the expiry task aimed at the soonest
+    /// upcoming boundary (recompute() always republishes, so body re-evaluates and the
+    /// task re-arms after each fire).
+    private var nextFlyerExpiry: Date? {
+        let now = Date.now
+        return flyerRecords.map(\.expiresAt).filter { $0 > now }.min()
     }
 
     private var activeList: ShoppingList? {

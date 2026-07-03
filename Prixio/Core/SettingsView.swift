@@ -17,6 +17,7 @@ struct SettingsView: View {
 
     #if DEBUG
     @State private var seedOperationError: String?
+    @State private var isShowingFlyerDiagnostics = false
     #endif
 
     var body: some View {
@@ -66,10 +67,23 @@ struct SettingsView: View {
                 } footer: {
                     Text("Adds several months of marked expenses, income, and grocery receipts for Spending testing. Delete removes only records created by this tool.")
                 }
+
+                Section {
+                    Button("Flyer pipeline diagnostics") {
+                        isShowingFlyerDiagnostics = true
+                    }
+                } header: {
+                    Text("Developer Tools")
+                } footer: {
+                    Text("The flyer workbench behind Check Flyers: run discovery, acquisition, extraction, and matching stage by stage with per-banner diagnostics.")
+                }
                 #endif
             }
             .navigationTitle("Settings")
             #if DEBUG
+            .sheet(isPresented: $isShowingFlyerDiagnostics) {
+                FlyerProcessingPOCRootView()
+            }
             .alert("Test data update failed", isPresented: isShowingSeedOperationError) {
                 Button("OK", role: .cancel) {}
             } message: {

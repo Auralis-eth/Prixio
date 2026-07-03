@@ -14,12 +14,6 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $navigationModel.selectedTab) {
-            FlyerProcessingPOCRootView()
-                .tag(AppTab.flyers)
-                .tabItem {
-                    Label("Flyers", systemImage: "newspaper")
-                }
-
             ScanRootView()
                 .tag(AppTab.scan)
                 .tabItem {

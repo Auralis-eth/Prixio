@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Prixio
 
@@ -33,7 +34,7 @@ struct FlyerContentAcquisitionTests {
             searchProvider: EmptyFlyerSearchProvider()
         )
         let acquirer = RecordingFlyerContentAcquirer()
-        let viewModel = FlyerProcessingPOCViewModel(
+        let viewModel = FlyerCheckViewModel(
             coordinator: coordinator,
             acquirer: acquirer,
             initialResults: [
@@ -81,7 +82,7 @@ struct FlyerContentAcquisitionTests {
             searchProvider: EmptyFlyerSearchProvider()
         )
         let acquirer = RecordingFlyerContentAcquirer()
-        let viewModel = FlyerProcessingPOCViewModel(
+        let viewModel = FlyerCheckViewModel(
             coordinator: coordinator,
             acquirer: acquirer,
             initialResults: banners.map(seededResult)
@@ -96,6 +97,58 @@ struct FlyerContentAcquisitionTests {
         for banner in banners {
             #expect(viewModel.acquisition(for: banner)?.state == .acquired)
         }
+    }
+
+    @Test("runFullCheck runs every stage and matches the real shopping list")
+    func fullCheckRunsAllStagesAgainstRealList() async throws {
+        let banner = try #require(FlyerBannerCatalog.banner(for: .safeway))
+        let connector = FlyerSourceConnector(
+            banner: banner,
+            officialEntryURLs: [try #require(URL(string: "https://safeway-grocer.ca/flyer"))],
+            allowedDomains: ["safeway-grocer.ca"],
+            searchQueries: [],
+            unsupportedReason: nil
+        )
+        let url = try #require(connector.officialEntryURLs.first)
+        let coordinator = FlyerDiscoveryCoordinator(
+            connectors: [connector],
+            fetcher: FakeAcquisitionFetcher(documents: [url: foundDocument(url: url)]),
+            searchProvider: EmptyFlyerSearchProvider()
+        )
+        // Whole Milk direct-matches the list item; the cheaper Soy Milk is similar
+        // but not a match, so it must surface as an alternative suggestion.
+        let acquirer = RecordingFlyerContentAcquirer(
+            payload: #"[{"name":"Whole Milk","price":3.99},{"name":"Soy Milk","price":2.99}]"#
+        )
+        let viewModel = FlyerCheckViewModel(
+            coordinator: coordinator,
+            acquirer: acquirer,
+            initialResults: [seededResult(banner)]
+        )
+
+        let container = try ModelContainer(
+            for: ShoppingList.self, ShoppingListItem.self, FlyerPriceRecord.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let repository = ShoppingListRepository(context: context)
+        let list = try repository.fetchOrCreateDefaultList()
+        _ = try repository.addItem(to: list, displayName: "Whole Milk", brand: nil, quantityNote: nil)
+
+        await viewModel.runFullCheck(context: context)
+
+        #expect(viewModel.runState == .completed)
+        #expect(viewModel.acquisitionState == .completed)
+        #expect(viewModel.extractionState == .completed)
+        #expect(viewModel.matchState == .completed)
+        #expect(viewModel.matchedAgainstRealList)
+        #expect(!viewModel.isRunningFullCheck)
+
+        let milk = try #require(viewModel.matches.first)
+        #expect(milk.deals.map(\.candidate.productName) == ["Whole Milk"])
+        let alternatives = viewModel.alternatives(forItemKey: milk.itemKey)
+        #expect(alternatives?.alternatives.map(\.candidate.productName) == ["Soy Milk"])
+        #expect(viewModel.reviewableItems.count == 1)
     }
 
     @Test
@@ -119,7 +172,7 @@ struct FlyerContentAcquisitionTests {
             searchProvider: EmptyFlyerSearchProvider(error: FlyerSearchError.missingAPIKey)
         )
         let acquirer = RecordingFlyerContentAcquirer()
-        let viewModel = FlyerProcessingPOCViewModel(
+        let viewModel = FlyerCheckViewModel(
             coordinator: coordinator,
             acquirer: acquirer,
             initialResults: [seededResult(banner)]
@@ -141,7 +194,7 @@ struct FlyerContentAcquisitionTests {
     func cannotAcquireContentBeforeDiscoveryCompletes() async throws {
         let banner = try #require(FlyerBannerCatalog.banner(for: .safeway))
         let acquirer = RecordingFlyerContentAcquirer()
-        let viewModel = FlyerProcessingPOCViewModel(
+        let viewModel = FlyerCheckViewModel(
             coordinator: FlyerDiscoveryCoordinator(
                 connectors: [],
                 fetcher: FakeAcquisitionFetcher(documents: [:]),
@@ -561,13 +614,16 @@ private final class RecordingFlyerContentAcquirer: FlyerContentAcquiring {
     private(set) var requestedShapes: [FlyerSourceShape?] = []
     private let cannedState: FlyerAcquisitionState
     private let method: FlyerAcquisitionMethod
+    private let payload: String?
 
     init(
         cannedState: FlyerAcquisitionState = .acquired,
-        method: FlyerAcquisitionMethod = .endpointJSON
+        method: FlyerAcquisitionMethod = .endpointJSON,
+        payload: String? = nil
     ) {
         self.cannedState = cannedState
         self.method = method
+        self.payload = payload
     }
 
     func acquire(
@@ -588,6 +644,7 @@ private final class RecordingFlyerContentAcquirer: FlyerContentAcquiring {
             payloadByteCount: 1024,
             priceTokenCount: cannedState == .acquired ? 12 : 0,
             renderedTextSnippet: "Milk $3.99 Bread $2.49",
+            extractionPayload: payload,
             message: "Canned acquisition result."
         )
     }

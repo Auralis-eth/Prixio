@@ -180,6 +180,20 @@ struct FlyerPriceRecordExpiryTests {
         #expect(record.isExpired(asOf: base.addingTimeInterval(15 * day)))
     }
 
+    @Test("expiresAt is the exact boundary isExpired flips on")
+    func expiresAtMatchesIsExpiredBoundary() {
+        // Inclusive sale-end date: expires at the start of the day after.
+        let dated = record(saleEnd: base, savedAt: base.addingTimeInterval(-3 * day))
+        #expect(dated.expiresAt == base.addingTimeInterval(day))
+        // No sale end: fallback shelf life from the fetch (or save) date.
+        let undated = record(fetchedAt: base, savedAt: base.addingTimeInterval(-day))
+        #expect(undated.expiresAt == base.addingTimeInterval(TimeInterval(FlyerPriceRecord.fallbackShelfLifeDays) * day))
+        for record in [dated, undated] {
+            #expect(!record.isExpired(asOf: record.expiresAt.addingTimeInterval(-1)))
+            #expect(record.isExpired(asOf: record.expiresAt))
+        }
+    }
+
     @Test("The launch sweep deletes only records expired past the grace period")
     func sweepDeletesOnlyLongExpired() throws {
         let context = try makeContext()
