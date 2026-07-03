@@ -7,13 +7,18 @@ It only tracks flyer work that is still genuinely unfinished, undecided, or inte
 ## Productization
 
 ### 1. Move the flow out of the POC tab
-Status: Open
+Status: Mostly done (2026-07-02)
 
-The entire discovery → acquire → extract → match → review → save flow lives in the Flyers POC tab. It needs a real user-facing surface.
+The flow now lives in the Shopping List's "Check Flyers" sheet (`FlyerCheckView`,
+toolbar button or tapping the flyer advisory): one action runs discovery → acquire →
+extract → match against the active list items, with per-item review/save and
+similar-deal alternatives (`FlyerAlternativeFinder`). The Flyers tab is gone; the POC
+workbench survives as a DEBUG developer tool (Settings → Developer Tools) for
+stage-by-stage per-banner diagnostics.
 
-- Recommended entry point: a "Check Flyers" action in Shopping List, since the list gives a bounded set of products to search for.
-- Decide the user-facing label for scraped-price confidence (e.g. "Flyer price", "Member price", "Needs review", "Region unknown").
-- Keep expectations modest in copy: "checking flyers" collects candidates; it does not guarantee every retailer is covered.
+Still open from this item:
+
+- Decide the user-facing label for scraped-price confidence (e.g. "Flyer price", "Member price", "Needs review", "Region unknown"). The sheet currently shows a raw "conf N%" line.
 
 ### 2. Store context and geography
 Status: Open
