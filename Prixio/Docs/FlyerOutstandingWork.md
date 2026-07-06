@@ -32,18 +32,42 @@ Acquisition runs against a hard-coded default store context (Calgary, T2P 1J9; p
 ## Data Quality
 
 ### 3. Extraction enrichment
-Status: Deferred (from extraction v1)
+Status: Partially done (2026-07-03)
 
-The deterministic extractor is deliberately minimal. Remaining upgrades:
+Done: the harvested-text/OCR path now routes through the on-device model when
+Apple Intelligence is available (`FoundationModelsFlyerTextExtractor`, guided
+generation of `[GeneratedFlyerTextDeal]` over `$`-priced line chunks); the
+deterministic line-pairing heuristic remains the floor when the model is
+unavailable or fails. The JSON path stays deterministic on purpose.
 
-- model-assisted enrichment of the messy harvested-text/OCR path (the JSON path does not need it)
+Remaining upgrades:
+
 - unit-price derivation from package size
 - multi-buy parsing ("2 for $5", BOGO, limit quantities)
+- validate model-path extraction quality on a real device run (unit tests gate
+  generation off, so only chunking/mapping are covered deterministically)
 
 ### 4. Normalizer match recall
-Status: Open (residual)
+Status: Mostly done (2026-07-03)
 
-`ItemKeyNormalizer` still has head-noun displacement cases that cost deal-match recall — trailing descriptors can displace the head noun. Needs lexical handling; fix in an enrichment pass, not ad hoc in the shared normalizer.
+Fixed by the LLM enrichment pass (`FlyerNameEnricher`, Core/Enrichment): between
+extraction and matching, candidates that a shopping-list query could plausibly
+touch get a canonical name and a head-noun phrase from the on-device model. The
+head noun is grammar-constrained (`DynamicGenerationSchema` anyOf) to the name's
+own tokens/bigrams so it cannot hallucinate, results are cached on disk
+(names repeat weekly), and matching itself stays deterministic via the new
+`ItemKeyNormalizer.matches(queryKey:entryKey:entryHeadNoun:)` overload. This
+closes both directions: trailing descriptors ("Chicken Breast Boneless
+Skinless") no longer block a match, and compound products ("peanut butter") no
+longer roll up under their generic tail ("butter"). Unenriched candidates (model
+gated/unavailable) behave exactly as before.
+
+Still open from this item:
+
+- No enrichment happens on devices without Apple Intelligence — the old recall
+  limits remain there by design.
+- Judge prompt/head-noun quality on real flyer runs; the constrained choices
+  bound the damage but the pick itself is the model's.
 
 ## Source Robustness
 
