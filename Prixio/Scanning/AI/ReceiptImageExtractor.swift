@@ -67,7 +67,9 @@ struct DefaultReceiptImageExtractor: ReceiptImageExtracting {
                        payment, loyalty points).
                     3. Read the money summary: subtotal, tax, discounts/savings, deposits, and \
                        the final total.
-                    4. Finish by reporting every issue that applies.
+                    4. Pick the single spending category that best fits the merchant and \
+                       items as a whole; leave it null when unclear.
+                    5. Finish by reporting every issue that applies.
 
                     Rules:
                     - A receipt is a basket, not a single price. List each purchased item once.

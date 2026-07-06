@@ -37,6 +37,9 @@ struct LLMReceiptResult {
     @Guide(description: "The ISO 4217 currency code (e.g. CAD, USD) if it can be determined from the receipt. Null if unclear.")
     var currencyCode: String? = nil
 
+    @Guide(description: "The single spending category that best fits this receipt's merchant and items as a whole. Use groceries for supermarket food baskets; use other when nothing fits well. Null if unclear.")
+    var spendingCategory: ExpenseCategory? = nil
+
     @Guide(description: "Every purchased line item in printed order. Exclude subtotal, tax, total, and other summary rows.", .maximumCount(60))
     var lineItems: [LLMReceiptLine]
 

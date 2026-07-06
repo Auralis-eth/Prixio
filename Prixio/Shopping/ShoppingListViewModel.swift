@@ -11,6 +11,27 @@ final class ShoppingListViewModel: ObservableObject {
     /// Advisory-only flyer line ("Flyer deals could save ~$X at Y"); never feeds the
     /// basket totals.
     @Published private(set) var flyerAdvisory: FlyerDealAdvisory?
+    /// Model-written one-liner explaining the trip picture (see `InsightExplainer`).
+    /// Additive: every number/label the card shows stays deterministic; this is nil
+    /// whenever the model is unavailable or its answer fails validation.
+    @Published private(set) var tripExplanation: String?
+    /// "You usually buy this" nudges for habitual items missing from the list
+    /// (see `ListAdditionSuggestionEngine`). Confirm/dismiss only — never auto-added.
+    @Published private(set) var listAdditionSuggestions: [ListAdditionSuggestion] = []
+
+    /// Suggestions the user has dismissed this session; they stay gone across
+    /// recomputes but return next launch (a dismissed habit is still a habit).
+    private var dismissedSuggestionKeys: Set<String> = []
+
+    private let insightExplainer: any InsightExplaining
+    private var explanationTask: Task<Void, Never>?
+    /// Fingerprint of the evidence the current explanation run belongs to, so
+    /// unchanged evidence never re-generates and stale replies never land.
+    private var explainedFingerprint: String?
+
+    init(insightExplainer: any InsightExplaining = InsightExplainer()) {
+        self.insightExplainer = insightExplainer
+    }
 
     func recompute(
         items: [ShoppingListItem],
@@ -58,6 +79,95 @@ final class ShoppingListViewModel: ObservableObject {
             entries: entries,
             now: now
         )
+
+        refreshTripExplanation()
+
+        // Every list item — done or not — suppresses its suggestion: a just-checked-off
+        // item was just bought, which is exactly when a "usually buy" nudge is wrong.
+        listAdditionSuggestions = ListAdditionSuggestionEngine.proposeAdditions(
+            listItemKeys: items.map(\.itemKey),
+            allEntries: entries,
+            now: now
+        ).filter { !dismissedSuggestionKeys.contains($0.itemKey) }
+    }
+
+    func dismissListAdditionSuggestion(_ suggestion: ListAdditionSuggestion) {
+        dismissedSuggestionKeys.insert(suggestion.itemKey)
+        listAdditionSuggestions.removeAll { $0.itemKey == suggestion.itemKey }
+    }
+
+    /// Kicks off (or clears) the model-written trip one-liner for the current
+    /// deterministic outputs. The explanation clears immediately when the evidence
+    /// changes so prose never disagrees with the numbers on screen.
+    private func refreshTripExplanation() {
+        let evidence = Self.tripEvidence(
+            recommendation: tripRecommendation,
+            basket: basketEstimate,
+            advisory: flyerAdvisory
+        )
+        // A single fact reads fine as the deterministic label it came from; prose
+        // only earns its place tying several together.
+        guard evidence.facts.count >= 2 else {
+            explanationTask?.cancel()
+            explainedFingerprint = nil
+            tripExplanation = nil
+            return
+        }
+        guard evidence.fingerprint != explainedFingerprint else { return }
+        explainedFingerprint = evidence.fingerprint
+        tripExplanation = nil
+        explanationTask?.cancel()
+        let explainer = insightExplainer
+        explanationTask = Task { [weak self] in
+            let text = await explainer.explain(evidence)
+            guard !Task.isCancelled, let self, self.explainedFingerprint == evidence.fingerprint else {
+                return
+            }
+            self.tripExplanation = text
+        }
+    }
+
+    /// The deterministic facts behind the trip one-liner, in display order. Pure —
+    /// every figure comes from the already-computed recommendation/basket/advisory.
+    static func tripEvidence(
+        recommendation: TripRecommendation,
+        basket: BasketEstimate,
+        advisory: FlyerDealAdvisory?
+    ) -> InsightEvidence {
+        var facts: [String] = []
+        switch recommendation {
+        case .insufficientData:
+            break
+        case .strongWinner(_, let chainName, let count, let total, let staleCount):
+            facts.append("\(chainName) has the best price for \(count) of \(total) list items.")
+            if staleCount > 0 {
+                facts.append("\(staleCount) of the item prices are more than 30 days old.")
+            }
+        case .splitTrip(_, let primaryChainName, let primaryCount, _, let secondaryChainName, let secondaryCount, let staleCount):
+            let secondary = secondaryChainName.map { ", and \($0) for \(secondaryCount ?? 0)" } ?? ""
+            facts.append("No single store wins: \(primaryChainName) is cheapest for \(primaryCount) items\(secondary).")
+            if staleCount > 0 {
+                facts.append("\(staleCount) of the item prices are more than 30 days old.")
+            }
+        }
+        if let cheapest = basket.cheapestSingleStore, cheapest.coversAllPricedItems {
+            facts.append("The whole priced basket costs \(CurrencyFormatter.shared.display(cheapest.knownTotal)) at \(cheapest.storeName).")
+        }
+        if let split = basket.split {
+            let names = split.stores.map(\.storeName).joined(separator: " and ")
+            if let savings = split.savingsVsSingle {
+                facts.append("Splitting the trip across \(names) saves \(CurrencyFormatter.shared.display(savings)).")
+            } else {
+                facts.append("Only a split across \(names) covers every priced item.")
+            }
+        }
+        if !basket.unpricedItemNames.isEmpty {
+            facts.append("\(basket.unpricedItemNames.count) list items have no price data yet.")
+        }
+        if let advisory {
+            facts.append(advisory.message + ".")
+        }
+        return InsightEvidence(facts: facts)
     }
 
     private func makeRow(

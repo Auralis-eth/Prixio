@@ -54,6 +54,9 @@ struct FlyerPriceRecordRepository {
             record = existing
             record.savedAt = .now
             record.matchedItemKey = matchedItemKey
+            // A re-save may carry fresher enrichment than the stored record.
+            record.enrichedItemKey = candidate.enrichedItemKey ?? record.enrichedItemKey
+            record.enrichedHeadNoun = candidate.enrichedHeadNoun ?? record.enrichedHeadNoun
         } else {
             record = FlyerPriceRecord(
                 dealKey: key,
@@ -77,6 +80,8 @@ struct FlyerPriceRecordRepository {
             record.storeContext = storeContext
             record.sourceURL = deal.sourceURL
             record.fetchedAt = deal.fetchedAt
+            record.enrichedItemKey = candidate.enrichedItemKey
+            record.enrichedHeadNoun = candidate.enrichedHeadNoun
             context.insert(record)
         }
 

@@ -31,7 +31,8 @@ struct ShoppingListRootView: View {
                         Section {
                             TripOptimizerCard(
                                 recommendation: viewModel.tripRecommendation,
-                                basket: viewModel.basketEstimate
+                                basket: viewModel.basketEstimate,
+                                explanation: viewModel.tripExplanation
                             )
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             .listRowBackground(Color.clear)
@@ -77,6 +78,8 @@ struct ShoppingListRootView: View {
                                 }
                             }
                         }
+
+                        suggestionSection
 
                         completedSection
                     }
@@ -252,6 +255,43 @@ struct ShoppingListRootView: View {
                 systemImage: "checkmark.circle",
                 description: Text("You’ve completed every item on this list.")
             )
+        }
+    }
+
+    /// Habit nudges from `ListAdditionSuggestionEngine`: add with one tap, or swipe
+    /// to dismiss for the session. Never added automatically.
+    @ViewBuilder
+    private var suggestionSection: some View {
+        if !viewModel.listAdditionSuggestions.isEmpty {
+            Section {
+                ForEach(viewModel.listAdditionSuggestions) { suggestion in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("You usually buy \(suggestion.displayName)")
+                                .font(.subheadline.weight(.medium))
+                            Text("About every \(suggestion.medianIntervalDays) days · last captured \(suggestion.daysSinceLastPurchase) days ago")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Button("Add") {
+                            addItem(displayName: suggestion.displayName, brand: nil, quantityNote: nil)
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Dismiss") {
+                            viewModel.dismissListAdditionSuggestion(suggestion)
+                        }
+                        .tint(.gray)
+                    }
+                }
+            } header: {
+                Text("Suggested")
+            } footer: {
+                Text("Based on how regularly you've captured prices for these items.")
+            }
         }
     }
 

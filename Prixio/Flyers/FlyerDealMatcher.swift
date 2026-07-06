@@ -36,11 +36,14 @@ struct ShoppingItemFlyerMatches: Identifiable, Equatable {
 /// Matches extracted flyer price candidates against shopping-list items. Pure and
 /// deterministic.
 ///
-/// Matching reuses `ItemKeyNormalizer.matches(queryKey:entryKey:)`, the same
+/// Matching reuses `ItemKeyNormalizer.matches`, the same
 /// generic-query→specific-product rule `PriceInsightEngine` uses: the shopping-list
 /// item is the query (so a generic "milk" rolls up "Almond Milk"), and the flyer
 /// candidate is the entry. A more-specific list item never matches a broader
 /// candidate, so "daisy sour cream" won't pull in a generic "sour cream" deal.
+/// Candidates carrying an enrichment (`FlyerNameEnricher`) match through the
+/// head-noun-aware overload, which fixes trailing-descriptor misses and
+/// compound-product false rollups.
 struct FlyerDealMatcher {
     /// A shopping-list item to find deals for. `itemKey` may be raw or already
     /// normalized — `ItemKeyNormalizer.matches` normalizes both sides internally.
@@ -67,7 +70,13 @@ struct FlyerDealMatcher {
 
         return queries.map { query in
             let matched = allDeals
-                .filter { ItemKeyNormalizer.matches(queryKey: query.itemKey, entryKey: $0.candidate.normalizedItemKey) }
+                .filter {
+                    ItemKeyNormalizer.matches(
+                        queryKey: query.itemKey,
+                        entryKey: $0.candidate.normalizedItemKey,
+                        entryHeadNoun: $0.candidate.enrichedHeadNoun
+                    )
+                }
                 .sorted(by: Self.dealOrder)
             return ShoppingItemFlyerMatches(
                 itemKey: query.itemKey,
@@ -75,6 +84,33 @@ struct FlyerDealMatcher {
                 deals: matched
             )
         }
+    }
+
+    /// The product names worth enriching before matching these queries: candidates
+    /// whose key contains *all* of some query's tokens, ignoring the head-noun
+    /// anchor. That superset covers both directions enrichment can change: entries
+    /// today's rule wrongly rejects (trailing descriptors) and entries it wrongly
+    /// accepts (compound products) — while leaving the hundreds of never-relevant
+    /// candidates un-enriched, which is what keeps the model pass fast.
+    static func enrichmentTargets(queries: [Query], extractions: [FlyerExtractionResult]) -> [String] {
+        let querySets = queries
+            .map { Set(ItemKeyNormalizer.tokens($0.itemKey)) }
+            .filter { !$0.isEmpty }
+        guard !querySets.isEmpty else { return [] }
+
+        var seen = Set<String>()
+        var targets: [String] = []
+        for result in extractions {
+            for candidate in result.candidates {
+                guard candidate.enrichedHeadNoun == nil,
+                      seen.insert(candidate.productName).inserted else { continue }
+                let entrySet = Set(ItemKeyNormalizer.tokens(candidate.normalizedItemKey))
+                if querySets.contains(where: { $0.isSubset(of: entrySet) }) {
+                    targets.append(candidate.productName)
+                }
+            }
+        }
+        return targets
     }
 
     /// Best price first; ties broken by higher confidence, then better-ranked banner,

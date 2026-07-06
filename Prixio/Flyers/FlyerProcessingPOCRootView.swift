@@ -66,7 +66,9 @@ struct FlyerProcessingPOCRootView: View {
                         .accessibilityIdentifier("flyerPOCExtractCandidatesButton")
 
                         Button {
-                            viewModel.matchDeals(context: modelContext)
+                            Task {
+                                await viewModel.matchDeals(context: modelContext)
+                            }
                         } label: {
                             Label("Find Deals for My List", systemImage: "cart.badge.plus")
                         }

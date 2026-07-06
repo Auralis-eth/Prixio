@@ -3,6 +3,9 @@ import SwiftUI
 struct TripOptimizerCard: View {
     let recommendation: TripRecommendation
     var basket: BasketEstimate = .empty
+    /// Optional model-written one-liner tying the numbers below together. Additive
+    /// only — every figure on this card renders deterministically with or without it.
+    var explanation: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -10,6 +13,12 @@ struct TripOptimizerCard: View {
                 .font(.headline.weight(.semibold))
 
             recommendationContent
+
+            if let explanation {
+                Text(explanation)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
 
             if basket.hasAnyPrices {
                 Divider()

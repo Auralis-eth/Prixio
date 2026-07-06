@@ -86,6 +86,10 @@ enum ItemKeyNormalizer {
     /// products whose head noun *is* the generic word still match ("peanut butter" under "butter"),
     /// since separating them needs lexical knowledge this normalizer doesn't have.
     ///
+    /// Capture-history surfaces (`PriceEntry`, which carries no enrichment) use this plain rule by
+    /// design; every flyer-record surface must pass `FlyerPriceRecord.enrichedHeadNoun` to the
+    /// head-noun-aware overload below, so all flyer matching shares the same lexical knowledge.
+    ///
     /// Inputs may be raw or already-normalized; both sides are normalized internally.
     static func matches(queryKey: String, entryKey: String) -> Bool {
         let queryTokens = tokens(queryKey)
@@ -100,6 +104,54 @@ enum ItemKeyNormalizer {
             return false
         }
         let entrySet = Set(entryTokens)
+        return queryTokens.allSatisfy(entrySet.contains)
+    }
+
+    /// Head-noun-aware variant of `matches(queryKey:entryKey:)` for entries whose
+    /// true head noun is known (supplied by the LLM enrichment pass — see
+    /// `FlyerNameEnricher`). The entry's *last token* is no longer trusted as its
+    /// head noun; the supplied phrase is. This closes both directions the last-token
+    /// heuristic gets wrong:
+    ///
+    /// - Trailing descriptors no longer block a match: query "chicken breast" matches
+    ///   entry "Chicken Breast Boneless Skinless" (head noun "chicken breast").
+    /// - Compound products no longer roll up under their generic tail: query "butter"
+    ///   rejects entry "Kraft Peanut Butter" (head noun "peanut butter"), because the
+    ///   query must contain the entry's whole head-noun phrase.
+    ///
+    /// Still fully deterministic given its inputs: the lexical knowledge lives in the
+    /// `entryHeadNoun` argument, not here. A nil/empty head noun — or one that
+    /// normalizes to no tokens — delegates to the plain rule, so unenriched entries
+    /// behave exactly as before.
+    static func matches(queryKey: String, entryKey: String, entryHeadNoun: String?) -> Bool {
+        guard let entryHeadNoun, !entryHeadNoun.isEmpty else {
+            return matches(queryKey: queryKey, entryKey: entryKey)
+        }
+        let headTokens = tokens(entryHeadNoun)
+        guard !headTokens.isEmpty else {
+            // A head noun that normalizes to nothing (unit-only, punctuation) carries no
+            // lexical knowledge — fall back to the plain rule rather than rejecting.
+            // Unreachable via validated enrichments, but the value also arrives from the
+            // on-disk cache.
+            return matches(queryKey: queryKey, entryKey: entryKey)
+        }
+        let queryTokens = tokens(queryKey)
+        guard let queryHead = queryTokens.last else {
+            return tokens(entryKey).isEmpty
+        }
+        // The query's head token must be the head phrase's head token, and the query
+        // must mention the *entire* head phrase — a generic "butter" query doesn't
+        // cover a "peanut butter" product.
+        guard queryHead == headTokens.last else {
+            return false
+        }
+        let querySet = Set(queryTokens)
+        guard headTokens.allSatisfy(querySet.contains) else {
+            return false
+        }
+        // And, as in the plain rule, every query token must appear in the entry so a
+        // more-specific query never matches a broader product.
+        let entrySet = Set(tokens(entryKey))
         return queryTokens.allSatisfy(entrySet.contains)
     }
 

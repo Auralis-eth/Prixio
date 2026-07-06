@@ -1,7 +1,11 @@
 import Foundation
+import FoundationModels
 
 /// Category for a manual household expense. Intentionally small — enough to separate grocery
 /// spending from recurring obligations without becoming full accounting software.
+/// `@Generable` so model passes (receipt extraction, the add-expense suggester) can be
+/// grammar-constrained to exactly these cases.
+@Generable
 enum ExpenseCategory: String, Codable, CaseIterable, Identifiable, Sendable {
     case groceries
     case bills

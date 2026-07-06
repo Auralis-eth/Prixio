@@ -33,6 +33,10 @@ final class FlyerCheckViewModel: ObservableObject {
     /// Whether `runFullCheck` is mid-flight (drives the Check Flyers sheet's progress UI).
     @Published private(set) var isRunningFullCheck = false
 
+    /// Bumped whenever match results are rebuilt or invalidated, so the post-publish
+    /// enrichment refinement can tell when its results have gone stale.
+    private var matchGeneration = 0
+
     private let coordinator: FlyerDiscoveryCoordinator
     private let acquirer: FlyerContentAcquiring
     private let acquisitionLogger: FlyerAcquisitionLogging
@@ -41,6 +45,11 @@ final class FlyerCheckViewModel: ObservableObject {
     private let dealMatcher = FlyerDealMatcher()
     private let alternativeFinder = FlyerAlternativeFinder()
     private let matchLogger: FlyerAcquisitionLogging
+    /// Model-backed extraction for harvested-text payloads; the deterministic
+    /// extractor's result stands whenever this returns nil (gated/unavailable/failed).
+    private let textCandidateExtractor: any FlyerTextCandidateExtracting
+    /// Name enrichment between extraction and matching (FlyerOutstandingWork item 4).
+    private let nameEnricher: any FlyerNameEnriching
 
     /// A stand-in shopping list used as a fallback when the user's real list has no
     /// active items: matching is demonstrated against a fixed set of common Alberta
@@ -50,14 +59,22 @@ final class FlyerCheckViewModel: ObservableObject {
         "ground beef", "coffee", "cheese", "apples", "potatoes", "yogurt"
     ].map { FlyerDealMatcher.Query(itemKey: ItemKeyNormalizer.normalize($0), displayName: $0) }
 
+    /// Acquisition methods whose payload is harvested text — the ones worth routing
+    /// through the on-device model instead of the line-pairing heuristic.
+    static let modelTextMethods: Set<FlyerAcquisitionMethod> = [.staticHTML, .renderedHTML, .imageOCR]
+
     init(
         coordinator: FlyerDiscoveryCoordinator? = nil,
         acquirer: FlyerContentAcquiring? = nil,
         acquisitionLogger: FlyerAcquisitionLogging? = nil,
         extractor: FlyerPriceExtractor = FlyerPriceExtractor(),
         extractionLogger: FlyerAcquisitionLogging? = nil,
+        textCandidateExtractor: (any FlyerTextCandidateExtracting)? = nil,
+        nameEnricher: (any FlyerNameEnriching)? = nil,
         initialResults: [FlyerDiscoveryResult]? = nil
     ) {
+        self.textCandidateExtractor = textCandidateExtractor ?? FoundationModelsFlyerTextExtractor()
+        self.nameEnricher = nameEnricher ?? FlyerNameEnricher()
         let connectors = FlyerSourceConnectorCatalog.albertaConnectors
         self.coordinator = coordinator ?? FlyerDiscoveryCoordinator(connectors: connectors)
         self.acquirer = acquirer ?? FlyerContentAcquisitionRouter()
@@ -126,9 +143,7 @@ final class FlyerCheckViewModel: ObservableObject {
         acquisitionState = .idle
         extractions = [:]
         extractionState = .idle
-        matches = []
-        alternatives = []
-        matchState = .idle
+        invalidateMatches()
         let discoveredResults = await coordinator.discoverSources()
         results = discoveredResults.sorted { $0.banner.rank < $1.banner.rank }
         runState = .completed
@@ -146,9 +161,7 @@ final class FlyerCheckViewModel: ObservableObject {
         // Re-acquiring invalidates any prior extraction.
         extractions = [:]
         extractionState = .idle
-        matches = []
-        alternatives = []
-        matchState = .idle
+        invalidateMatches()
         acquisitionLogger.log("phase=run-start banners=\(results.count)")
         var output: [FlyerBannerID: FlyerAcquiredContent] = [:]
 
@@ -231,16 +244,31 @@ final class FlyerCheckViewModel: ObservableObject {
 
         extractionState = .loading
         // Re-extracting invalidates any prior deal matching.
-        matches = []
-        alternatives = []
-        matchState = .idle
+        invalidateMatches()
         extractionLogger.log("phase=run-start banners=\(acquisitions.count)")
         var output: [FlyerBannerID: FlyerExtractionResult] = [:]
         // Extract in the discovery rank order so the log/UI read consistently.
         for result in results {
             guard let content = acquisitions[result.banner.id] else { continue }
             let label = FlyerAcquisitionLogLabel.make(for: content.banner)
-            let extraction = extractor.extract(from: content)
+            var extraction = extractor.extract(from: content)
+            // Harvested-text payloads go through the on-device model when it's
+            // available — it reads context the line-pairing heuristic can't. The
+            // deterministic result stands when the model is gated or comes back empty.
+            if let method = content.acquisitionMethod, Self.modelTextMethods.contains(method),
+               let payload = content.extractionPayload, !payload.isEmpty,
+               let modelCandidates = await textCandidateExtractor.extractCandidates(fromText: payload),
+               !modelCandidates.isEmpty {
+                extractionLogger.log("banner=\(label) phase=model-text deterministic=\(extraction.candidateCount) model=\(modelCandidates.count)")
+                extraction = FlyerExtractionResult(
+                    banner: extraction.banner,
+                    sourceURL: extraction.sourceURL,
+                    fetchedAt: extraction.fetchedAt,
+                    method: extraction.method,
+                    candidates: modelCandidates,
+                    message: "Extracted \(modelCandidates.count) price candidate\(modelCandidates.count == 1 ? "" : "s") via on-device model."
+                )
+            }
             extractionLogger.log("banner=\(label) method=\(content.acquisitionMethod?.rawValue ?? "none") state=\(content.state.rawValue) candidates=\(extraction.candidateCount)")
             // Diagnostic: a captured-JSON banner that extracts nothing has a schema the
             // generic walker doesn't recognize (e.g. Co-op). Log a bounded payload
@@ -358,15 +386,76 @@ final class FlyerCheckViewModel: ObservableObject {
     /// Matches extracted candidates against the user's real shopping list,
     /// falling back to the built-in sample list when the list is empty so the POC
     /// still demonstrates. Pass the SwiftData context from the view environment.
-    func matchDeals(context: ModelContext) {
+    ///
+    /// Deterministic results publish immediately (`matchState` completes without
+    /// waiting on the model); the name-enrichment pass then re-matches and refines
+    /// the published results in place when it adds knowledge.
+    func matchDeals(context: ModelContext) async {
         guard extractionState == .completed, matchState != .loading else {
             return
         }
 
         matchState = .loading
+        matchGeneration += 1
+        let generation = matchGeneration
         let queries = shoppingListQueries(context: context)
         matchLogger.log("phase=run-start items=\(queries.count) realList=\(matchedAgainstRealList) banners=\(extractions.count)")
-        let results = dealMatcher.match(queries: queries, extractions: Array(extractions.values))
+
+        // Deterministic pass first, so results never wait on the on-device model.
+        publishMatchResults(queries: queries, queryEnrichments: [:])
+        matchState = .completed
+        loadSavedDealKeys(context: context)
+
+        // Enrichment then refines the published results from behind: three name
+        // sets, all cache-backed and availability-gated — the direct matcher's
+        // token-subset prefilter, the alternative finder's looser shared-token
+        // prefilter (class comparison needs candidates the subset rule never
+        // reaches), and the query names themselves (the query side of every class
+        // comparison). When the model adds knowledge, matching re-runs and the
+        // results update in place; the generation guard keeps a stale refinement
+        // from overwriting a newer run.
+        let extractionResults = Array(extractions.values)
+        var targets = FlyerDealMatcher.enrichmentTargets(queries: queries, extractions: extractionResults)
+        var targetSet = Set(targets)
+        for name in FlyerAlternativeFinder.enrichmentTargets(queries: queries, extractions: extractionResults)
+        where targetSet.insert(name).inserted {
+            targets.append(name)
+        }
+        targets += queries.map(\.displayName).filter { targetSet.insert($0).inserted }
+        guard !targets.isEmpty else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let enrichments = await self.nameEnricher.enrichments(for: targets)
+            self.matchLogger.log("phase=enrichment targets=\(targets.count) enriched=\(enrichments.count)")
+            guard !enrichments.isEmpty, self.matchGeneration == generation else { return }
+            self.extractions = self.extractions.mapValues { $0.applyingEnrichments(enrichments) }
+            // Re-key the queries' own enrichments by item key for the alternative
+            // finder (its matches carry keys, not raw names). Two display names can
+            // normalize to the same key; keep the enrichment carrying a substitution
+            // class so class-based alternatives aren't lost to the collision.
+            let queryEnrichments = Dictionary(
+                queries.compactMap { query in
+                    enrichments[query.displayName].map { (query.itemKey, $0) }
+                },
+                uniquingKeysWith: { first, second in
+                    first.substitutionClass != nil ? first : second
+                }
+            )
+            self.publishMatchResults(queries: queries, queryEnrichments: queryEnrichments)
+        }
+    }
+
+    /// Runs the deterministic matcher and alternative finder over the current
+    /// extractions and publishes the results. Alternatives ride alongside direct
+    /// matches: similar products worth a look when the exact item has no deal (or a
+    /// similar one beats its best deal).
+    private func publishMatchResults(
+        queries: [FlyerDealMatcher.Query],
+        queryEnrichments: [String: EnrichedProductName]
+    ) {
+        let extractionResults = Array(extractions.values)
+        let results = dealMatcher.match(queries: queries, extractions: extractionResults)
         for item in results {
             matchLogger.log("item=\(item.displayName) deals=\(item.deals.count) best=\(item.bestDeal.map { CurrencyFormatter.shared.display($0.candidate.price) + " @ " + $0.banner.name } ?? "none")")
         }
@@ -374,11 +463,20 @@ final class FlyerCheckViewModel: ObservableObject {
         let totalDeals = results.reduce(0) { $0 + $1.deals.count }
         matchLogger.log("phase=run-finish items=\(results.count) withDeals=\(itemsWithDeals) totalDeals=\(totalDeals)")
         matches = results
-        // Alternatives ride alongside direct matches: similar products worth a look
-        // when the exact item has no deal (or a similar one beats its best deal).
-        alternatives = alternativeFinder.findAlternatives(matches: results, extractions: Array(extractions.values))
-        matchState = .completed
-        loadSavedDealKeys(context: context)
+        alternatives = alternativeFinder.findAlternatives(
+            matches: results,
+            extractions: extractionResults,
+            queryEnrichments: queryEnrichments
+        )
+    }
+
+    /// Clears published match results and bumps the generation so any in-flight
+    /// enrichment refinement abandons itself instead of resurrecting stale matches.
+    private func invalidateMatches() {
+        matches = []
+        alternatives = []
+        matchState = .idle
+        matchGeneration += 1
     }
 
     /// The alternative suggestions for one matched item, if any.
@@ -402,7 +500,7 @@ final class FlyerCheckViewModel: ObservableObject {
         await checkFlyers()
         await acquireContent()
         await extractContent()
-        matchDeals(context: context)
+        await matchDeals(context: context)
     }
 
     /// The in-flight stage, for the Check Flyers progress UI.

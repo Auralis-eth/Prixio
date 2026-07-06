@@ -32,6 +32,15 @@ enum ReceiptDraftBuilder {
         if let currencyCode = result.currencyCode?.trimmingCharacters(in: .whitespaces), !currencyCode.isEmpty {
             capture.currencyCode = currencyCode.uppercased()
         }
+        // The model's category is a *suggestion*: pre-fill it only while the receipt
+        // is still awaiting review and the category is untouched (the stored default).
+        // A user's re-categorization — or a reviewed receipt — is never overridden by
+        // re-extraction.
+        if capture.reviewState == .pendingReview,
+           capture.category == .groceries,
+           let suggested = result.spendingCategory {
+            capture.category = suggested
+        }
 
         let extractionIssues = ReceiptExtractionValidator.issues(for: result)
         // Preserve import-origin facts that extraction can't re-derive (e.g. PDF page truncation),

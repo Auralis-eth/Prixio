@@ -17,7 +17,12 @@ struct AddShoppingListItemSheet: View {
     @State private var itemName = ""
     @State private var brand = ""
     @State private var quantityNote = ""
+    /// Whether the current field values came from the entry parser's split (drives
+    /// the caption under the item field).
+    @State private var entrySplitApplied = false
     @FocusState private var isItemNameFocused: Bool
+
+    private let entryParser: any ShoppingListEntryParsing = ShoppingListEntryParser()
 
     var body: some View {
         NavigationStack {
@@ -26,6 +31,11 @@ struct AddShoppingListItemSheet: View {
                     TextField("Add an item", text: $itemName)
                         .textInputAutocapitalization(.words)
                         .focused($isItemNameFocused)
+                    if entrySplitApplied {
+                        Text("Split into item, brand, and quantity — adjust anything that's wrong.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Brand") {
@@ -75,6 +85,21 @@ struct AddShoppingListItemSheet: View {
         .accessibilityIdentifier("addItemSheet")
         .onAppear {
             isItemNameFocused = true
+        }
+        // Re-runs (cancelling the previous pass) on every keystroke; the sleep
+        // debounces so only a typing pause reaches the parser. The split only ever
+        // fills *empty* brand/quantity fields — anything the user typed there stays —
+        // and the result lands in the visible form, so tapping Add confirms it.
+        .task(id: itemName) {
+            guard brand.isEmpty, quantityNote.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            guard let parsed = await entryParser.parse(itemName) else { return }
+            guard brand.isEmpty, quantityNote.isEmpty else { return }
+            itemName = parsed.itemName.localizedCapitalized
+            brand = parsed.brand ?? ""
+            quantityNote = parsed.quantityNote ?? ""
+            entrySplitApplied = true
         }
     }
 

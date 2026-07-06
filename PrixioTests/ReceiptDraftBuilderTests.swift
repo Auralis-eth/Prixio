@@ -135,6 +135,39 @@ struct ReceiptDraftBuilderTests {
     }
 
     @Test
+    func applySuggestsCategoryOnlyOnUntouchedPendingReceipts() throws {
+        let context = try makeContext()
+
+        // An untouched pending receipt takes the model's suggestion.
+        var result = sampleResult()
+        result.spendingCategory = .other
+        let pending = ReceiptCapture(capturedAt: .now)
+        context.insert(pending)
+        ReceiptDraftBuilder.apply(result, to: pending, context: context)
+        #expect(pending.category == .other)
+
+        // A user's re-categorization is never overridden by re-extraction.
+        let recategorized = ReceiptCapture(capturedAt: .now)
+        recategorized.category = .subscriptions
+        context.insert(recategorized)
+        ReceiptDraftBuilder.apply(result, to: recategorized, context: context)
+        #expect(recategorized.category == .subscriptions)
+
+        // A reviewed receipt keeps its category even if it's still the default.
+        let reviewed = ReceiptCapture(capturedAt: .now)
+        reviewed.reviewState = .reviewed
+        context.insert(reviewed)
+        ReceiptDraftBuilder.apply(result, to: reviewed, context: context)
+        #expect(reviewed.category == .groceries)
+
+        // No suggestion leaves the default untouched.
+        let noSuggestion = ReceiptCapture(capturedAt: .now)
+        context.insert(noSuggestion)
+        ReceiptDraftBuilder.apply(sampleResult(), to: noSuggestion, context: context)
+        #expect(noSuggestion.category == .groceries)
+    }
+
+    @Test
     func applyKeepsZeroAndPositiveHeaderAmounts() throws {
         let context = try makeContext()
         let capture = ReceiptCapture(capturedAt: .now)

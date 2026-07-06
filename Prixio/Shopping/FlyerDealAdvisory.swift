@@ -54,7 +54,7 @@ struct FlyerDealAdvisory: Equatable {
 
         for key in distinctKeys {
             let matching = activeRecords.filter {
-                ItemKeyNormalizer.matches(queryKey: key, entryKey: $0.normalizedItemKey)
+                ItemKeyNormalizer.matches(queryKey: key, entryKey: $0.normalizedItemKey, entryHeadNoun: $0.enrichedHeadNoun)
             }
             guard !matching.isEmpty else { continue }
 

@@ -28,6 +28,13 @@ struct ItemDetailView: View {
     @State private var historyScope: PriceHistoryScope = .allStores
     @State private var availableScopes: [PriceHistoryScope] = [.allStores]
     @State private var selectedEntry: PriceEntry?
+    /// Model-written one-liner over the history read (see `InsightExplainer`).
+    /// Additive: the anomaly label, stat tiles, and usual-range line stay
+    /// deterministic; this is nil whenever the model is unavailable or its answer
+    /// fails validation.
+    @State private var historyExplanation: String?
+
+    private let insightExplainer: any InsightExplaining = InsightExplainer()
 
     /// Set when deleting a saved price entry fails to persist, surfaced as an alert. A silently failed
     /// delete would leave the entry hidden here but still feeding price history, basket estimates, and
@@ -102,6 +109,15 @@ struct ItemDetailView: View {
         .onChange(of: historyScope) { _, _ in
             recomputeHistory()
         }
+        // Re-runs whenever the history read changes (and clears first) so the prose
+        // can never describe numbers the section no longer shows.
+        .task(id: history.map { InsightEvidence.itemHistory($0).fingerprint } ?? "") {
+            historyExplanation = nil
+            guard let history else { return }
+            let evidence = InsightEvidence.itemHistory(history)
+            guard evidence.facts.count >= 2 else { return }
+            historyExplanation = await insightExplainer.explain(evidence)
+        }
         .sheet(item: $selectedEntry) { entry in
             EntryDetailSheet(
                 entry: entry,
@@ -159,6 +175,12 @@ struct ItemDetailView: View {
                 Label(history.anomaly.displayLabel, systemImage: history.anomaly.systemImage)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(anomalyTint(history.anomaly))
+            }
+
+            if let historyExplanation {
+                Text(historyExplanation)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 12) {

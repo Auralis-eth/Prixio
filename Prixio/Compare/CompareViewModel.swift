@@ -211,7 +211,7 @@ final class CompareViewModel: ObservableObject {
         let normalizedKey = ItemKeyNormalizer.normalize(itemKey)
         return records
             .filter { !$0.isExpired(asOf: now) }
-            .filter { ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.normalizedItemKey) }
+            .filter { ItemKeyNormalizer.matches(queryKey: normalizedKey, entryKey: $0.normalizedItemKey, entryHeadNoun: $0.enrichedHeadNoun) }
             .map { record in
                 FlyerComparisonRow(
                     recordID: record.id,

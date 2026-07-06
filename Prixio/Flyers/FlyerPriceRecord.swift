@@ -41,6 +41,13 @@ final class FlyerPriceRecord {
     /// later surface can tie the saved price back to the list item.
     var matchedItemKey: String?
 
+    /// Enrichment carried from the candidate (`FlyerNameEnricher`), when it ran: the
+    /// canonical-name key and head-noun phrase, so saved-price surfaces (advisory,
+    /// Compare promotion) match with the same lexical knowledge as deal matching.
+    /// Declared with defaults (not init parameters) so existing records migrate as nil.
+    var enrichedItemKey: String? = nil
+    var enrichedHeadNoun: String? = nil
+
     init(
         id: UUID = UUID(),
         savedAt: Date = .now,
