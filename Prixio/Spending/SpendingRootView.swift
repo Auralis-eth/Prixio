@@ -69,6 +69,8 @@ struct SpendingRootView: View {
     var body: some View {
         NavigationStack {
             List {
+                WeeklyBriefCard()
+
                 summarySection
 
                 if viewModel.trend.contains(where: { $0.spending > 0 || $0.income > 0 }) {

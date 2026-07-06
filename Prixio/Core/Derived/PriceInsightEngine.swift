@@ -761,6 +761,19 @@ enum PriceInsightEngine {
         return (sortedValues[count / 2 - 1] + sortedValues[count / 2]) / 2
     }
 
+    /// `Double` counterpart of `median(of:)`, for the interval math in
+    /// `ConsumptionCadenceEngine`. Same already-sorted-input contract.
+    static func median(of sortedValues: [Double]) -> Double? {
+        guard !sortedValues.isEmpty else {
+            return nil
+        }
+        let count = sortedValues.count
+        if count % 2 == 1 {
+            return sortedValues[count / 2]
+        }
+        return (sortedValues[count / 2 - 1] + sortedValues[count / 2]) / 2
+    }
+
     private static func point(
         for entry: PriceEntry,
         useNormalizedPricing: Bool

@@ -142,7 +142,8 @@ struct SpendingDomainEnumTests {
 
     @Test
     func median_returnsNil_givenEmpty() {
-        #expect(PriceInsightEngine.median(of: []) == nil)
+        #expect(PriceInsightEngine.median(of: [] as [Decimal]) == nil)
+        #expect(PriceInsightEngine.median(of: [] as [Double]) == nil)
     }
 
     @Test

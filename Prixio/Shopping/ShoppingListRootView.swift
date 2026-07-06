@@ -7,6 +7,8 @@ struct ShoppingListRootView: View {
     @Query(sort: \ShoppingList.updatedAt, order: .reverse) private var lists: [ShoppingList]
     @Query(sort: \PriceEntry.capturedAt, order: .reverse) private var entries: [PriceEntry]
     @Query(sort: \FlyerPriceRecord.savedAt, order: .reverse) private var flyerRecords: [FlyerPriceRecord]
+    @Query(sort: \ReceiptCapture.capturedAt, order: .reverse) private var receipts: [ReceiptCapture]
+    @Query private var restockRules: [RestockRule]
 
     @StateObject private var viewModel = ShoppingListViewModel()
     @State private var isShowingAddSheet = false
@@ -59,6 +61,10 @@ struct ShoppingListRootView: View {
                                 Text("Advertised flyer prices — not included in estimates and may differ in store.")
                             }
                         }
+
+                        buyAheadSection
+
+                        restockSection
 
                         Section("Checklist") {
                             ForEach(viewModel.activeRows) { row in
@@ -113,6 +119,12 @@ struct ShoppingListRootView: View {
             recompute()
         }
         .onChange(of: entries.count) { _, _ in
+            recompute()
+        }
+        // Content fingerprint, not count: a receipt flipping to "reviewed" or a rule
+        // flipping to "dismissed" changes no counts but must refresh the restock
+        // section (same reasoning as `flyerRecordsFingerprint`).
+        .onChange(of: restockInputsFingerprint) { _, _ in
             recompute()
         }
         .onChange(of: lists.count) { _, _ in
@@ -197,6 +209,23 @@ struct ShoppingListRootView: View {
         return hasher.finalize()
     }
 
+    /// Hash of every restock-relevant field, so `onChange` fires when a receipt is
+    /// reviewed or a rule's status/override changes in place, not just on inserts.
+    private var restockInputsFingerprint: Int {
+        var hasher = Hasher()
+        for receipt in receipts {
+            hasher.combine(receipt.id)
+            hasher.combine(receipt.reviewStateRaw)
+            hasher.combine(receipt.lineItems.count)
+        }
+        for rule in restockRules {
+            hasher.combine(rule.itemKey)
+            hasher.combine(rule.statusRaw)
+            hasher.combine(rule.overrideIntervalDays)
+        }
+        return hasher.finalize()
+    }
+
     /// The next moment a currently-active flyer record expires, or nil when none will.
     /// Recomputing at each body evaluation keeps the expiry task aimed at the soonest
     /// upcoming boundary (recompute() always republishes, so body re-evaluates and the
@@ -256,6 +285,119 @@ struct ShoppingListRootView: View {
                 description: Text("You’ve completed every item on this list.")
             )
         }
+    }
+
+    /// Buy-ahead advisories from `BuyAheadAdvisor`: the sale on an upcoming need ends
+    /// before the household would naturally restock. Advisory pricing only —
+    /// adding puts the item on the list, nothing is bought or totalled.
+    @ViewBuilder
+    private var buyAheadSection: some View {
+        if !viewModel.buyAheadAdvisories.isEmpty {
+            Section {
+                ForEach(viewModel.buyAheadAdvisories) { advisory in
+                    HStack(spacing: 12) {
+                        Label {
+                            Text(advisory.message)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "clock.badge.exclamationmark")
+                                .foregroundStyle(.orange)
+                        }
+                        Spacer(minLength: 8)
+                        Button("Add") {
+                            addItem(
+                                displayName: advisory.displayName,
+                                brand: nil,
+                                quantityNote: nil
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Buy ahead")
+            } footer: {
+                Text("The sale ends before you'd usually restock. Advertised flyer prices — may differ in store.")
+            }
+        }
+    }
+
+    /// Restock nudges from `ConsumptionCadenceEngine`: items the household buys on a
+    /// rhythm (per reviewed receipts) that are due or overdue and not on the list.
+    /// Add with one tap, or swipe to stop suggesting the item permanently
+    /// (a dismissed `RestockRule`). Never added automatically.
+    @ViewBuilder
+    private var restockSection: some View {
+        if !viewModel.restockSuggestions.isEmpty {
+            Section {
+                ForEach(viewModel.restockSuggestions, id: \.cadence.itemKey) { suggestion in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(suggestion.cadence.displayName)
+                                .font(.subheadline.weight(.medium))
+                            Text(restockDetailText(for: suggestion))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Button("Add") {
+                            addItem(
+                                displayName: suggestion.cadence.displayName,
+                                brand: nil,
+                                quantityNote: nil
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Don’t Suggest") {
+                            dismissRestockSuggestion(suggestion)
+                        }
+                        .tint(.gray)
+                    }
+                }
+            } header: {
+                Text("Probably running low")
+            } footer: {
+                Text("Based on your receipts — how often you actually buy these. Swipe to stop suggesting an item.")
+            }
+        }
+    }
+
+    private func restockDetailText(for suggestion: ConsumptionCadenceEngine.RestockSuggestion) -> String {
+        let interval = Int(suggestion.cadence.medianIntervalDays.rounded())
+        let sinceLast = Calendar.current.dateComponents(
+            [.day],
+            from: suggestion.cadence.lastPurchasedAt,
+            to: Calendar.current.startOfDay(for: .now)
+        ).day ?? 0
+
+        let lead: String
+        switch suggestion.urgency {
+        case .probablyOut:
+            lead = "Probably out"
+        case .dueSoon(let daysRemaining):
+            lead = daysRemaining <= 0 ? "Due now" : "Due in \(daysRemaining)d"
+        case .stocked:
+            lead = "Stocked"
+        }
+        return "\(lead) · about every \(interval) days · last bought \(sinceLast) days ago"
+    }
+
+    private func dismissRestockSuggestion(_ suggestion: ConsumptionCadenceEngine.RestockSuggestion) {
+        do {
+            try RestockRuleRepository(context: modelContext).dismiss(
+                itemKey: suggestion.cadence.itemKey,
+                displayName: suggestion.cadence.displayName
+            )
+        } catch {
+            saveErrorMessage = "Couldn’t dismiss this suggestion. Please try again."
+        }
+        recompute()
     }
 
     /// Habit nudges from `ListAdditionSuggestionEngine`: add with one tap, or swipe
@@ -348,7 +490,14 @@ struct ShoppingListRootView: View {
 
     private func recompute() {
         let items = (activeList?.items ?? []).sorted { $0.createdAt < $1.createdAt }
-        viewModel.recompute(items: items, entries: entries, flyerRecords: flyerRecords, userLocation: nil)
+        viewModel.recompute(
+            items: items,
+            entries: entries,
+            flyerRecords: flyerRecords,
+            receipts: receipts,
+            restockRules: restockRules,
+            userLocation: nil
+        )
     }
 
     private func addItem(displayName: String, brand: String?, quantityNote: String?) {

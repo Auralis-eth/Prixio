@@ -18,6 +18,19 @@ final class ShoppingListViewModel: ObservableObject {
     /// "You usually buy this" nudges for habitual items missing from the list
     /// (see `ListAdditionSuggestionEngine`). Confirm/dismiss only — never auto-added.
     @Published private(set) var listAdditionSuggestions: [ListAdditionSuggestion] = []
+    /// "Probably running low" restock nudges from reviewed receipt history
+    /// (see `ConsumptionCadenceEngine`). Receipts evidence actual purchases, so these
+    /// outrank the capture-rhythm suggestions above; dismissal is durable via
+    /// `RestockRule`. Confirm/dismiss only — never auto-added.
+    @Published private(set) var restockSuggestions: [ConsumptionCadenceEngine.RestockSuggestion] = []
+
+    /// "Buy early — the sale ends before you'd naturally restock" nudges
+    /// (see `BuyAheadAdvisor`). Advisory only, like `flyerAdvisory`.
+    @Published private(set) var buyAheadAdvisories: [BuyAheadAdvisory] = []
+
+    /// Cap so the restock section stays a nudge, not a second list (mirrors
+    /// `ListAdditionSuggestionEngine.maxSuggestions`).
+    static let maxRestockSuggestions = 3
 
     /// Suggestions the user has dismissed this session; they stay gone across
     /// recomputes but return next launch (a dismissed habit is still a habit).
@@ -37,6 +50,8 @@ final class ShoppingListViewModel: ObservableObject {
         items: [ShoppingListItem],
         entries: [PriceEntry],
         flyerRecords: [FlyerPriceRecord] = [],
+        receipts: [ReceiptCapture] = [],
+        restockRules: [RestockRule] = [],
         userLocation: CLLocation?,
         now: Date = .now
     ) {
@@ -82,13 +97,54 @@ final class ShoppingListViewModel: ObservableObject {
 
         refreshTripExplanation()
 
+        // Restock nudges from receipt cadence. The engine already applies the
+        // user's RestockRule decisions; here we only suppress items already on the
+        // list — done or not, in either rollup direction (a list "milk" covers a
+        // receipt "2% Milk", and vice versa) — a just-checked-off item was just
+        // bought, which is exactly when a restock nudge is wrong.
+        let cadences = ConsumptionCadenceEngine.computeCadences(receipts: receipts, now: now)
+        let listItemKeys = items.map(\.itemKey)
+        restockSuggestions = Array(
+            ConsumptionCadenceEngine.restockSuggestions(
+                cadences: cadences,
+                rules: restockRules,
+                now: now
+            )
+            .filter { suggestion in
+                !listItemKeys.contains {
+                    ItemKeyNormalizer.matchesEitherDirection($0, suggestion.cadence.itemKey)
+                }
+            }
+            .prefix(Self.maxRestockSuggestions)
+        )
+
         // Every list item — done or not — suppresses its suggestion: a just-checked-off
         // item was just bought, which is exactly when a "usually buy" nudge is wrong.
+        // A restock suggestion for the same key also wins outright: receipts evidence
+        // an actual purchase rhythm, capture history only a scanning rhythm.
+        let restockKeys = Set(restockSuggestions.map(\.cadence.itemKey))
         listAdditionSuggestions = ListAdditionSuggestionEngine.proposeAdditions(
             listItemKeys: items.map(\.itemKey),
             allEntries: entries,
             now: now
-        ).filter { !dismissedSuggestionKeys.contains($0.itemKey) }
+        )
+        .filter { !dismissedSuggestionKeys.contains($0.itemKey) }
+        .filter { !restockKeys.contains($0.itemKey) }
+
+        // Buy-ahead advisories: future needs whose flyer deal closes first. Items
+        // already on the list are excluded — the flyer advisory above covers them.
+        buyAheadAdvisories = BuyAheadAdvisor.compute(
+            cadences: cadences,
+            records: flyerRecords,
+            entries: entries,
+            rules: restockRules,
+            now: now
+        )
+        .filter { advisory in
+            !listItemKeys.contains {
+                ItemKeyNormalizer.matchesEitherDirection($0, advisory.itemKey)
+            }
+        }
     }
 
     func dismissListAdditionSuggestion(_ suggestion: ListAdditionSuggestion) {

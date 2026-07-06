@@ -107,6 +107,13 @@ enum ItemKeyNormalizer {
         return queryTokens.allSatisfy(entrySet.contains)
     }
 
+    /// Whether two item keys match in *either* rollup direction — a list "milk"
+    /// covers a receipt "2% Milk" and vice versa. The shared "already covered by
+    /// the list" rule for the restock, buy-ahead, and weekly-brief surfaces.
+    static func matchesEitherDirection(_ lhs: String, _ rhs: String) -> Bool {
+        matches(queryKey: lhs, entryKey: rhs) || matches(queryKey: rhs, entryKey: lhs)
+    }
+
     /// Head-noun-aware variant of `matches(queryKey:entryKey:)` for entries whose
     /// true head noun is known (supplied by the LLM enrichment pass — see
     /// `FlyerNameEnricher`). The entry's *last token* is no longer trusted as its
